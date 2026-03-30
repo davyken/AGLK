@@ -16,8 +16,8 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     // MongoDB connection using the provided URI
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGODB_URI'),
+      useFactory: async (configService: ConfigService): Promise<{ uri: string }> => ({
+        uri: configService.get<string>('MONGODB_URI') ?? 'mongodb://localhost:27017/app',
       }),
       inject: [ConfigService],
     }),
