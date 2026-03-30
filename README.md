@@ -1,6 +1,6 @@
 # Agro-Link (AGLK)
 
-> WhatsApp-based agricultural marketplace MVP — connecting farmers directly with buyers through the world's most popular messaging platform.
+> WhatsApp/SMS-based agricultural marketplace MVP — connecting farmers directly with buyers through the world's most popular messaging platform.
 
 <p align="center">
   <img src="https://img.shields.io/badge/NestJS-v11.0.1-red" alt="NestJS">
