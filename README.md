@@ -2,7 +2,7 @@
 
 > WhatsApp/SMS-based agricultural marketplace MVP — connecting farmers directly with buyers through the world's most popular messaging platform.
 
-<p align="center">
+<p align="center"> 
   <img src="https://img.shields.io/badge/NestJS-v11.0.1-red" alt="NestJS">
   <img src="https://img.shields.io/badge/TypeScript-v5.7-blue" alt="TypeScript">
   <img src="https://img.shields.io/badge/MongoDB-v9.3-green" alt="MongoDB">
