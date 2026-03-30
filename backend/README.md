@@ -1,98 +1,186 @@
+# Agro-Link Backend
+
+> NestJS backend API for the WhatsApp-based agricultural marketplace MVP.
+
 <p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
+  <img src="https://img.shields.io/badge/NestJS-v11.0.1-red" alt="NestJS">
+  <img src="https://img.shields.io/badge/TypeScript-v5.7-blue" alt="TypeScript">
+  <img src="https://img.shields.io/badge/MongoDB-v9.3-green" alt="MongoDB">
+  <img src="https://img.shields.io/badge/Redis-v5.10-red" alt="Redis">
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+---
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Overview
 
-## Description
+This is the backend API service for Agro-Link, a WhatsApp-based agricultural marketplace that connects farmers directly with buyers. The backend is built with NestJS and provides RESTful APIs for product management, order processing, user authentication, and WhatsApp webhook integration.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+---
 
-## Project setup
+## Tech Stack
 
-```bash
-$ npm install
-```
+- **Framework**: NestJS 11.x
+- **Language**: TypeScript 5.7
+- **Database**: MongoDB with Mongoose ODM
+- **Cache**: Redis via ioredis
+- **Authentication**: JWT (jsonwebtoken)
+- **Password Hashing**: bcryptjs
+- **API Validation**: express-validator
+- **Security**: Helmet, CORS, Rate Limiting
+- **Logging**: Winston
+- **WhatsApp API**: Meta WhatsApp Cloud API
 
-## Compile and run the project
+---
 
-```bash
-# development
-$ npm run start
+## Getting Started
 
-# watch mode
-$ npm run start:dev
+### Prerequisites
 
-# production mode
-$ npm run start:prod
-```
+- Node.js 18.x or higher
+- MongoDB 6.x or higher
+- Redis 7.x or higher
 
-## Run tests
+### Installation
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
 ```
 
-## Deployment
+### Configuration
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Copy the example environment file and configure your settings:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+cp .env.example .env
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+#### Environment Variables
 
-## Resources
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Server port | `3000` |
+| `NODE_ENV` | Environment | `development` |
+| `MONGODB_URI` | MongoDB connection string | - |
+| `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
+| `META_PHONE_NUMBER_ID` | WhatsApp Phone Number ID | - |
+| `META_ACCESS_TOKEN` | Meta API Access Token | - |
+| `META_VERIFY_TOKEN` | Webhook verification token | - |
+| `META_API_VERSION` | WhatsApp API version | `v19.0` |
 
-Check out a few resources that may come in handy when working with NestJS:
+### Running the Application
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+# Development
+npm run start:dev
 
-## Support
+# Production
+npm run start:prod
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+# Debug mode
+npm run start:debug
+```
 
-## Stay in touch
+---
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## API Endpoints
+
+### Authentication
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/auth/register` | Register a new user |
+| POST | `/auth/login` | User login |
+| GET | `/auth/profile` | Get current user profile |
+
+### Products
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/products` | List all products |
+| POST | `/products` | Create a new product |
+| GET | `/products/:id` | Get product by ID |
+| PATCH | `/products/:id` | Update product |
+| DELETE | `/products/:id` | Delete product |
+
+### Orders
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/orders` | List all orders |
+| POST | `/orders` | Create a new order |
+| GET | `/orders/:id` | Get order by ID |
+| PATCH | `/orders/:id` | Update order status |
+
+### Webhooks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/webhook` | WhatsApp webhook verification |
+| POST | `/webhook` | WhatsApp message webhook |
+
+---
+
+## Testing
+
+```bash
+# Unit tests
+npm run test
+
+# Watch mode
+npm run test:watch
+
+# Coverage
+npm run test:cov
+
+# E2E tests
+npm run test:e2e
+```
+
+---
+
+## Available Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run build` | Compile the application |
+| `npm run start` | Start the production server |
+| `npm run start:dev` | Start in development mode |
+| `npm run start:debug` | Start in debug mode |
+| `npm run start:prod` | Start production build |
+| `npm run lint` | Lint and fix code |
+| `npm run format` | Format code with Prettier |
+
+---
+
+## Project Structure
+
+```
+src/
+├── main.ts                 # Application entry point
+├── app.module.ts          # Root application module
+├── app.controller.ts      # Root controller
+├── app.service.ts         # Root service
+├── auth/                  # Authentication module
+├── products/              # Products module
+├── orders/                # Orders module
+├── webhook/               # WhatsApp webhook module
+└── common/                # Shared utilities
+```
+
+---
+
+## Security Features
+
+- JWT-based authentication
+- Password hashing with bcryptjs
+- Rate limiting (express-rate-limit)
+- Helmet.js for HTTP security headers
+- CORS configuration
+- Input validation and sanitization
+- Environment variable protection
+
+---
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+MIT License - see LICENSE file for details.
