@@ -227,6 +227,27 @@ src/
 | `npm run test` | Run unit tests |
 | `npm run test:cov` | Run tests with coverage report |
 
+## ☁️ Deployment on Render
+
+1. Connect your GitHub repo to Render.
+2. Create a **Web Service** pointing to the `/backend` directory.
+3. Set **Build Command**: `npm ci && npm run build`
+4. Set **Start Command**: `npm run start:prod`
+5. Add `render.yaml` (auto-detected) for config:
+   ```yaml
+   services:
+     - type: web
+       name: backend
+       env: node
+       buildCommand: npm ci && npm run build
+       startCommand: npm run start:prod
+   ```
+6. Add environment variables (MONGODB_URI, REDIS_URL, META_* etc.) in Render dashboard.
+7. Deploy!
+
+**Troubleshooting**: Ensure `dist/main.js` builds correctly. Check logs for build errors.
+
+
 ---
 
 ## 🛡️ Security
