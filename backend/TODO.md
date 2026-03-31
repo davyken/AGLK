@@ -1,17 +1,11 @@
-# Task Progress: Bot Registration System
+# Fix TypeScript @types/node Error for Render Deploy
 
-## Completed Steps:
-- [x] Create all requested files (bot/*, users/*, dto/user.dto.ts)
-- [x] Fix DTO import syntax
-- [x] Create .env file with bot vars
+## Steps:
+- [x] 1. Edit backend/package.json: Remove @types/node from dependencies section.\n- [x] 2. Edit backend/render.yaml: Update buildCommand to 'npm ci --include=dev && npm run build'; add 'NODE_ENV: development' to envVars.
+- [ ] 3. Run `cd backend && npm install` to update package-lock.json.
+- [ ] 4. Test local: `npm run build` and confirm no TS errors.
+- [ ] 5. Commit/push changes for Render redeploy.
+- [ ] 6. Verify Render build logs.
 
-## Next Steps:
-1. Update `backend/src/app.module.ts`: Import BotModule, UsersModule
-2. Update `backend/src/whatsapp/whatsapp.controller.ts`: Inject BotService, route text messages to bot.handleMessage()
-3. Implement full registration flow in registration.flow.ts (use UsersService to persist state)
-4. Wire services in bot.service.ts (remove TODO comments, add injections)
-5. Add uncommented imports in bot.module.ts
-6. Test: `cd backend && npm run start:dev`
-7. Send test WhatsApp message to trigger flow
-8. Implement SMS webhook in bot.controller.ts (if Twilio details provided)
-9. Add message logging to message.schema.ts if needed
+Status: Starting implementation.
+
