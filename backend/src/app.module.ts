@@ -5,10 +5,11 @@ import type { MongooseModuleOptions } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { BotModule } from './bot/bot.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
-    // Load .env configuration
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
@@ -23,8 +24,10 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
       inject: [ConfigService],
     }),
     
-    // WhatsApp Business API Module
+    // Core App Modules
     WhatsAppModule,
+    BotModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
