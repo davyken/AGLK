@@ -1,8 +1,8 @@
 # Agro-Link (AGLK)
 
-> WhatsApp-based agricultural marketplace MVP — connecting farmers directly with buyers through the world's most popular messaging platform.
+> WhatsApp/SMS-based agricultural marketplace MVP — connecting farmers directly with buyers through the world's most popular messaging platform.
 
-<p align="center">
+<p align="center"> 
   <img src="https://img.shields.io/badge/NestJS-v11.0.1-red" alt="NestJS">
   <img src="https://img.shields.io/badge/TypeScript-v5.7-blue" alt="TypeScript">
   <img src="https://img.shields.io/badge/MongoDB-v9.3-green" alt="MongoDB">
@@ -226,6 +226,27 @@ src/
 | `npm run format` | Format code with Prettier |
 | `npm run test` | Run unit tests |
 | `npm run test:cov` | Run tests with coverage report |
+
+## ☁️ Deployment on Render
+
+1. Connect your GitHub repo to Render.
+2. Create a **Web Service** pointing to the `/backend` directory.
+3. Set **Build Command**: `npm ci && npm run build`
+4. Set **Start Command**: `npm run start:prod`
+5. Add `render.yaml` (auto-detected) for config:
+   ```yaml
+   services:
+     - type: web
+       name: backend
+       env: node
+       buildCommand: npm ci && npm run build
+       startCommand: npm run start:prod
+   ```
+6. Add environment variables (MONGODB_URI, REDIS_URL, META_* etc.) in Render dashboard.
+7. Deploy!
+
+**Troubleshooting**: Ensure `dist/main.js` builds correctly. Check logs for build errors.
+
 
 ---
 
