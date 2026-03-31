@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import type { MongooseModuleOptions } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
@@ -16,7 +17,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     // MongoDB connection using the provided URI
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService): Promise<{ uri: string }> => ({
+      useFactory: async (configService: ConfigService) => ({
         uri: configService.get<string>('MONGODB_URI') ?? 'mongodb://localhost:27017/app',
       }),
       inject: [ConfigService],
