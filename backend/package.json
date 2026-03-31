@@ -48,17 +48,16 @@
     "uuid": "^13.0.0",
     "winston": "^3.19.0"
   },
-"devDependencies": {
-  "@eslint/eslintrc": "^3.2.0",
-  "@eslint/js": "^9.18.0",
-  "@types/node": "^22.19.15",
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.2.0",
+    "@eslint/js": "^9.18.0",
     "@nestjs/cli": "^11.0.16",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.19.15",
-"@types/supertest": "^6.0.2",
+    "@types/supertest": "^6.0.2",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
