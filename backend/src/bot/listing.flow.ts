@@ -99,13 +99,16 @@ export class ListingFlowService {
       // Get market prices from PriceService
       const priceData = await this.priceService.getPrice(parsed.product);
 
+      // If no price data, skip price options and go directly to custom price
       if (!priceData) {
-        pendingPriceListings.delete(phone);
-        const availableProducts = await this.priceService.getAvailableProducts();
         return this.msg(
           channel,
-          `❌ Sorry, we don't have market prices for ${parsed.product} yet.\n\n` +
-            `Please try one of these products:\n${availableProducts.slice(0, 5).join(', ')}...`,
+          `📦 *Listing: ${this.capitalize(parsed.product)}*\n\n` +
+            `Quantity: ${parsed.quantity} ${parsed.unit}\n\n` +
+            `💰 No market price available for this product.\n` +
+            `Please enter your custom price.\n\n` +
+            `Example: 20000\n\n` +
+            `Reply with the price you want to set.`,
         );
       }
 
