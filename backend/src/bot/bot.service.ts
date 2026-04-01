@@ -44,6 +44,11 @@ export class BotService {
     // ── Registered → main command router ──────────────────
     await this.usersService.updateChannel(phone, channel);
 
+    // Check if user is in pending price state (waiting for price choice)
+    if (this.listingFlow.isInPriceState(phone)) {
+      return this.listingFlow.handle(phone, text, channel);
+    }
+
     if (input.startsWith('SELL')) {
       return await this.listingFlow.handle(phone, text, channel);
     }

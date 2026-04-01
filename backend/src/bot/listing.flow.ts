@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ListingService } from '../listing/listing.service';
 import { UsersService } from '../users/users.service';
 import { CreateListingDto } from '../dto/listing.dto';
+import { PriceService } from '../price/price.service';
 
 // Simple in-memory store for price conversation state
 // In production, this should be in Redis or database
@@ -22,6 +23,7 @@ export class ListingFlowService {
   constructor(
     private readonly listingService: ListingService,
     private readonly usersService: UsersService,
+    private readonly priceService: PriceService,
   ) {}
 
   async handle(
@@ -94,19 +96,29 @@ export class ListingFlowService {
         userRole: user.role,
       });
 
-      // Get mock market prices (in production, this would come from a price API)
-      const prices = this.getMarketPrices(parsed.product);
+      // Get market prices from PriceService
+      const priceData = await this.priceService.getPrice(parsed.product);
+
+      if (!priceData) {
+        pendingPriceListings.delete(phone);
+        const availableProducts = await this.priceService.getAvailableProducts();
+        return this.msg(
+          channel,
+          `❌ Sorry, we don't have market prices for ${parsed.product} yet.\n\n` +
+            `Please try one of these products:\n${availableProducts.slice(0, 5).join(', ')}...`,
+        );
+      }
 
       return this.msg(
         channel,
         `📊 *Market Price for ${this.capitalize(parsed.product)}*\n\n` +
           `Current market prices:\n` +
-          `Low: ${this.formatPrice(prices.low)}\n` +
-          `Average: ${this.formatPrice(prices.avg)}\n` +
-          `High: ${this.formatPrice(prices.high)}\n\n` +
-          `*Suggested: ${this.formatPrice(prices.suggested)}*\n\n` +
+          `Low: ${this.formatPrice(priceData.low)}\n` +
+          `Average: ${this.formatPrice(priceData.avg)}\n` +
+          `High: ${this.formatPrice(priceData.high)}\n\n` +
+          `*Suggested: ${this.formatPrice(priceData.suggested)}*\n\n` +
           `What would you like to do?\n` +
-          `1️⃣ Accept suggested price (${this.formatPrice(prices.suggested)})\n` +
+          `1️⃣ Accept suggested price (${this.formatPrice(priceData.suggested)})\n` +
           `2️⃣ Set custom price\n\n` +
           `Reply 1 or 2`,
       );
@@ -195,17 +207,22 @@ export class ListingFlowService {
     // Option 1: Accept suggested price
     if (input === '1') {
       try {
-        const prices = this.getMarketPrices(pending.product);
+        const priceData = await this.priceService.getPrice(pending.product);
+        
+        if (!priceData) {
+          pendingPriceListings.delete(phone);
+          return this.msg(channel, `❌ Price data unavailable. Please try again.`);
+        }
         
         const dto: CreateListingDto = {
           type: 'sell',
           product: pending.product,
           quantity: pending.quantity,
           unit: pending.unit,
-          marketAvgPrice: prices.avg,
-          marketMinPrice: prices.low,
-          marketMaxPrice: prices.high,
-          price: prices.suggested,
+          marketAvgPrice: priceData.avg,
+          marketMinPrice: priceData.low,
+          marketMaxPrice: priceData.high,
+          price: priceData.suggested,
           priceType: 'auto',
           acceptedSuggestion: true,
         };
@@ -245,16 +262,21 @@ export class ListingFlowService {
     const customPrice = this.parsePrice(response);
     if (customPrice !== null) {
       try {
-        const prices = this.getMarketPrices(pending.product);
+        const priceData = await this.priceService.getPrice(pending.product);
+        
+        if (!priceData) {
+          pendingPriceListings.delete(phone);
+          return this.msg(channel, `❌ Price data unavailable. Please try again.`);
+        }
 
         const dto: CreateListingDto = {
           type: 'sell',
           product: pending.product,
           quantity: pending.quantity,
           unit: pending.unit,
-          marketAvgPrice: prices.avg,
-          marketMinPrice: prices.low,
-          marketMaxPrice: prices.high,
+          marketAvgPrice: priceData.avg,
+          marketMinPrice: priceData.low,
+          marketMaxPrice: priceData.high,
           price: customPrice,
           priceType: 'manual',
         };
@@ -340,35 +362,6 @@ export class ListingFlowService {
     return price;
   }
 
-  // Get mock market prices - in production, this would call a price API
-  private getMarketPrices(product: string): { low: number; avg: number; high: number; suggested: number } {
-    // Base prices per product (in XAF)
-    const basePrices: Record<string, number> = {
-      maize: 22000,
-      cassava: 15000,
-      tomatoes: 25000,
-      plantain: 18000,
-      beans: 30000,
-      rice: 35000,
-      cocoa: 120000,
-      coffee: 80000,
-      palm: 45000,
-      onion: 20000,
-      pepper: 28000,
-      potato: 32000,
-      yam: 25000,
-    };
-
-    const basePrice = basePrices[product.toLowerCase()] || 20000;
-
-    return {
-      low: Math.round(basePrice * 0.8),
-      avg: basePrice,
-      high: Math.round(basePrice * 1.2),
-      suggested: Math.round(basePrice * 0.95), // Slightly below average
-    };
-  }
-
   private formatPrice(price: number): string {
     return price.toLocaleString() + ' XAF';
   }
@@ -385,5 +378,10 @@ export class ListingFlowService {
         .trim();
     }
     return message;
+  }
+
+  // Check if user is in pending price state
+  isInPriceState(phone: string): boolean {
+    return pendingPriceListings.has(phone);
   }
 }

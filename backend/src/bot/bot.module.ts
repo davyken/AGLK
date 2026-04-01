@@ -6,9 +6,10 @@ import { RegistrationFlowService } from './registration.flow';
 import { ListingFlowService } from './listing.flow';
 import { UsersModule } from '../users/users.module';
 import { ListingModule } from '../listing/listing.module';
+import { PriceModule } from '../price/price.module';
 
 @Module({
-  imports: [UsersModule, ListingModule], // gives access to UsersService and ListingService
+  imports: [UsersModule, ListingModule, PriceModule], // gives access to UsersService, ListingService, and PriceService
   controllers: [BotController],
   providers: [
     BotService,
