@@ -21,6 +21,14 @@ export interface WhatsAppWebhookMessage {
   video?: any;
   document?: any;
   location?: any;
+  //  added `interactive` field that was missing from the interface.
+  // `handleInteractiveMessage` accessed message.interactive at runtime but the
+  // compiler had no visibility into it, bypassing type safety.
+  interactive?: {
+    type: 'button_reply' | 'list_reply';
+    button_reply?: { id: string; title: string };
+    list_reply?: { id: string; title: string };
+  };
 }
 
 export interface WhatsAppContact {
@@ -87,6 +95,92 @@ export class WhatsAppService {
     }
 
     return { messages, contacts };
+  }
+
+  async handleIncomingMessage(
+    from: string,
+    text: string,
+    contacts: WhatsAppContact[],
+  ): Promise<void> {
+    const contact = contacts.find((c) => c.wa_id === from);
+    const userName = contact?.profile?.name || 'User';
+    const normalised = text.trim().toLowerCase();
+
+    let response: string;
+
+    if (normalised === 'help') {
+      // "help" now returns a help message instead of the welcome prompt
+      response = `Available commands:
+
+• *list* — list a product for sale
+• *buy* — search for products
+• *prices* — view current market prices
+• *help* — show this message`;
+    } else {
+      // Default: welcome / onboarding prompt
+      response = `Hello ${userName}! 👋
+
+Welcome to Agrolink.
+
+You can:
+• List agricultural products
+• Search for buyers/sellers
+• Get market prices
+• And more!
+
+Type "help" for available commands.`;
+    }
+
+    await this.sendMessage(from, response);
+  }
+
+  async handleInteractiveMessage(message: WhatsAppWebhookMessage): Promise<void> {
+    const from = message.from;
+    const interactive = message.interactive;
+
+    if (!interactive) return;
+
+    if (interactive.type === 'button_reply') {
+      const buttonId = interactive.button_reply!.id;
+      const buttonText = interactive.button_reply!.title;
+
+      // log buttonId and buttonText for every case so all branches
+      // have consistent traceability. Previously buttonText was declared but
+      // only referenced in the default branch.
+      this.logger.log(`Button pressed: [${buttonId}] "${buttonText}"`);
+
+      let response = '';
+      switch (buttonId) {
+        case 'VIEW_PRODUCTS':
+          response = 'Here are the available products...';
+          break;
+        case 'ADD_LISTING':
+          response = 'To add a listing, please visit our app or website.';
+          break;
+        case 'CONTACT_SUPPORT':
+          response = 'Our support team will contact you shortly.';
+          break;
+        default:
+          response = `You clicked: ${buttonText}`;
+      }
+
+      await this.sendMessage(from, response);
+    } else if (interactive.type === 'list_reply') {
+      const listTitle = interactive.list_reply!.title;
+      await this.sendMessage(from, `You selected: ${listTitle}`);
+    }
+  }
+
+  async handleLocationMessage(message: WhatsAppWebhookMessage): Promise<void> {
+    const from = message.from;
+    const location = message.location;
+
+    const response = `Thank you for sharing your location!
+
+Latitude: ${location.latitude}
+Longitude: ${location.longitude}`;
+
+    await this.sendMessage(from, response);
   }
 
   async sendMessage(to: string, message: string): Promise<any> {

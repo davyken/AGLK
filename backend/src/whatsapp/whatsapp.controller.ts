@@ -31,91 +31,27 @@ export class WhatsAppController {
   @HttpCode(HttpStatus.OK)
   async handleWebhook(@Body() body: any): Promise<{ success: boolean; message: string }> {
     this.logger.log('Webhook received from WhatsApp');
+    const { messages, contacts } = this.whatsAppService.processWebhook(body);
 
-    try {
-      const { messages, contacts } = this.whatsAppService.processWebhook(body);
+    for (const message of messages) {
+      this.logger.log(`Message from ${message.from}: ${message.type}`);
 
-      for (const message of messages) {
-        this.logger.log(`Message from ${message.from}: ${message.type}`);
-
-        if (message.id) {
-          await this.whatsAppService.markMessageAsRead(message.id);
-        }
-
-        if (message.type === 'text' && message.text?.body) {
-          await this.handleIncomingMessage(message.from, message.text.body, contacts);
-        } else if (message.type === 'interactive') {
-          await this.handleInteractiveMessage(message);
-        } else if (message.type === 'location') {
-          await this.handleLocationMessage(message);
-        }
+      if (message.id) {
+        this.whatsAppService.markMessageAsRead(message.id).catch((err) => {
+          this.logger.error(`Failed to mark message ${message.id} as read`, err);
+        });
       }
 
-      return { success: true, message: 'OK' };
-    } catch (error) {
-      this.logger.error('Error processing webhook', error);
-      return { success: false, message: 'Error processing webhook' };
-    }
-  }
-
-  private async handleIncomingMessage(from: string, text: string, contacts: any[]): Promise<void> {
-    const contact = contacts.find((c) => c.wa_id === from);
-    const userName = contact?.profile?.name || 'User';
-
-    const welcomeMessage = `Hello ${userName}! 👋
-
-Welcome to Agrolink.
-
-You can:
-• List agricultural products
-• Search for buyers/sellers
-• Get market prices
-• And more!
-
-Type "help" for available commands.`;
-    
-    await this.whatsAppService.sendMessage(from, welcomeMessage);
-  }
-
-  private async handleInteractiveMessage(message: any): Promise<void> {
-    const from = message.from;
-    const interactive = message.interactive;
-
-    if (interactive.type === 'button_reply') {
-      const buttonId = interactive.button_reply.id;
-      const buttonText = interactive.button_reply.title;
-
-      let response = '';
-      switch (buttonId) {
-        case 'VIEW_PRODUCTS':
-          response = 'Here are the available products...';
-          break;
-        case 'ADD_LISTING':
-          response = 'To add a listing, please visit our app or website.';
-          break;
-        case 'CONTACT_SUPPORT':
-          response = 'Our support team will contact you shortly.';
-          break;
-        default:
-          response = `You clicked: ${buttonText}`;
+      if (message.type === 'text' && message.text?.body) {
+        await this.whatsAppService.handleIncomingMessage(message.from, message.text.body, contacts);
+      } else if (message.type === 'interactive') {
+        await this.whatsAppService.handleInteractiveMessage(message);
+      } else if (message.type === 'location') {
+        await this.whatsAppService.handleLocationMessage(message);
       }
-
-      await this.whatsAppService.sendMessage(from, response);
-    } else if (interactive.type === 'list_reply') {
-      const listTitle = interactive.list_reply.title;
-      await this.whatsAppService.sendMessage(from, `You selected: ${listTitle}`);
     }
-  }
 
-  private async handleLocationMessage(message: any): Promise<void> {
-    const from = message.from;
-    const location = message.location;
-
-    const response = `Thank you for sharing your location!
-
-Latitude: ${location.latitude}
-Longitude: ${location.longitude}`;
-    await this.whatsAppService.sendMessage(from, response);
+    return { success: true, message: 'OK' };
   }
 
   @Get('status')
