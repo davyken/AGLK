@@ -23,6 +23,10 @@ export class User {
   @Prop({ enum: ['sms', 'whatsapp'], default: 'whatsapp' })
   lastChannelUsed: string;
 
+  // Preferred language: english, french, pidgin
+  @Prop({ enum: ['english', 'french', 'pidgin'], default: 'english' })
+  preferredLanguage: string;
+
   @Prop({ default: 0 })
   trustScore: number;
 

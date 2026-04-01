@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { RegistrationFlowService } from './registration.flow';
 import { ListingFlowService } from './listing.flow';
+import { TranslationService } from '../ai/translation.service';
 
 export interface IncomingMessage {
   phone: string;
@@ -15,6 +16,7 @@ export class BotService {
     private readonly usersService: UsersService,
     private readonly registrationFlow: RegistrationFlowService,
     private readonly listingFlow: ListingFlowService,
+    private readonly translation: TranslationService,
   ) {}
 
   async handleMessage(msg: IncomingMessage): Promise<string> {
@@ -23,7 +25,13 @@ export class BotService {
 
     // ── HELP command (works at any stage) ─────────────────
     if (input === 'HELP') {
-      return this.helpMessage(channel);
+      const user = await this.usersService.findByPhone(phone);
+      return this.helpMessage(channel, user?.preferredLanguage);
+    }
+
+    // ── LANGUAGE command (works at any stage) ───────────────
+    if (input.startsWith('LANGUAGE') || input.startsWith('LANG')) {
+      return this.handleLanguageCommand(phone, text, channel);
     }
 
     // ── Check if user is registered ───────────────────────
@@ -70,8 +78,43 @@ export class BotService {
     return this.unknownCommand(user.role, channel);
   }
 
+  // ─── Handle LANGUAGE command ────────────────────────────
+  private async handleLanguageCommand(
+    phone: string,
+    text: string,
+    channel: 'sms' | 'whatsapp',
+  ): Promise<string> {
+    const input = text.trim().toLowerCase();
+
+    // Parse language selection
+    if (input.includes('1') || input.includes('english')) {
+      await this.usersService.update(phone, { preferredLanguage: 'english' });
+      return this.translation.t('english', 'languageSet');
+    }
+
+    if (input.includes('2') || input.includes('french') || input.includes('français')) {
+      await this.usersService.update(phone, { preferredLanguage: 'french' });
+      return this.translation.t('french', 'languageSet');
+    }
+
+    if (input.includes('3') || input.includes('pidgin')) {
+      await this.usersService.update(phone, { preferredLanguage: 'pidgin' });
+      return this.translation.t('pidgin', 'languageSet');
+    }
+
+    // Show language selection menu
+    const user = await this.usersService.findByPhone(phone);
+    const lang = user?.preferredLanguage || 'english';
+    return this.translation.t(lang, 'selectLanguage');
+  }
+
   // ─── HELP message ────────────────────────────────────────
-  private helpMessage(channel: 'sms' | 'whatsapp'): string {
+  private helpMessage(channel: 'sms' | 'whatsapp', language?: string): string {
+    // Use translation service if language is specified
+    if (language && channel === 'whatsapp') {
+      return this.translation.getHelpText(language);
+    }
+
     if (channel === 'sms') {
       return [
         'FarmerConnect Help:',
@@ -79,6 +122,7 @@ export class BotService {
         'BUY maize 20 bags',
         'BUY maize 20 bags @yaounde (filter by city)',
         'BUY maize 20 bags #10000-20000 (filter by price)',
+        'LANGUAGE - change language',
         'HELP - show this menu',
       ].join('\n');
     }
@@ -95,6 +139,9 @@ export class BotService {
       'BUY maize 20 bags @yaounde (filter by city)',
       'BUY maize 20 bags #10000-20000 (price range)',
       'BUY maize 20 bags @yaounde #15000-25000 (city + price)',
+      '',
+      '🌐 *Language:*',
+      'LANGUAGE - change language (English/French/Pidgin)',
       '',
       '💡 *Tips:*',
       '- Use @ before city name to filter by location',

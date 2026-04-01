@@ -79,4 +79,8 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   conversationState?: string;
+
+  @IsOptional()
+  @IsEnum(['english', 'french', 'pidgin'])
+  preferredLanguage?: string;
 }
