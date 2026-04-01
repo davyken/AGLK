@@ -37,6 +37,11 @@ export class BotService {
       return this.helpMessage(channel, detectedLang);
     }
 
+    // ── AWAITING_LANGUAGE state → process selection ──────
+    if (user?.conversationState === 'AWAITING_LANGUAGE') {
+      return this.handleLanguageCommand(phone, text, channel, detectedLang);
+    }
+
     // ── LANGUAGE command (works at any stage) ───────────────
     if (input.startsWith('LANGUAGE') || input.startsWith('LANG')) {
       return this.handleLanguageCommand(phone, text, channel, detectedLang);
@@ -121,21 +126,22 @@ export class BotService {
 
     // Parse language selection
     if (input.includes('1') || input.includes('english')) {
-      await this.usersService.update(phone, { preferredLanguage: 'english' });
+      await this.usersService.update(phone, { preferredLanguage: 'english', conversationState: 'REGISTERED' });
       return this.translation.t('english', 'languageSet');
     }
 
     if (input.includes('2') || input.includes('french') || input.includes('français')) {
-      await this.usersService.update(phone, { preferredLanguage: 'french' });
+      await this.usersService.update(phone, { preferredLanguage: 'french', conversationState: 'REGISTERED' });
       return this.translation.t('french', 'languageSet');
     }
 
     if (input.includes('3') || input.includes('pidgin')) {
-      await this.usersService.update(phone, { preferredLanguage: 'pidgin' });
+      await this.usersService.update(phone, { preferredLanguage: 'pidgin', conversationState: 'REGISTERED' });
       return this.translation.t('pidgin', 'languageSet');
     }
 
-    // Show language selection menu
+    // No valid selection → set state and show language menu
+    await this.usersService.update(phone, { conversationState: 'AWAITING_LANGUAGE' });
     return this.translation.t(currentLang, 'selectLanguage');
   }
 

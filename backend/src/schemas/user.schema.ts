@@ -53,6 +53,7 @@ export class User {
       'REGISTERED',
       'AWAITING_PRICE',
       'AWAITING_CONFIRM',
+      'AWAITING_LANGUAGE',
     ],
     default: 'START',
   })
