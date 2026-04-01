@@ -26,6 +26,9 @@ export class CreateListingDto {
   @IsNumber()
   marketMaxPrice?: number;
 
+  @IsOptional()
+  @IsString()
+  location?: string;
   
 }
 

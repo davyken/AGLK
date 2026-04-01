@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
-import { RegistrationFlowService } from '../bot/registration.flow';
+import { RegistrationFlowService } from './registration.flow';
+import { ListingFlowService } from './listing.flow';
 
 export interface IncomingMessage {
   phone: string;
@@ -13,6 +14,7 @@ export class BotService {
   constructor(
     private readonly usersService: UsersService,
     private readonly registrationFlow: RegistrationFlowService,
+    private readonly listingFlow: ListingFlowService,
   ) {}
 
   async handleMessage(msg: IncomingMessage): Promise<string> {
@@ -43,13 +45,11 @@ export class BotService {
     await this.usersService.updateChannel(phone, channel);
 
     if (input.startsWith('SELL')) {
-      // → Hand off to ListingFlow (Person 2 builds this)
-      return `🌽 Listing flow coming soon. You said: ${text}`;
+      return await this.listingFlow.handle(phone, text, channel);
     }
 
     if (input.startsWith('BUY')) {
-      // → Hand off to BuyFlow (Person 2 builds this)
-      return `🛒 Buy flow coming soon. You said: ${text}`;
+      return await this.listingFlow.handle(phone, text, channel);
     }
 
     if (input === 'YES' || input === 'NO') {

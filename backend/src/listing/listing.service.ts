@@ -26,6 +26,8 @@ export class ListingService {
       userName: user.name,
       userLocation: user.location,
       channel: user.lastChannelUsed,
+      // Use user's location if not provided in DTO
+      location: dto.location || user.location,
       
     });
     return listing.save();
