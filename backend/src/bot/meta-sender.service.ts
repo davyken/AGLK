@@ -10,7 +10,8 @@ export class MetaSenderService {
   async send(to: string, message: string): Promise<void> {
     const phoneNumberId = this.config.get<string>('META_PHONE_NUMBER_ID');
     const accessToken = this.config.get<string>('META_ACCESS_TOKEN');
-    const url = `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`;
+    const apiVersion = this.config.get<string>('META_API_VERSION') || 'v19.0';
+    const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
     const payload = {
       messaging_product: 'whatsapp',

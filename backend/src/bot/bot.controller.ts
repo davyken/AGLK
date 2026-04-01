@@ -42,6 +42,8 @@ export class BotController {
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
   async receiveWhatsApp(@Body() body: Record<string, any>) {
+    console.log('📥 WhatsApp webhook received:', JSON.stringify(body));
+    
     try {
       // Extract message from Meta payload
       const entry = body?.entry?.[0];
@@ -50,12 +52,15 @@ export class BotController {
       const messages = value?.messages;
 
       if (!messages || messages.length === 0) {
+        console.log('⚠️ No messages in payload');
         return { status: 'no_message' };
       }
 
       const message = messages[0];
       const phone = message.from;           // e.g. "237650000000"
       const text = message?.text?.body ?? '';
+
+      console.log(`📱 From ${phone}: ${text}`);
 
       if (!text) return { status: 'non_text_message' };
 
@@ -66,11 +71,14 @@ export class BotController {
         channel: 'whatsapp',
       });
 
+      console.log(`📤 Replying to ${phone}: ${reply}`);
+
       // Send reply back via Meta
       await this.metaSender.send(phone, reply);
 
       return { status: 'ok' };
-    } catch {
+    } catch (err) {
+      console.error('❌ Webhook error:', err);
       // Always return 200 to Meta — never let webhook fail
       return { status: 'error_handled' };
     }

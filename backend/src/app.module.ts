@@ -4,7 +4,6 @@ import { MongooseModule } from '@nestjs/mongoose';
 import type { MongooseModuleOptions } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { BotModule } from './bot/bot.module';
 import { UsersModule } from './users/users.module';
 import { ListingModule } from './listing/listing.module';
@@ -26,7 +25,6 @@ import { ListingModule } from './listing/listing.module';
     }),
     
     // Core App Modules
-    WhatsAppModule,
     BotModule,
     UsersModule,
     ListingModule,

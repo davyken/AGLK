@@ -21,7 +21,26 @@ export class UsersService {
     return !!user;
   }
 
-  // ─── Create new user ──────────────────────────────────────
+  // ─── Create stub on first contact ────────────────────────
+  // Called the moment a new user says "Hi" for the first time
+  // Saves state to DB immediately so Render restarts don't lose progress
+  async createStub(
+    phone: string,
+    channel: 'sms' | 'whatsapp',
+  ): Promise<UserDocument> {
+    const user = new this.userModel({
+      phone,
+      name: 'unknown',         // overwritten in step 2
+      role: 'farmer',          // overwritten in step 1
+      location: 'unknown',     // overwritten in step 3
+      preferredChannel: channel,
+      lastChannelUsed: channel,
+      conversationState: 'AWAITING_ROLE',
+    });
+    return user.save();
+  }
+
+  // ─── Create fully registered user ────────────────────────
   async create(dto: CreateUserDto): Promise<UserDocument> {
     const user = new this.userModel({
       ...dto,
