@@ -26,7 +26,7 @@ export class RegistrationFlowService {
       await this.usersService.createStub(phone, channel);
       return this.msg(
         channel,
-        `👋 Welcome to FarmerConnect!\n\nAre you a:\n1️⃣ Farmer (I sell produce)\n2️⃣ Buyer (I buy produce)\n\nReply 1 or 2`,
+        `👋 Welcome to AGRO-LINK!\n\nAre you a:\n1️⃣ Farmer (I sell produce)\n2️⃣ Buyer (I buy produce)\n\nReply 1 or 2`,
       );
     }
 

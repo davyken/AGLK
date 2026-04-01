@@ -32,7 +32,11 @@ export class BotService {
     // ── Not registered or mid-registration → registration flow
     if (!user || !isRegistered) {
       const reply = await this.registrationFlow.handle(phone, text, channel);
-      return reply!;
+      // Handle edge case where registration flow returns null unexpectedly
+      if (!reply) {
+        return this.helpMessage(channel);
+      }
+      return reply;
     }
 
     // ── Registered → main command router ──────────────────

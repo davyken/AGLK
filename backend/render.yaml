@@ -6,6 +6,18 @@ services:
     startCommand: npm run start:prod
     envVars:
       - key: NODE_VERSION
-        value: 22
+        value: "22"
       - key: NODE_ENV
         value: development
+      - key: PORT
+        value: "3000"
+      - key: MONGODB_URI
+        value: mongodb+srv://davykennang552_db_user:pYVUymuR2UajbRWX@agrolink.skguaek.mongodb.net/?appName=Agrolink
+      - key: META_PHONE_NUMBER_ID
+        value: "1053908681138945"
+      - key: META_ACCESS_TOKEN
+        value: EAARZCN2JIeoIBRMJReG3v0XZBCMtERoHGQQGP4hV9MDdQG0topc2bluwyLIPZC9XHNY2A7r1UB9ZAgFIzArhpZBnaZBS40ZBllrKgJlYP7P807YdOpH9wO68cgetFfHXhyZBeJnKDK6Xq8TIEQHHLFiYZBMqmsTEMxdDmnUFDR3CIZBH5nh3pJYfE955MagjvhgIhYy6ZARMZAQ9wIgFSfPg1LggfXhdKom0kBuf2PkC1cx1tIBfLRXX85ZB67bSemmhdHdDRxB2vY51cvvyFO654zyt73xChzgZDZD
+      - key: META_VERIFY_TOKEN
+        value: This_is_my_verified_token
+      - key: META_API_VERSION
+        value: v19.0
