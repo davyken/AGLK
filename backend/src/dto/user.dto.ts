@@ -45,6 +45,10 @@ export class CreateUserDto {
 
 export class UpdateUserDto {
   @IsOptional()
+  @IsEnum(['farmer', 'buyer'])
+  role?: string;
+
+  @IsOptional()
   @IsString()
   name?: string;
 
