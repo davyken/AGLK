@@ -59,7 +59,7 @@ export class ListingFlowService {
     text: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
-    const input = text.trim();
+    const input = this.normalizeCommand(text);
 
     if (pendingStates.has(phone)) {
       return this.handlePendingState(phone, input, channel);
@@ -81,6 +81,18 @@ export class ListingFlowService {
       channel,
       `❌ Invalid command.\n\nUse: SELL maize 10 bags\nor: BUY maize 20 bags`,
     );
+  }
+
+  private normalizeCommand(text: string): string {
+    const upper = text.trim().toUpperCase();
+    if (upper.startsWith('VENDRE')) return 'SELL' + upper.slice(6);
+    if (upper.startsWith('ACHETER')) return 'BUY' + upper.slice(7);
+    if (upper.startsWith('OFFRE')) return 'OFFER' + upper.slice(5);
+    if (upper === 'OUI') return 'YES';
+    if (upper === 'NON') return 'NO';
+    if (upper === 'AIDE') return 'HELP';
+    if (upper === 'SAUTER') return 'SKIP';
+    return text.trim();
   }
 
   private async handleSellCommand(
@@ -706,8 +718,8 @@ export class ListingFlowService {
   ): Promise<string> {
     const input = response.trim().toUpperCase();
 
-    // Handle SKIP command
-    if (input === 'SKIP') {
+    // Handle SKIP command (English and French)
+    if (input === 'SKIP' || input === 'SAUTER') {
       return this.createListingWithImage(phone, channel, pending, null, null);
     }
 

@@ -33,7 +33,7 @@ export class BotService {
     }
 
     // ── HELP command (works at any stage) ─────────────────
-    if (input === 'HELP') {
+    if (input === 'HELP' || input === 'AIDE') {
       return this.helpMessage(channel, detectedLang);
     }
 
@@ -46,6 +46,9 @@ export class BotService {
     if (input.startsWith('LANGUAGE') || input.startsWith('LANG')) {
       return this.handleLanguageCommand(phone, text, channel, detectedLang);
     }
+
+    // ── Normalized input (French → English) ────────────
+    const normalizedInput = this.normalizeCommand(input);
 
     const isRegistered = user?.conversationState === 'REGISTERED';
 
@@ -63,21 +66,21 @@ export class BotService {
         }
         
         // Route to listing flow
-        if (input.startsWith('SELL')) {
+        if (normalizedInput.startsWith('SELL')) {
           return await this.listingFlow.handle(phone, text, channel);
         }
         
-        if (input.startsWith('BUY')) {
+        if (normalizedInput.startsWith('BUY')) {
           return await this.listingFlow.handle(phone, text, channel);
         }
         
-        if (input.startsWith('OFFER')) {
+        if (normalizedInput.startsWith('OFFER')) {
           return await this.listingFlow.handle(phone, text, channel);
         }
         
         // YES/NO response from farmer - check if they have pending interest
-        if (input === 'YES' || input === 'NO') {
-          return this.listingFlow.handleFarmerResponse(phone, input, channel);
+        if (normalizedInput === 'YES' || normalizedInput === 'NO') {
+          return this.listingFlow.handleFarmerResponse(phone, normalizedInput, channel);
         }
         
         // No command recognized, show help
@@ -94,21 +97,21 @@ export class BotService {
       return this.listingFlow.handle(phone, text, channel);
     }
 
-    if (input.startsWith('SELL')) {
+    if (normalizedInput.startsWith('SELL')) {
       return await this.listingFlow.handle(phone, text, channel);
     }
 
-    if (input.startsWith('BUY')) {
+    if (normalizedInput.startsWith('BUY')) {
       return await this.listingFlow.handle(phone, text, channel);
     }
 
-    if (input.startsWith('OFFER')) {
+    if (normalizedInput.startsWith('OFFER')) {
       return await this.listingFlow.handle(phone, text, channel);
     }
 
     // YES/NO response from farmer - check if they have pending interest
-    if (input === 'YES' || input === 'NO') {
-      return this.listingFlow.handleFarmerResponse(phone, input, channel);
+    if (normalizedInput === 'YES' || normalizedInput === 'NO') {
+      return this.listingFlow.handleFarmerResponse(phone, normalizedInput, channel);
     }
 
     // ── Unrecognised command ───────────────────────────────
@@ -199,5 +202,21 @@ export class BotService {
     return role === 'farmer'
       ? `❓ Unknown command.\n\nTry:\nSELL maize 10 bags\n\nType HELP for all options.`
       : `❓ Unknown command.\n\nTry:\nBUY maize 20 bags\n\nType HELP for all options.`;
+  }
+
+  // ─── Normalize French/Pidgin commands to English ────────
+  private normalizeCommand(input: string): string {
+    const normalized = input.toUpperCase();
+
+    // Preserve original text after the command keyword for parsing (e.g. "VENDRE mais 10 sacs" → "SELL mais 10 sacs")
+    if (normalized.startsWith('VENDRE')) return 'SELL' + normalized.slice(6);
+    if (normalized.startsWith('ACHETER')) return 'BUY' + normalized.slice(7);
+    if (normalized.startsWith('OFFRE')) return 'OFFER' + normalized.slice(5);
+    if (normalized === 'OUI') return 'YES';
+    if (normalized === 'NON') return 'NO';
+    if (normalized === 'AIDE') return 'HELP';
+    if (normalized === 'SAUTER') return 'SKIP';
+
+    return normalized;
   }
 }
