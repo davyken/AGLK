@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: backend
+    env: node
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: development

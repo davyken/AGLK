@@ -7,10 +7,11 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "node --require ts-node/register src/main.ts",
-    "start:dev": "ts-node src/main.ts",
-    "start:debug": "ts-node --inspect src/main.ts",
+    "start": "node dist/main",
+    "start:dev": "npx nest start --watch",
+    "start:debug": "npx nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
@@ -21,6 +22,7 @@
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
+    "@types/node": "^22.19.15",
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.0.1",
     "@nestjs/mongoose": "^11.0.4",
@@ -55,7 +57,6 @@
     "@nestjs/testing": "^11.0.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
-    "@types/node": "^22.19.15",
     "@types/supertest": "^6.0.2",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.0.1",
@@ -70,7 +71,7 @@
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.7.3",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.20.0"
   },
   "jest": {
