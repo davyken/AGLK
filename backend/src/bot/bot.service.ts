@@ -57,9 +57,13 @@ export class BotService {
       return await this.listingFlow.handle(phone, text, channel);
     }
 
+    if (input.startsWith('OFFER')) {
+      return await this.listingFlow.handle(phone, text, channel);
+    }
+
+    // YES/NO response from farmer - check if they have pending interest
     if (input === 'YES' || input === 'NO') {
-      // → Hand off to MatchingFlow (Person 3 builds this)
-      return `🤝 Matching response noted: ${text}`;
+      return this.listingFlow.handleFarmerResponse(phone, input, channel);
     }
 
     // ── Unrecognised command ───────────────────────────────
@@ -90,7 +94,6 @@ export class BotService {
     ].join('\n');
   }
 
-  // ─── Unknown command ──────────────────────────────────────
   private unknownCommand(role: string, channel: 'sms' | 'whatsapp'): string {
     if (channel === 'sms') {
       return role === 'farmer'

@@ -21,7 +21,6 @@ export class BotController {
     private readonly config: ConfigService,
   ) {}
 
-  // ─── GET /bot/webhook — Meta verification (one-time) ─────
   @Get('webhook')
   verify(
     @Query('hub.mode') mode: string,
@@ -38,53 +37,39 @@ export class BotController {
     return res.status(403).send('Forbidden');
   }
 
-  // ─── POST /bot/webhook — Receive WhatsApp messages ───────
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
   async receiveWhatsApp(@Body() body: Record<string, any>) {
-    console.log('📥 WhatsApp webhook received:', JSON.stringify(body));
-    
     try {
-      // Extract message from Meta payload
       const entry = body?.entry?.[0];
       const change = entry?.changes?.[0];
       const value = change?.value;
       const messages = value?.messages;
 
       if (!messages || messages.length === 0) {
-        console.log('⚠️ No messages in payload');
         return { status: 'no_message' };
       }
 
       const message = messages[0];
-      const phone = message.from;           // e.g. "237650000000"
+      const phone = message.from;
       const text = message?.text?.body ?? '';
-
-      console.log(`📱 From ${phone}: ${text}`);
 
       if (!text) return { status: 'non_text_message' };
 
-      // Process through bot
       const reply = await this.botService.handleMessage({
         phone,
         text,
         channel: 'whatsapp',
       });
 
-      console.log(`📤 Replying to ${phone}: ${reply}`);
-
-      // Send reply back via Meta
       await this.metaSender.send(phone, reply);
 
       return { status: 'ok' };
-    } catch (err) {
-      console.error('❌ Webhook error:', err);
-      // Always return 200 to Meta — never let webhook fail
+    } catch {
       return { status: 'error_handled' };
     }
   }
 
-  // ─── POST /bot/sms — Receive SMS (Africa's Talking etc.) ──
   @Post('sms')
   @HttpCode(HttpStatus.OK)
   async receiveSms(@Body() body: Record<string, any>) {
@@ -100,7 +85,6 @@ export class BotController {
         channel: 'sms',
       });
 
-      // SMS reply handled by gateway (return text in body for some providers)
       return { message: reply };
     } catch {
       return { status: 'error_handled' };

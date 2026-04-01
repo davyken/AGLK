@@ -7,9 +7,10 @@ import { ListingFlowService } from './listing.flow';
 import { UsersModule } from '../users/users.module';
 import { ListingModule } from '../listing/listing.module';
 import { PriceModule } from '../price/price.module';
+import { MatchingModule } from '../matching/matching.module';
 
 @Module({
-  imports: [UsersModule, ListingModule, PriceModule], // gives access to UsersService, ListingService, and PriceService
+  imports: [UsersModule, ListingModule, PriceModule, MatchingModule], // gives access to all services
   controllers: [BotController],
   providers: [
     BotService,
