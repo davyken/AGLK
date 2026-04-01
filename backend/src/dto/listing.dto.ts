@@ -41,6 +41,14 @@ export class CreateListingDto {
   @IsOptional()
   @IsBoolean()
   acceptedSuggestion?: boolean;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  imageMediaId?: string;
 }
 
 export class UpdateListingDto {
@@ -67,4 +75,12 @@ export class UpdateListingDto {
   @IsOptional()
   @IsEnum(['active', 'matched', 'completed', 'cancelled'])
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  imageMediaId?: string;
 }

@@ -12,6 +12,8 @@ import type { Response } from 'express';
 import { BotService } from './bot.service';
 import { MetaSenderService } from './meta-sender.service';
 import { ConfigService } from '@nestjs/config';
+import { UsersService } from '../users/users.service';
+import { ListingFlowService } from './listing.flow';
 
 @Controller('bot')
 export class BotController {
@@ -19,6 +21,8 @@ export class BotController {
     private readonly botService: BotService,
     private readonly metaSender: MetaSenderService,
     private readonly config: ConfigService,
+    private readonly usersService: UsersService,
+    private readonly listingFlow: ListingFlowService,
   ) {}
 
   @Get('webhook')
@@ -53,7 +57,25 @@ export class BotController {
       const message = messages[0];
       const phone = message.from;
       const text = message?.text?.body ?? '';
+      const image = message?.image;
+      const audio = message?.audio;
 
+      // Handle image message - farmer sending product photo
+      if (image) {
+        const imageUrl = image.link; // Direct URL if available
+        const imageMediaId = image.id; // Media ID for uploaded images
+        
+        return this.handleMediaMessage(phone, 'image', imageUrl, imageMediaId);
+      }
+
+      // Handle audio/voice note
+      if (audio) {
+        const audioMediaId = audio.id;
+        
+        return this.handleMediaMessage(phone, 'audio', null, audioMediaId);
+      }
+
+      // Handle regular text message
       if (!text) return { status: 'non_text_message' };
 
       const reply = await this.botService.handleMessage({
@@ -66,6 +88,52 @@ export class BotController {
 
       return { status: 'ok' };
     } catch {
+      return { status: 'error_handled' };
+    }
+  }
+
+  /**
+   * Handle media messages (images, voice notes)
+   */
+  private async handleMediaMessage(
+    phone: string,
+    mediaType: 'image' | 'audio',
+    mediaUrl: string | null,
+    mediaId: string | null,
+  ): Promise<{ status: string }> {
+    try {
+      // Check if user is registered
+      const user = await this.usersService.findByPhone(phone);
+      
+      if (!user || user.conversationState !== 'REGISTERED') {
+        const reply = 'Please register first. Reply Hi to start.';
+        await this.metaSender.send(phone, reply);
+        return { status: 'not_registered' };
+      }
+
+      if (mediaType === 'image') {
+        // Handle image - check if user is in pending sell state
+        if (this.listingFlow.isInImageState(phone)) {
+          await this.listingFlow.handleImage(phone, mediaUrl, mediaId);
+          return { status: 'image_processed' };
+        }
+
+        // Otherwise, ask if they want to add image to a new listing
+        const reply = '📷 Image received!\n\nTo add this image to your listing, use:\nSELL maize 10 bags\n\nThen reply with this image after entering the price.\n\nOr type HELP for options.';
+        await this.metaSender.send(phone, reply);
+        return { status: 'image_received' };
+      }
+
+      if (mediaType === 'audio') {
+        // Handle voice note - respond with text
+        const reply = '🎤 Voice note received!\n\nI can\'t process voice notes directly yet.\n\nPlease type your message or:\n- SELL maize 10 bags\n- BUY maize 20 bags\n\nType HELP for options.';
+        await this.metaSender.send(phone, reply);
+        return { status: 'audio_received' };
+      }
+
+      return { status: 'ok' };
+    } catch (error) {
+      console.error('Media handling error:', error);
       return { status: 'error_handled' };
     }
   }

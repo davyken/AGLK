@@ -120,6 +120,42 @@ export class ListingService {
       .exec();
   }
 
+  // Advanced search with filters - product, location, and price range
+  async findWithFilters(
+    product: string,
+    options: {
+      location?: string;
+      minPrice?: number;
+      maxPrice?: number;
+      type?: 'sell' | 'buy';
+    },
+  ): Promise<ListingDocument[]> {
+    const query: any = {
+      product: product.toLowerCase(),
+      status: 'active',
+    };
+
+    if (options.type) {
+      query.type = options.type;
+    }
+
+    if (options.location) {
+      query.location = options.location.toLowerCase();
+    }
+
+    if (options.minPrice !== undefined || options.maxPrice !== undefined) {
+      query.price = {};
+      if (options.minPrice !== undefined) {
+        query.price.$gte = options.minPrice;
+      }
+      if (options.maxPrice !== undefined) {
+        query.price.$lte = options.maxPrice;
+      }
+    }
+
+    return this.listingModel.find(query).exec();
+  }
+
   // Find all active listings - maybe for the main feed
   async findActiveListings(): Promise<ListingDocument[]> {
     return this.listingModel.find({ status: 'active' }).exec();

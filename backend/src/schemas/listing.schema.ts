@@ -15,7 +15,7 @@ export class Listing {
   userLocation: string;
 
   @Prop({ required: true, enum: ['sell', 'buy'] })
-  type: string; // sell = farmer listing | buy = buyer request
+  type: string;
 
   @Prop({ required: true, lowercase: true, trim: true })
   product: string;
@@ -25,6 +25,12 @@ export class Listing {
 
   @Prop({ default: 'bags' })
   unit: string;
+
+  @Prop({ default: null })
+  imageUrl: string;
+
+  @Prop({ default: null })
+  imageMediaId: string;
 
   
   @Prop({ default: null })

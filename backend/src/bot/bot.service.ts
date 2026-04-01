@@ -77,6 +77,8 @@ export class BotService {
         'FarmerConnect Help:',
         'SELL maize 10 bags',
         'BUY maize 20 bags',
+        'BUY maize 20 bags @yaounde (filter by city)',
+        'BUY maize 20 bags #10000-20000 (filter by price)',
         'HELP - show this menu',
       ].join('\n');
     }
@@ -86,9 +88,18 @@ export class BotService {
       '',
       '👨‍🌾 *Farmer commands:*',
       'SELL maize 10 bags',
+      '  Then send an image of your product!',
       '',
       '🏪 *Buyer commands:*',
       'BUY maize 20 bags',
+      'BUY maize 20 bags @yaounde (filter by city)',
+      'BUY maize 20 bags #10000-20000 (price range)',
+      'BUY maize 20 bags @yaounde #15000-25000 (city + price)',
+      '',
+      '💡 *Tips:*',
+      '- Use @ before city name to filter by location',
+      '- Use #min-max for price range (e.g. #10000-20000)',
+      '- Add an image when selling to attract buyers!',
       '',
       'Reply HELP anytime to see this menu.',
     ].join('\n');

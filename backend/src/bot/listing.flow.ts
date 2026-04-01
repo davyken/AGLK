@@ -9,12 +9,15 @@ import { MetaSenderService } from './meta-sender.service';
 // Simple in-memory store for conversation state
 // In production, this should be in Redis or database
 interface PendingState {
-  type: 'sell' | 'buy_select';
+  type: 'sell' | 'sell_waiting_image' | 'buy_select';
   product: string;
   quantity: number;
   unit: string;
   userPhone: string;
   userRole: string;
+  price?: number;
+  imageUrl?: string;
+  imageMediaId?: string;
   listings?: Array<{
     id: string;
     userPhone: string;
@@ -22,6 +25,8 @@ interface PendingState {
     location: string;
     quantity: number;
     price: number;
+    imageUrl?: string;
+    imageMediaId?: string;
   }>;
 }
 
@@ -191,9 +196,20 @@ export class ListingFlowService {
       }
 
       // Search for matching SELL listings for this product
-      const matchingListings = await this.listingService.findByProduct(parsed.product);
+      // Use filters if location or price range is provided
+      let matchingListings;
+      if (parsed.location || parsed.minPrice || parsed.maxPrice) {
+        matchingListings = await this.listingService.findWithFilters(parsed.product, {
+          location: parsed.location,
+          minPrice: parsed.minPrice,
+          maxPrice: parsed.maxPrice,
+          type: 'sell',
+        });
+      } else {
+        matchingListings = await this.listingService.findByProduct(parsed.product);
+      }
       
-      // Filter to active sell listings
+      // Filter to active sell listings (if not already filtered by type)
       const sellListings = matchingListings.filter(
         (l) => l.type === 'sell' && l.status === 'active'
       );
@@ -241,6 +257,8 @@ export class ListingFlowService {
           location: l.userLocation,
           quantity: l.quantity,
           price: l.price || 0,
+          imageUrl: l.imageUrl,
+          imageMediaId: l.imageMediaId,
         })),
       });
 
@@ -251,12 +269,37 @@ export class ListingFlowService {
         message += `${index + 1}️⃣ ${listing.userName}\n`;
         message += `   📦 ${listing.quantity} ${listing.unit}\n`;
         message += `   💰 ${this.formatPrice(listing.price || 0)}\n`;
-        message += `   📍 ${listing.userLocation}\n\n`;
+        message += `   📍 ${listing.userLocation}\n`;
+        if (listing.imageUrl || listing.imageMediaId) {
+          message += `   📷 Photo available\n`;
+        }
+        message += `\n`;
       });
 
       message += `Reply with the number (1-${topListings.length}) to select a farmer.`;
 
-      return this.msg(channel, message);
+
+      // Send text message first
+      await this.metaSender.send(phone, message);
+
+      // Send images for each listing that has images
+      for (const listing of topListings) {
+        if (listing.imageMediaId) {
+          await this.metaSender.sendImageByMediaId(
+            phone,
+            listing.imageMediaId,
+            `${listing.userName}'s ${listing.product}`
+          );
+        } else if (listing.imageUrl) {
+          await this.metaSender.sendImage(
+            phone,
+            listing.imageUrl,
+            `${listing.userName}'s ${listing.product}`
+          );
+        }
+      }
+
+      return '';
     } catch (error) {
       console.error('Buy command error:', error);
       return this.msg(
@@ -279,6 +322,11 @@ export class ListingFlowService {
     // SELL FLOW - Price selection
     if (pending.type === 'sell') {
       return this.handleSellPending(phone, response, channel, pending);
+    }
+
+    // SELL FLOW - Waiting for image
+    if (pending.type === 'sell_waiting_image') {
+      return this.handleSellWaitingImage(phone, response, channel, pending);
     }
 
     // BUY FLOW - Select farmer
@@ -307,34 +355,24 @@ export class ListingFlowService {
           return this.msg(channel, `❌ Price data unavailable. Please try again.`);
         }
         
-        const dto: CreateListingDto = {
-          type: 'sell',
+        // Change to waiting for image state
+        pendingStates.set(phone, {
+          type: 'sell_waiting_image',
           product: pending.product,
           quantity: pending.quantity,
           unit: pending.unit,
-          marketAvgPrice: priceData.avg,
-          marketMinPrice: priceData.low,
-          marketMaxPrice: priceData.high,
+          userPhone: phone,
+          userRole: pending.userRole,
+          // Store the accepted price
           price: priceData.suggested,
-          priceType: 'auto',
-          acceptedSuggestion: true,
-        };
-
-        const listing = await this.listingService.create(dto, phone);
-
-        pendingStates.delete(phone);
-
-
+        });
 
         return this.msg(
           channel,
-          `✅ *Listing Created!*\n\n` +
-            `🌽 Product: ${listing.product}\n` +
-            `Quantity: ${listing.quantity} ${listing.unit}\n` +
-            `Price: ${this.formatPrice(listing.price)}\n` +
-            `Location: ${listing.location}\n\n` +
-            `📋 Listing ID: ${listing._id}\n\n` +
-            `👨‍🌾 Type HELP for more options.`,
+          `📷 Would you like to add a photo of your product?
+
+` +
+            `Send me the image now, or reply SKIP to create listing without an image.`,
         );
       } catch (error) {
         console.error('Price acceptance error:', error);
@@ -349,7 +387,7 @@ export class ListingFlowService {
         channel,
         `💰 Please enter your custom price.\n\n` +
           `Example: 20000\n\n` +
-          `Reply with the price you want to set.`,
+          `You can also send an image of your product after setting the price!`,
       );
     }
 
@@ -359,31 +397,23 @@ export class ListingFlowService {
       try {
         const priceData = await this.priceService.getPrice(pending.product);
 
-        const dto: CreateListingDto = {
-          type: 'sell',
+        // Change to waiting for image state
+        pendingStates.set(phone, {
+          type: 'sell_waiting_image',
           product: pending.product,
           quantity: pending.quantity,
           unit: pending.unit,
-          marketAvgPrice: priceData?.avg,
-          marketMinPrice: priceData?.low,
-          marketMaxPrice: priceData?.high,
+          userPhone: phone,
+          userRole: pending.userRole,
           price: customPrice,
-          priceType: 'manual',
-        };
-
-        const listing = await this.listingService.create(dto, phone);
-
-        pendingStates.delete(phone);
+        });
 
         return this.msg(
           channel,
-          `✅ *Listing Created!*\n\n` +
-            `🌽 Product: ${listing.product}\n` +
-            `Quantity: ${listing.quantity} ${listing.unit}\n` +
-            `Price: ${this.formatPrice(listing.price)} (custom)\n` +
-            `Location: ${listing.location}\n\n` +
-            `📋 Listing ID: ${listing._id}\n\n` +
-            `👨‍🌾 Type HELP for more options.`,
+          `📷 Would you like to add a photo of your product?
+
+` +
+            `Send me the image now, or reply SKIP to create listing without an image.`,
         );
       } catch (error) {
         console.error('Custom price listing error:', error);
@@ -490,7 +520,15 @@ export class ListingFlowService {
 
   private parseListingCommand(
     command: string,
-  ): { type: 'sell' | 'buy'; product: string; quantity: number; unit: string } | null {
+  ): { 
+    type: 'sell' | 'buy'; 
+    product: string; 
+    quantity: number; 
+    unit: string;
+    location?: string;
+    minPrice?: number;
+    maxPrice?: number;
+  } | null {
     const parts = command.trim().toLowerCase().split(/\s+/);
 
     if (parts.length < 3) {
@@ -502,10 +540,52 @@ export class ListingFlowService {
       return null;
     }
 
-    // Find the last part that is a number (quantity)
+    // Check for filter flags: @location, #min-max, $price
+    let location: string | undefined;
+    let minPrice: number | undefined;
+    let maxPrice: number | undefined;
+
+    let product = '';
     let quantityIndex = -1;
+
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+
+      // Location filter: @yaounde
+      if (part.startsWith('@')) {
+        location = part.substring(1);
+        continue;
+      }
+
+      // Price range filter: #10000-20000
+      if (part.startsWith('#')) {
+        const priceRange = part.substring(1).split('-');
+        if (priceRange.length === 2) {
+          minPrice = parseInt(priceRange[0], 10);
+          maxPrice = parseInt(priceRange[1], 10);
+        }
+        continue;
+      }
+
+      // Check if this is the quantity (last number in command)
+      if (/^\d+$/.test(part) && quantityIndex === -1) {
+        // Find the last number for quantity
+        for (let j = parts.length - 1; j >= 2; j--) {
+          if (/^\d+$/.test(parts[j])) {
+            quantityIndex = j;
+            break;
+          }
+        }
+      }
+    }
+
+    // Find the last part that is a number (quantity)
+    quantityIndex = -1;
     for (let i = parts.length - 1; i >= 2; i--) {
-      if (/^\d+$/.test(parts[i])) {
+      const part = parts[i];
+      // Skip if it's a filter
+      if (part.startsWith('@') || part.startsWith('#')) continue;
+      if (/^\d+$/.test(part)) {
         quantityIndex = i;
         break;
       }
@@ -515,15 +595,29 @@ export class ListingFlowService {
       return null;
     }
 
-    const product = parts.slice(1, quantityIndex).join(' ');
-    const quantity = parseInt(parts[quantityIndex], 10);
-    const unit = parts[quantityIndex + 1] || 'bags';
+    // Product is everything between type and quantity (excluding filters)
+    const productParts: string[] = [];
+    for (let i = 1; i < quantityIndex; i++) {
+      const part = parts[i];
+      // Skip filter parts
+      if (!part.startsWith('@') && !part.startsWith('#')) {
+        productParts.push(part);
+      }
+    }
+    product = productParts.join(' ');
 
-    if (!product || quantity <= 0) {
+    if (!product) {
       return null;
     }
 
-    return { type, product, quantity, unit };
+    const quantity = parseInt(parts[quantityIndex], 10);
+    const unit = parts[quantityIndex + 1] || 'bags';
+
+    if (quantity <= 0) {
+      return null;
+    }
+
+    return { type, product, quantity, unit, location, minPrice, maxPrice };
   }
 
   private parsePrice(text: string): number | null {
@@ -575,6 +669,114 @@ export class ListingFlowService {
 
   isInPriceState(phone: string): boolean {
     return pendingStates.has(phone);
+  }
+
+  /**
+   * Check if user is in image-waiting state
+   */
+  isInImageState(phone: string): boolean {
+    const state = pendingStates.get(phone);
+    return state?.type === 'sell_waiting_image';
+  }
+
+  /**
+   * Handle image received from user during listing flow
+   */
+  async handleImage(
+    phone: string,
+    imageUrl: string | null,
+    imageMediaId: string | null,
+  ): Promise<string> {
+    const pending = pendingStates.get(phone);
+    if (!pending || pending.type !== 'sell_waiting_image') {
+      return `❌ No pending listing. Use SELL command to create a new listing.`;
+    }
+
+    return this.createListingWithImage(phone, 'whatsapp', pending, imageUrl, imageMediaId);
+  }
+
+  /**
+   * Handle state when farmer is waiting to add image
+   */
+  private async handleSellWaitingImage(
+    phone: string,
+    response: string,
+    channel: 'sms' | 'whatsapp',
+    pending: PendingState,
+  ): Promise<string> {
+    const input = response.trim().toUpperCase();
+
+    // Handle SKIP command
+    if (input === 'SKIP') {
+      return this.createListingWithImage(phone, channel, pending, null, null);
+    }
+
+    // Invalid response - they should either send an image or type SKIP
+    return this.msg(
+      channel,
+      `📷 Please send a photo of your product, or reply SKIP to skip.`,
+    );
+  }
+
+  /**
+   * Create listing with optional image
+   */
+  private async createListingWithImage(
+    phone: string,
+    channel: 'sms' | 'whatsapp',
+    pending: PendingState,
+    imageUrl: string | null,
+    imageMediaId: string | null,
+  ): Promise<string> {
+    try {
+      const priceData = await this.priceService.getPrice(pending.product);
+
+      const dto: CreateListingDto = {
+        type: 'sell',
+        product: pending.product,
+        quantity: pending.quantity,
+        unit: pending.unit,
+        marketAvgPrice: priceData?.avg,
+        marketMinPrice: priceData?.low,
+        marketMaxPrice: priceData?.high,
+        price: pending.price,
+        priceType: pending.price ? 'manual' : 'auto',
+        imageUrl: imageUrl || undefined,
+        imageMediaId: imageMediaId || undefined,
+      };
+
+      const listing = await this.listingService.create(dto, phone);
+
+      pendingStates.delete(phone);
+
+      let message = `✅ *Listing Created!*\n\n` +
+        `🌽 Product: ${listing.product}\n` +
+        `Quantity: ${listing.quantity} ${listing.unit}\n` +
+        `Price: ${this.formatPrice(listing.price)}\n` +
+        `Location: ${listing.location}\n\n` +
+        `📋 Listing ID: ${listing._id}\n\n`;
+
+      if (imageUrl || imageMediaId) {
+        message += `📷 Photo added to listing!\n\n`;
+        // Send confirmation message with image
+        await this.metaSender.send(phone, message);
+        // Send the image
+        if (imageMediaId) {
+          await this.metaSender.sendImageByMediaId(phone, imageMediaId, `📷 Your ${listing.product} listing image`);
+        } else if (imageUrl) {
+          await this.metaSender.sendImage(phone, imageUrl, `📷 Your ${listing.product} listing image`);
+        }
+        return ''; // Already sent the message above
+      }
+
+      message += `👨‍🌾 Type HELP for more options.`;
+
+      return this.msg(channel, message);
+    } catch (error) {
+      console.error('Create listing with image error:', error);
+      pendingStates.delete(phone);
+      return this.msg(channel, `❌ Failed to create listing. Please try again.`);
+    }
   }
 
   // Handle OFFER command - Story 8: Make Offer
