@@ -29,7 +29,18 @@ export class CreateListingDto {
   @IsOptional()
   @IsString()
   location?: string;
-  
+
+  @IsOptional()
+  @IsNumber()
+  price?: number;
+
+  @IsOptional()
+  @IsEnum(['manual', 'auto', 'none'])
+  priceType?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  acceptedSuggestion?: boolean;
 }
 
 export class UpdateListingDto {
