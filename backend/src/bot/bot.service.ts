@@ -47,7 +47,35 @@ export class BotService {
     // ── Not registered or mid-registration → registration flow
     if (!user || !isRegistered) {
       const reply = await this.registrationFlow.handle(phone, text, channel);
+      // If reply is null, user is fully registered → continue to listing flow
       if (!reply) {
+        // User is registered, proceed to main command router
+        await this.usersService.updateChannel(phone, channel);
+        
+        // Check if user is in pending price state (waiting for price choice)
+        if (this.listingFlow.isInPriceState(phone)) {
+          return this.listingFlow.handle(phone, text, channel);
+        }
+        
+        // Route to listing flow
+        if (input.startsWith('SELL')) {
+          return await this.listingFlow.handle(phone, text, channel);
+        }
+        
+        if (input.startsWith('BUY')) {
+          return await this.listingFlow.handle(phone, text, channel);
+        }
+        
+        if (input.startsWith('OFFER')) {
+          return await this.listingFlow.handle(phone, text, channel);
+        }
+        
+        // YES/NO response from farmer - check if they have pending interest
+        if (input === 'YES' || input === 'NO') {
+          return this.listingFlow.handleFarmerResponse(phone, input, channel);
+        }
+        
+        // No command recognized, show help
         return this.helpMessage(channel, detectedLang);
       }
       return reply;
