@@ -148,7 +148,7 @@ export class BotService {
 
     if (channel === 'sms') {
       return [
-        'FarmerConnect Help:',
+        'Agro-link Help:',
         'SELL maize 10 bags',
         'BUY maize 20 bags',
         'BUY maize 20 bags @yaounde (filter by city)',
@@ -159,7 +159,7 @@ export class BotService {
     }
 
     return [
-      '📋 *FarmerConnect Help*',
+      '📋 *Agro-link Help*',
       '',
       '👨‍🌾 *Farmer commands:*',
       'SELL maize 10 bags',
