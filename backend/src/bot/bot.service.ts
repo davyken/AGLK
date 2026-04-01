@@ -23,28 +23,32 @@ export class BotService {
     const { phone, text, channel } = msg;
     const input = text.trim().toUpperCase();
 
+    // Get user to check preferred language
+    const user = await this.usersService.findByPhone(phone);
+    
+    // Auto-detect language from message if user not registered
+    let detectedLang = user?.preferredLanguage || 'english';
+    if (!user || user.conversationState !== 'REGISTERED') {
+      detectedLang = this.translation.detectLanguage(text);
+    }
+
     // ── HELP command (works at any stage) ─────────────────
     if (input === 'HELP') {
-      const user = await this.usersService.findByPhone(phone);
-      return this.helpMessage(channel, user?.preferredLanguage);
+      return this.helpMessage(channel, detectedLang);
     }
 
     // ── LANGUAGE command (works at any stage) ───────────────
     if (input.startsWith('LANGUAGE') || input.startsWith('LANG')) {
-      return this.handleLanguageCommand(phone, text, channel);
+      return this.handleLanguageCommand(phone, text, channel, detectedLang);
     }
-
-    // ── Check if user is registered ───────────────────────
-    const user = await this.usersService.findByPhone(phone);
 
     const isRegistered = user?.conversationState === 'REGISTERED';
 
     // ── Not registered or mid-registration → registration flow
     if (!user || !isRegistered) {
       const reply = await this.registrationFlow.handle(phone, text, channel);
-      // Handle edge case where registration flow returns null unexpectedly
       if (!reply) {
-        return this.helpMessage(channel);
+        return this.helpMessage(channel, detectedLang);
       }
       return reply;
     }
@@ -83,6 +87,7 @@ export class BotService {
     phone: string,
     text: string,
     channel: 'sms' | 'whatsapp',
+    currentLang: string,
   ): Promise<string> {
     const input = text.trim().toLowerCase();
 
@@ -103,9 +108,7 @@ export class BotService {
     }
 
     // Show language selection menu
-    const user = await this.usersService.findByPhone(phone);
-    const lang = user?.preferredLanguage || 'english';
-    return this.translation.t(lang, 'selectLanguage');
+    return this.translation.t(currentLang, 'selectLanguage');
   }
 
   // ─── HELP message ────────────────────────────────────────

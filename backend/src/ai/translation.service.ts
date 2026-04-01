@@ -4,7 +4,6 @@ import { Injectable } from '@nestjs/common';
 export class TranslationService {
   private translations = {
     english: {
-      // Registration
       welcome: '👋 Welcome to AGRO-LINK!',
       chooseRole: 'Are you a:\n1️⃣ Farmer (I sell produce)\n2️⃣ Buyer (I buy produce)',
       invalidRole: '❌ Please reply 1 for Farmer or 2 for Buyer.',
@@ -17,20 +16,15 @@ export class TranslationService {
       enterNeeds: '🛒 What products do you need? Separate by commas.\n\nExample: maize, tomatoes, plantain',
       registeredFarmer: (name: string) => `✅ You are registered as a Farmer!\n\nWelcome ${name} 👨‍🌾\n\nTo list produce, type:\nSELL maize 10 bags\n\nType HELP anytime for options.`,
       registeredBuyer: (name: string) => `✅ You are registered as a Buyer!\n\nWelcome ${name} 🏪\n\nTo find produce, type:\nBUY maize 20 bags\n\nType HELP anytime for options.`,
-
-      // Language
       selectLanguage: '🌐 Select your preferred language:\n1️⃣ English\n2️⃣ Français (French)\n3️⃣ Pidgin',
       languageSet: '✅ Language set to English',
+      languageChanged: (lang: string) => `✅ Language set to ${lang}`,
       invalidLanguage: '❌ Please reply 1, 2, or 3 to select language.',
-
-      // Help
       helpTitle: '📋 FarmerConnect Help',
       farmerCommands: '👨‍🌾 Farmer commands:',
       buyerCommands: '🏪 Buyer commands:',
       tips: '💡 Tips:',
       helpReply: 'Reply HELP anytime to see this menu.',
-
-      // Listing
       marketPrice: (product: string) => `📊 *Market Price for ${product}*`,
       low: 'Low',
       average: 'Average',
@@ -49,26 +43,20 @@ export class TranslationService {
       listingId: '📋 Listing ID',
       imageAdded: '📷 Photo added to listing!',
       typeHelp: 'Type HELP for more options.',
-
-      // Buy
       foundListings: (count: number, product: string) => `🔍 Found ${count} farmer(s) with ${product}`,
       replyToSelect: 'Reply with the number to select a farmer.',
       noListingsFound: '🔍 *No listings found for',
       requestSaved: 'Your request has been saved.',
       requestId: '📋 Request ID',
       notifyWhenAvailable: "We'll notify you when farmers list this product.",
-
-      // Match
       newInterest: '🔔 *New Buyer Interest!*',
       buyerWants: 'A buyer wants your produce:',
       budget: 'Budget',
       respondYesNo: 'To respond, reply YES or NO.',
-
-      // General
       somethingWrong: '❌ Something went wrong. Start fresh with a new command.',
       notRegistered: '❌ You need to register first.\n\nReply Hi to start registration.',
-      onlyFarmers: (role: string) => `❌ Only farmers can sell. You are registered as a ${role}.`,
-      onlyBuyers: (role: string) => `❌ Only buyers can buy. You are registered as a ${role}.`,
+      onlyFarmers: (role: string) => `❌ Only farmers can sell. You are registered as ${role}.`,
+      onlyBuyers: (role: string) => `❌ Only buyers can buy. You are registered as ${role}.`,
       invalidFormat: '❌ Invalid format.\n\nUse: SELL maize 10 bags',
       invalidResponse: '❌ Invalid response.\n\nReply 1 or 2',
       imageReceived: '📷 Image received!\n\nTo add this image to your listing, use:\nSELL maize 10 bags\n\nThen reply with this image after entering the price.',
@@ -76,7 +64,6 @@ export class TranslationService {
     },
 
     french: {
-      // Registration
       welcome: '👋 Bienvenue sur AGRO-LINK !',
       chooseRole: 'Êtes-vous :\n1️⃣ Agriculteur (je vends des produits)\n2️⃣ Acheteur (j\'achète des produits)',
       invalidRole: '❌ Veuillez répondre 1 pour Agriculteur ou 2 pour Acheteur.',
@@ -89,20 +76,15 @@ export class TranslationService {
       enterNeeds: '🛒 De quels produits avez-vous besoin ? Séparez par des virgules.\n\nExemple: maize, tomates, plantain',
       registeredFarmer: (name: string) => `✅ Vous êtes enregistré comme Agriculteur !\n\nBienvenue ${name} 👨‍🌾\n\nPour lister des produits, tapez :\nVENDRE maize 10 sacs\n\nTapez AIDE pour les options.`,
       registeredBuyer: (name: string) => `✅ Vous êtes enregistré comme Acheteur !\n\nBienvenue ${name} 🏪\n\nPour trouver des produits, tapez :\nACHETER maize 20 sacs\n\nTapez AIDE pour les options.`,
-
-      // Language
       selectLanguage: '🌐 Sélectionnez votre langue préférée :\n1️⃣ English (Anglais)\n2️⃣ Français\n3️⃣ Pidgin',
       languageSet: '✅ Langue définie sur Français',
+      languageChanged: (lang: string) => `✅ Langue définie sur ${lang}`,
       invalidLanguage: '❌ Veuillez répondre 1, 2 ou 3 pour sélectionner la langue.',
-
-      // Help
       helpTitle: '📋 Aide FarmerConnect',
       farmerCommands: '👨‍🌾 Commandes Agriculteur :',
       buyerCommands: '🏪 Commandes Acheteur :',
       tips: '💡 Conseils :',
       helpReply: 'Répondez AIDE pour voir ce menu.',
-
-      // Listing
       marketPrice: (product: string) => `📊 *Prix du marché pour ${product}*`,
       low: 'Bas',
       average: 'Moyen',
@@ -121,22 +103,16 @@ export class TranslationService {
       listingId: '📋 ID de l\'annonce',
       imageAdded: '📷 Photo ajoutée à l\'annonce !',
       typeHelp: 'Tapez AIDE pour plus d\'options.',
-
-      // Buy
       foundListings: (count: number, product: string) => `🔍 Trouvé ${count} agriculteur(s) avec ${product}`,
       replyToSelect: 'Répondez avec le numéro pour sélectionner un agriculteur.',
       noListingsFound: '🔍 *Aucune annonce trouvée pour',
       requestSaved: 'Votre demande a été enregistrée.',
       requestId: '📋 ID de la demande',
       notifyWhenAvailable: 'Nous vousNotifierons lorsque les agriculteurs listeront ce produit.',
-
-      // Match
       newInterest: '🔔 *Nouvel intérêt d\'acheteur !*',
       buyerWants: 'Un acheteur veut vos produits :',
       budget: 'Budget',
       respondYesNo: 'Pour répondre, répondez OUI ou NON.',
-
-      // General
       somethingWrong: '❌ Quelque chose s\'est mal passé. Recommencez avec une nouvelle commande.',
       notRegistered: '❌ Vous devez d\'abord vous enregistrer.\n\nRépondez Salut pour commencer.',
       onlyFarmers: (role: string) => `❌ Seuls les agriculteurs peuvent vendre. Vous êtes enregistré comme ${role}.`,
@@ -148,7 +124,6 @@ export class TranslationService {
     },
 
     pidgin: {
-      // Registration
       welcome: '👋 Welcome to AGRO-LINK!',
       chooseRole: 'You be:\n1️⃣ Farmer (I sell produce)\n2️⃣ Buyer (I buy produce)',
       invalidRole: '❌ Please reply 1 for Farmer or 2 for Buyer.',
@@ -161,20 +136,15 @@ export class TranslationService {
       enterNeeds: '🛒 Wetin you need? Separate by commas.\n\nExample: maize, tomatoes, plantain',
       registeredFarmer: (name: string) => `✅ You don register as Farmer!\n\nWelcome ${name} 👨‍🌾\n\nTo list produce, type:\nSELL maize 10 bags\n\nType HELP for options.`,
       registeredBuyer: (name: string) => `✅ You don register as Buyer!\n\nWelcome ${name} 🏪\n\nTo find produce, type:\nBUY maize 20 bags\n\nType HELP for options.`,
-
-      // Language
       selectLanguage: '🌐 Choose your language:\n1️⃣ English\n2️⃣ Français (French)\n3️⃣ Pidgin',
       languageSet: '✅ Language don set to Pidgin',
+      languageChanged: (lang: string) => `✅ Language don set to ${lang}`,
       invalidLanguage: '❌ Please reply 1, 2, or 3.',
-
-      // Help
       helpTitle: '📋 FarmerConnect Help',
       farmerCommands: '👨‍🌾 Farmer commands:',
       buyerCommands: '🏪 Buyer commands:',
       tips: '💡 Tips:',
       helpReply: 'Type HELP for this menu.',
-
-      // Listing
       marketPrice: (product: string) => `📊 *Market Price for ${product}*`,
       low: 'Low',
       average: 'Average',
@@ -193,22 +163,16 @@ export class TranslationService {
       listingId: '📋 Listing ID',
       imageAdded: '📷 Picture don add to listing!',
       typeHelp: 'Type HELP for more options.',
-
-      // Buy
       foundListings: (count: number, product: string) => `🔍 Found ${count} farmer(s) with ${product}`,
       replyToSelect: 'Reply number to pick farmer.',
       noListingsFound: '🔍 *No listings found for',
       requestSaved: 'Your request don save.',
       requestId: '📋 Request ID',
       notifyWhenAvailable: 'We go notify you when farmers list this product.',
-
-      // Match
       newInterest: '🔔 *Buyer Dey Interest!*',
       buyerWants: 'One buyer want your produce:',
       budget: 'Budget',
       respondYesNo: 'To answer, reply YES or NO.',
-
-      // General
       somethingWrong: '❌ Something naim wrong. Start fresh.',
       notRegistered: '❌ You need register first.\n\nReply Hi to start.',
       onlyFarmers: (role: string) => `❌ Only farmers fit sell. You don register as ${role}.`,
@@ -219,6 +183,59 @@ export class TranslationService {
       voiceReceived: '🎤 Voice message don process!',
     },
   };
+
+  // Keywords for language detection
+  private frenchKeywords = [
+    'bonjour', 'bonsoir', 'je', 'vous', 'vouloir', 'acheter', 'vendre',
+    'produit', 'mais', 'manioc', 'tomate', 'prix', 'quantité', 'sac',
+    'sacs', ' localisation', 'enregistrer', 'merci', 'oui', 'non',
+    'agriculteur', 'acheteur', 'bienvenue', 'être', 'comment', 's\'il',
+    'vous plaît', 'merci', 'aide', 'trouver', 'chercher', 'disponible',
+  ];
+
+  private pidginKeywords = [
+    'you', 'don', 'dey', 'fit', 'wana', 'want', 'buy', 'sell',
+    'maize', 'cassava', 'tomatoes', 'price', 'bags', 'where',
+    'na', 'for', 'make', 'e.g', 'e.g.', 'naim', 'wetin', 'hello',
+    'hi', 'go', 'go be', 'your', 'my', 'give', 'abeg', 'pls', 'please',
+    'dis', 'dat', 'get', 'got', 'no', 'yes', '号', 'we', 'go', 'come',
+  ];
+
+  /**
+   * Auto-detect language from user message
+   */
+  detectLanguage(text: string): string {
+    const lowerText = text.toLowerCase();
+    
+    let frenchScore = 0;
+    let pidginScore = 0;
+
+    // Check French keywords
+    for (const keyword of this.frenchKeywords) {
+      if (lowerText.includes(keyword)) {
+        frenchScore++;
+      }
+    }
+
+    // Check Pidgin keywords
+    for (const keyword of this.pidginKeywords) {
+      if (lowerText.includes(keyword)) {
+        pidginScore++;
+      }
+    }
+
+    // Determine language based on scores
+    if (frenchScore > pidginScore && frenchScore >= 2) {
+      return 'french';
+    }
+
+    if (pidginScore > frenchScore && pidginScore >= 2) {
+      return 'pidgin';
+    }
+
+    // Default to English
+    return 'english';
+  }
 
   /**
    * Get translation for a key in the specified language
