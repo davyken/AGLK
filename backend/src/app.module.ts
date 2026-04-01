@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 import { BotModule } from './bot/bot.module';
 import { UsersModule } from './users/users.module';
 import { ListingModule } from './listing/listing.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -23,6 +24,9 @@ import { ListingModule } from './listing/listing.module';
       }),
       inject: [ConfigService],
     }),
+    
+    // AI Module for speech-to-text
+    AiModule,
     
     // Core App Modules
     BotModule,

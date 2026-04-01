@@ -14,6 +14,7 @@ import { MetaSenderService } from './meta-sender.service';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { ListingFlowService } from './listing.flow';
+import { SpeechToTextService } from '../ai/speech-to-text.service';
 
 @Controller('bot')
 export class BotController {
@@ -23,6 +24,7 @@ export class BotController {
     private readonly config: ConfigService,
     private readonly usersService: UsersService,
     private readonly listingFlow: ListingFlowService,
+    private readonly speechToText: SpeechToTextService,
   ) {}
 
   @Get('webhook')
@@ -125,10 +127,39 @@ export class BotController {
       }
 
       if (mediaType === 'audio') {
-        // Handle voice note - respond with text
-        const reply = '🎤 Voice note received!\n\nI can\'t process voice notes directly yet.\n\nPlease type your message or:\n- SELL maize 10 bags\n- BUY maize 20 bags\n\nType HELP for options.';
-        await this.metaSender.send(phone, reply);
-        return { status: 'audio_received' };
+        // Handle voice note - transcribe using AI
+        try {
+          const transcription = await this.speechToText.transcribe(
+            mediaUrl || undefined,
+            mediaId || undefined,
+          );
+
+          if (!transcription) {
+            const reply = '🎤 Sorry, I could not understand the voice note.\n\n' +
+              'Please type your message or:\n' +
+              '- SELL maize 10 bags\n' +
+              '- BUY maize 20 bags\n\n' +
+              'Type HELP for options.';
+            await this.metaSender.send(phone, reply);
+            return { status: 'transcription_failed' };
+          }
+
+          // Process the transcribed text as a command
+          const reply = await this.botService.handleMessage({
+            phone,
+            text: transcription,
+            channel: 'whatsapp',
+          });
+
+          await this.metaSender.send(phone, reply);
+          return { status: 'voice_processed' };
+        } catch (error) {
+          console.error('Voice transcription error:', error);
+          const reply = '🎤 Sorry, I could not process the voice note.\n\n' +
+            'Please try typing your message.';
+          await this.metaSender.send(phone, reply);
+          return { status: 'transcription_error' };
+        }
       }
 
       return { status: 'ok' };
