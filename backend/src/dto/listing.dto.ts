@@ -1,0 +1,56 @@
+import { IsString, IsNotEmpty, IsEnum, IsNumber, IsOptional, IsBoolean } from 'class-validator';
+export class CreateListingDto {
+  @IsEnum(['sell', 'buy'])
+  type: string; // sell = farmer listing | buy = buyer request
+
+  @IsString()
+  @IsNotEmpty()
+  product: string;
+
+  @IsNumber()
+  quantity: number;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsNumber()
+  marketMinPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  marketAvgPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  marketMaxPrice?: number;
+
+  
+}
+
+export class UpdateListingDto {
+  @IsOptional()
+  @IsNumber()
+  quantity?: number;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsNumber()
+  price?: number;
+
+  @IsOptional()
+  @IsEnum(['manual', 'auto', 'none'])
+  priceType?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  acceptedSuggestion?: boolean;
+
+  @IsOptional()
+  @IsEnum(['active', 'matched', 'completed', 'cancelled'])
+  status?: string;
+}

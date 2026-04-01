@@ -58,4 +58,4 @@ export class User {
 export const UserSchema = SchemaFactory.createForClass(User);
 
 // Index for fast lookup by phone
-UserSchema.index({ phone: 1 });
+// UserSchema.index({ phone: 1 });

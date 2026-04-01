@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { BotModule } from './bot/bot.module';
 import { UsersModule } from './users/users.module';
+import { ListingModule } from './listing/listing.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { UsersModule } from './users/users.module';
     WhatsAppModule,
     BotModule,
     UsersModule,
+    ListingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

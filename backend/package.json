@@ -24,6 +24,7 @@
     "@nestjs/common": "^11.0.1",
     "@types/node": "^22.19.15",
     "@nestjs/config": "^4.0.3",
+    "@nestjs/mapped-types": "*",
     "@nestjs/core": "^11.0.1",
     "@nestjs/mongoose": "^11.0.4",
     "@nestjs/platform-express": "^11.0.1",
