@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { BotModule } from './bot/bot.module';
 import { UsersModule } from './users/users.module';
+import { ListingModule } from './listing/listing.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { UsersModule } from './users/users.module';
     // Core App Modules
     BotModule,
     UsersModule,
+    ListingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
