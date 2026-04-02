@@ -1,42 +1,40 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { UsersService } from '../users/users.service';
-import { ListingService } from '../listing/listing.service';
-import { MatchingService } from '../matching/matching.service';
-import { MatchResult } from '../matching/matching.service';
-import { MetaSenderService } from '../bot/meta-sender.service';
+import { OnEvent } from '@nestjs/event-emitter';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Listing, ListingDocument } from '../common/schemas/listing.schema';
+import { User, UserDocument } from '../common/schemas/user.schema';
+import { MatchingService, MatchResult } from '../listing/matching.service';
+import { MetaSenderService } from '../whatsapp/meta-sender.service';
+import type { ListingCreatedEvent } from '../common/event-bus.service';
 
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
 
   constructor(
-    private readonly usersService: UsersService,
-    private readonly listingService: ListingService,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
     private readonly matchingService: MatchingService,
     private readonly metaSender: MetaSenderService,
   ) {}
 
-  /**
-   * Story 12: Notify Users
-   * Notify buyers when new supply appears
-   * Notify farmers when demand appears
-   */
-  async notifyOnNewListing(listingId: string): Promise<void> {
+  @OnEvent('listing.created')
+  async handleListingCreated(event: ListingCreatedEvent): Promise<void> {
     try {
-      const listing = await this.listingService.findOne(listingId);
+      const listing = await this.listingModel
+        .findById(event.listingId)
+        .exec();
 
-      // Find matches for this listing
+      if (!listing) return;
+
       const matches = await this.matchingService.findMatches(listing, 5);
 
-      if (matches.length === 0) {
-        return; // No matches to notify about
-      }
+      if (matches.length === 0) return;
 
       if (listing.type === 'sell') {
-        // Notify buyers who need this product
         await this.notifyBuyersOfNewSupply(listing, matches);
       } else if (listing.type === 'buy') {
-        // Notify farmers who have this product
         await this.notifyFarmersOfNewDemand(listing, matches);
       }
     } catch (error) {
@@ -44,18 +42,15 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Notify buyers when new supply (sell listing) matches their demand
-   */
   private async notifyBuyersOfNewSupply(
-    sellListing: any,
+    sellListing: ListingDocument,
     matches: MatchResult[],
   ): Promise<void> {
     for (const match of matches) {
       const buyerListing = match.listing;
-
-      // Get buyer's phone number
-      const buyer = await this.usersService.findByPhone(buyerListing.userPhone);
+      const buyer = await this.userModel
+        .findOne({ phone: buyerListing.userPhone })
+        .exec();
 
       if (buyer?.lastChannelUsed && buyer?.phone) {
         const message = this.buildSupplyNotification(
@@ -73,18 +68,15 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Notify farmers when new demand (buy listing) matches their supply
-   */
   private async notifyFarmersOfNewDemand(
-    buyListing: any,
+    buyListing: ListingDocument,
     matches: MatchResult[],
   ): Promise<void> {
     for (const match of matches) {
       const sellListing = match.listing;
-
-      // Get farmer's phone number
-      const farmer = await this.usersService.findByPhone(sellListing.userPhone);
+      const farmer = await this.userModel
+        .findOne({ phone: sellListing.userPhone })
+        .exec();
 
       if (farmer?.lastChannelUsed && farmer?.phone) {
         const message = this.buildDemandNotification(
@@ -102,10 +94,10 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Build notification message for buyers
-   */
-  private buildSupplyNotification(sellListing: any, buyerName: string): string {
+  private buildSupplyNotification(
+    sellListing: ListingDocument,
+    buyerName: string,
+  ): string {
     return `🔔 *New Supply Match!*
 
 Hi ${buyerName}!
@@ -126,10 +118,10 @@ Or make an offer:
 OFFER ${Math.floor((sellListing.price || 20000) * 0.95)} ${sellListing._id}`;
   }
 
-  /**
-   * Build notification message for farmers
-   */
-  private buildDemandNotification(buyListing: any, farmerName: string): string {
+  private buildDemandNotification(
+    buyListing: ListingDocument,
+    farmerName: string,
+  ): string {
     return `🔔 *New Demand Match!*
 
 Hi ${farmerName}!

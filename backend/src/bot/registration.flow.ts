@@ -9,14 +9,11 @@ export class RegistrationFlowService {
     private readonly translation: TranslationService,
   ) {}
 
-  // ─── Get the next registration prompt for a given state ──
   resumeMessage(
     phone: string,
     language: string,
     channel: 'sms' | 'whatsapp',
   ): string {
-    // This returns the appropriate prompt for the user's current state
-    // Used after language change to re-prompt the user
     return this.msg(
       channel,
       this.translation.t(language, 'welcome') +
@@ -26,26 +23,21 @@ export class RegistrationFlowService {
     );
   }
 
-  // ─── Main entry point called by BotService ────────────────
   async handle(
     phone: string,
     text: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string | null> {
     const input = text.trim();
-
     const user = await this.usersService.findByPhone(phone);
 
-    // ── Fully registered → return null → BotService handles ──
     if (user?.conversationState === 'REGISTERED') {
       await this.usersService.updateChannel(phone, channel);
       return null;
     }
 
-    // Get user's preferred language
     const lang = user?.preferredLanguage || 'english';
 
-    // ── Brand new user → create stub record immediately ───────
     if (!user) {
       await this.usersService.createStub(phone, channel);
       return this.msg(
@@ -57,12 +49,10 @@ export class RegistrationFlowService {
       );
     }
 
-    // ── Existing user mid-registration → resume ───────────────
     await this.usersService.updateChannel(phone, channel);
     return this.resume(phone, input, user.conversationState, channel, lang);
   }
 
-  // ─── Resume from saved state ──────────────────────────────
   private async resume(
     phone: string,
     input: string,
@@ -91,7 +81,6 @@ export class RegistrationFlowService {
     }
   }
 
-  // ─── Step 1: Role ─────────────────────────────────────────
   private async handleRole(
     phone: string,
     input: string,
@@ -99,10 +88,8 @@ export class RegistrationFlowService {
     lang: string,
   ): Promise<string> {
     const lower = input.toLowerCase();
-    // Accept French equivalents: agriculteur/fermier → farmer, acheteur → buyer
     const frenchFarmer = ['agriculteur', 'fermier', 'paysan'];
     const frenchBuyer = ['acheteur', 'commerçant', 'commercant'];
-
     const isFarmer = ['1', 'farmer', ...frenchFarmer].includes(lower);
     const isBuyer = ['2', 'buyer', ...frenchBuyer].includes(lower);
 
@@ -111,16 +98,13 @@ export class RegistrationFlowService {
     }
 
     const role = isFarmer ? 'farmer' : 'buyer';
-
     await this.usersService.update(phone, {
       role,
       conversationState: 'AWAITING_NAME',
     });
-
     return this.msg(channel, this.translation.t(lang, 'enterName'));
   }
 
-  // ─── Step 2: Name ─────────────────────────────────────────
   private async handleName(
     phone: string,
     input: string,
@@ -135,11 +119,9 @@ export class RegistrationFlowService {
       name: input,
       conversationState: 'AWAITING_LOCATION',
     });
-
     return this.msg(channel, this.translation.t(lang, 'enterLocation'));
   }
 
-  // ─── Step 3: Location ─────────────────────────────────────
   private async handleLocation(
     phone: string,
     input: string,
@@ -151,7 +133,6 @@ export class RegistrationFlowService {
     }
 
     const user = await this.usersService.findByPhone(phone);
-
     await this.usersService.update(phone, {
       location: input,
       conversationState:
@@ -161,11 +142,9 @@ export class RegistrationFlowService {
     if (user?.role === 'farmer') {
       return this.msg(channel, this.translation.t(lang, 'enterProduces'));
     }
-
     return this.msg(channel, this.translation.t(lang, 'enterBusiness'));
   }
 
-  // ─── Step 4a: FARMER — Produces ──────────────────────────
   private async handleProduces(
     phone: string,
     input: string,
@@ -192,7 +171,6 @@ export class RegistrationFlowService {
     );
   }
 
-  // ─── Step 4b: BUYER — Business name ──────────────────────
   private async handleBusiness(
     phone: string,
     input: string,
@@ -207,11 +185,9 @@ export class RegistrationFlowService {
       businessName: input,
       conversationState: 'AWAITING_NEEDS',
     });
-
     return this.msg(channel, this.translation.t(lang, 'enterNeeds'));
   }
 
-  // ─── Step 5b: BUYER — Needs ───────────────────────────────
   private async handleNeeds(
     phone: string,
     input: string,
@@ -238,7 +214,6 @@ export class RegistrationFlowService {
     );
   }
 
-  // ─── Format message per channel ──────────────────────────
   private msg(channel: 'sms' | 'whatsapp', message: string): string {
     if (channel === 'sms') {
       return message

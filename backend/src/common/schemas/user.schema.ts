@@ -23,18 +23,15 @@ export class User {
   @Prop({ enum: ['sms', 'whatsapp'], default: 'whatsapp' })
   lastChannelUsed: string;
 
-  // Preferred language: english, french, pidgin
   @Prop({ enum: ['english', 'french', 'pidgin'], default: 'english' })
   preferredLanguage: string;
 
   @Prop({ default: 0 })
   trustScore: number;
 
-  // Farmer only
   @Prop({ type: [String], default: [] })
   produces: string[];
 
-  // Buyer only
   @Prop({ trim: true })
   businessName: string;
 
@@ -47,9 +44,9 @@ export class User {
       'AWAITING_ROLE',
       'AWAITING_NAME',
       'AWAITING_LOCATION',
-      'AWAITING_PRODUCES', // farmer
-      'AWAITING_BUSINESS', // buyer
-      'AWAITING_NEEDS', // buyer
+      'AWAITING_PRODUCES',
+      'AWAITING_BUSINESS',
+      'AWAITING_NEEDS',
       'REGISTERED',
       'AWAITING_PRICE',
       'AWAITING_CONFIRM',

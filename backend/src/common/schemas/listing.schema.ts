@@ -41,19 +41,15 @@ export class Listing {
   @Prop({ default: null })
   marketMaxPrice: number;
 
-  // What the system recommended
   @Prop({ default: null })
   suggestedPrice: number;
 
-  // Final price on the listing (what buyers see)
   @Prop({ default: null })
   price: number;
 
-  // How the price was set
   @Prop({ enum: ['manual', 'auto', 'none'], default: 'none' })
   priceType: string;
 
-  // true if farmer typed AUTO and accepted the suggestion
   @Prop({ default: false })
   acceptedSuggestion: boolean;
 

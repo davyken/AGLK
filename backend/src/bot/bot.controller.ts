@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { BotService } from './bot.service';
-import { MetaSenderService } from './meta-sender.service';
+import { MetaSenderService } from '../whatsapp/meta-sender.service';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { ListingFlowService } from './listing.flow';
@@ -62,22 +62,17 @@ export class BotController {
       const image = message?.image;
       const audio = message?.audio;
 
-      // Handle image message - farmer sending product photo
       if (image) {
-        const imageUrl = image.link; // Direct URL if available
-        const imageMediaId = image.id; // Media ID for uploaded images
-
+        const imageUrl = image.link;
+        const imageMediaId = image.id;
         return this.handleMediaMessage(phone, 'image', imageUrl, imageMediaId);
       }
 
-      // Handle audio/voice note
       if (audio) {
         const audioMediaId = audio.id;
-
         return this.handleMediaMessage(phone, 'audio', null, audioMediaId);
       }
 
-      // Handle regular text message
       if (!text) return { status: 'non_text_message' };
 
       const reply = await this.botService.handleMessage({
@@ -87,16 +82,12 @@ export class BotController {
       });
 
       await this.metaSender.send(phone, reply);
-
       return { status: 'ok' };
     } catch {
       return { status: 'error_handled' };
     }
   }
 
-  /**
-   * Handle media messages (images, voice notes)
-   */
   private async handleMediaMessage(
     phone: string,
     mediaType: 'image' | 'audio',
@@ -104,7 +95,6 @@ export class BotController {
     mediaId: string | null,
   ): Promise<{ status: string }> {
     try {
-      // Check if user is registered
       const user = await this.usersService.findByPhone(phone);
 
       if (!user || user.conversationState !== 'REGISTERED') {
@@ -114,13 +104,11 @@ export class BotController {
       }
 
       if (mediaType === 'image') {
-        // Handle image - check if user is in pending sell state
         if (this.listingFlow.isInImageState(phone)) {
           await this.listingFlow.handleImage(phone, mediaUrl, mediaId);
           return { status: 'image_processed' };
         }
 
-        // Otherwise, ask if they want to add image to a new listing
         const reply =
           '📷 Image received!\n\nTo add this image to your listing, use:\nSELL maize 10 bags\n\nThen reply with this image after entering the price.\n\nOr type HELP for options.';
         await this.metaSender.send(phone, reply);
@@ -128,7 +116,6 @@ export class BotController {
       }
 
       if (mediaType === 'audio') {
-        // Handle voice note - transcribe using AI
         try {
           const transcription = await this.speechToText.transcribe(
             mediaUrl || undefined,
@@ -146,7 +133,6 @@ export class BotController {
             return { status: 'transcription_failed' };
           }
 
-          // Process the transcribed text as a command
           const reply = await this.botService.handleMessage({
             phone,
             text: transcription,

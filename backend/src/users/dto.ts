@@ -28,12 +28,10 @@ export class CreateUserDto {
   @IsEnum(['sms', 'whatsapp'])
   lastChannelUsed: string;
 
-  // Farmer only
   @IsOptional()
   @IsArray()
   produces?: string[];
 
-  // Buyer only
   @IsOptional()
   @IsString()
   businessName?: string;

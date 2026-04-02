@@ -1,13 +1,17 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
-import type { MongooseModuleOptions } from '@nestjs/mongoose';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { BotModule } from './bot/bot.module';
 import { UsersModule } from './users/users.module';
 import { ListingModule } from './listing/listing.module';
 import { AiModule } from './ai/ai.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { NotificationModule } from './notification/notification.module';
+import { PriceModule } from './price/price.module';
+import { EventBusService } from './common/event-bus.service';
 
 @Module({
   imports: [
@@ -16,7 +20,8 @@ import { AiModule } from './ai/ai.module';
       envFilePath: '.env',
     }),
 
-    // MongoDB connection using the provided URI
+    EventEmitterModule.forRoot(),
+
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -27,15 +32,15 @@ import { AiModule } from './ai/ai.module';
       inject: [ConfigService],
     }),
 
-    // AI Module for speech-to-text
     AiModule,
-
-    // Core App Modules
-    BotModule,
+    WhatsappModule,
     UsersModule,
     ListingModule,
+    PriceModule,
+    BotModule,
+    NotificationModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, EventBusService],
 })
 export class AppModule {}

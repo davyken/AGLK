@@ -23,13 +23,11 @@ export class Message {
   })
   status: string;
 
-  // Raw payload from Meta or SMS gateway (useful for debugging)
   @Prop({ type: Object, default: null })
   rawPayload: Record<string, any>;
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);
 
-// Debug queries: find all messages from a number
 MessageSchema.index({ phone: 1, createdAt: -1 });
 MessageSchema.index({ channel: 1, status: 1 });

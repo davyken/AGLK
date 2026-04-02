@@ -6,7 +6,7 @@ export type MatchDocument = Match & Document;
 @Schema({ timestamps: true })
 export class Match {
   @Prop({ type: Types.ObjectId, ref: 'Listing', required: true })
-  listingId: Types.ObjectId; // the farmer's sell listing
+  listingId: Types.ObjectId;
 
   @Prop({ required: true })
   farmerPhone: string;
@@ -29,25 +29,17 @@ export class Match {
   @Prop({ default: null })
   proposedPrice: number;
 
-  // Final agreed price — set only when farmer replies YES
   @Prop({ default: null })
   agreedPrice: number;
 
-  // Tracks which price was used to close the deal
   @Prop({
     enum: ['farmer_price', 'proposed_price', 'suggested_price', null],
     default: null,
   })
   closedWith: string;
 
-  // Status
   @Prop({
-    enum: [
-      'pending', // match found, waiting for farmer to respond
-      'offer_sent', // buyer made a counter offer, waiting for farmer
-      'accepted', // farmer said YES → wa.me links sent to both
-      'rejected', // farmer said NO
-    ],
+    enum: ['pending', 'offer_sent', 'accepted', 'rejected'],
     default: 'pending',
   })
   status: string;

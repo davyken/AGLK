@@ -35,5 +35,4 @@ export class PriceHistory {
 
 export const PriceHistorySchema = SchemaFactory.createForClass(PriceHistory);
 
-// Pricing engine main lookup
 PriceHistorySchema.index({ product: 1, location: 1 }, { unique: true });
