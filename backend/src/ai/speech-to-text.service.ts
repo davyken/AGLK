@@ -16,10 +16,7 @@ export class SpeechToTextService {
    * @param audioMediaId - Optional media ID to download and transcribe
    * @returns Transcribed text
    */
-  async transcribe(
-    audioUrl?: string,
-    audioMediaId?: string,
-  ): Promise<string> {
+  async transcribe(audioUrl?: string, audioMediaId?: string): Promise<string> {
     if (!this.openaiApiKey) {
       this.logger.warn('OpenAI API key not configured');
       return '';

@@ -12,7 +12,11 @@ async function bootstrap() {
   await app.listen(port);
 
   const connection = app.get<Connection>(getConnectionToken());
-  console.log(`\x1b[32m✔\x1b[0m 🚀 Server running on port \x1b[36m${port}\x1b[0m`);
-  console.log(`\x1b[32m✔\x1b[0m 🍃 Connected to MongoDB: \x1b[36m${connection.host}\x1b[0m`);
+  console.log(
+    `\x1b[32m✔\x1b[0m 🚀 Server running on port \x1b[36m${port}\x1b[0m`,
+  );
+  console.log(
+    `\x1b[32m✔\x1b[0m 🍃 Connected to MongoDB: \x1b[36m${connection.host}\x1b[0m`,
+  );
 }
 bootstrap();

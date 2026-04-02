@@ -5,10 +5,8 @@ import { Listing, ListingDocument } from '../schemas/listing.schema';
 import { CreateListingDto, UpdateListingDto } from '../dto/listing.dto';
 import { UsersService } from '../users/users.service';
 
-
 @Injectable()
 export class ListingService {
- 
   constructor(
     @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
     private usersService: UsersService,
@@ -28,26 +26,25 @@ export class ListingService {
       channel: user.lastChannelUsed,
       // Use user's location if not provided in DTO
       location: dto.location || user.location,
-      
     });
     return listing.save();
   }
 
-  // Get all listings 
+  // Get all listings
   async findAll(): Promise<ListingDocument[]> {
     return this.listingModel.find().exec();
   }
 
-  // Get one listing by ID 
+  // Get one listing by ID
   async findOne(id: string): Promise<ListingDocument> {
     // Try to find the listing
     const listing = await this.listingModel.findById(id).exec();
-    
+
     // If not found then throw error
     if (!listing) {
       throw new NotFoundException(`Listing with ID ${id} not found`);
     }
-    
+
     return listing;
   }
 
@@ -70,7 +67,11 @@ export class ListingService {
   // This is a soft delete so we dont lose history
   async remove(id: string): Promise<ListingDocument> {
     const listing = await this.listingModel
-      .findByIdAndUpdate(id, { $set: { status: 'cancelled' } }, { returnDocument: 'after' })
+      .findByIdAndUpdate(
+        id,
+        { $set: { status: 'cancelled' } },
+        { returnDocument: 'after' },
+      )
       .exec();
 
     if (!listing) {
@@ -88,21 +89,26 @@ export class ListingService {
   // Find active listings by product - for searching/filtering
   async findByProduct(product: string): Promise<ListingDocument[]> {
     return this.listingModel
-      .find({ product: product.toLowerCase(), status: 'active' })
+      .find({
+        product: { $regex: new RegExp(`^${this.escapeRegex(product)}$`, 'i') },
+        status: 'active',
+      })
       .exec();
   }
 
   // Find active listings by type (sell or buy) - for matching
   async findByType(type: 'sell' | 'buy'): Promise<ListingDocument[]> {
-    return this.listingModel
-      .find({ type, status: 'active' })
-      .exec();
+    return this.listingModel.find({ type, status: 'active' }).exec();
   }
 
   // Find active listings by location - for local matching
   async findByLocation(location: string): Promise<ListingDocument[]> {
+    const regex = new RegExp(`^${this.escapeRegex(location)}$`, 'i');
     return this.listingModel
-      .find({ location: location.toLowerCase(), status: 'active' })
+      .find({
+        $or: [{ location: regex }, { userLocation: regex }],
+        status: 'active',
+      })
       .exec();
   }
 
@@ -111,10 +117,12 @@ export class ListingService {
     product: string,
     location: string,
   ): Promise<ListingDocument[]> {
+    const productRegex = new RegExp(`^${this.escapeRegex(product)}$`, 'i');
+    const locationRegex = new RegExp(`^${this.escapeRegex(location)}$`, 'i');
     return this.listingModel
       .find({
-        product: product.toLowerCase(),
-        location: location.toLowerCase(),
+        product: productRegex,
+        $or: [{ location: locationRegex }, { userLocation: locationRegex }],
         status: 'active',
       })
       .exec();
@@ -131,7 +139,7 @@ export class ListingService {
     },
   ): Promise<ListingDocument[]> {
     const query: any = {
-      product: product.toLowerCase(),
+      product: { $regex: new RegExp(`^${this.escapeRegex(product)}$`, 'i') },
       status: 'active',
     };
 
@@ -140,7 +148,11 @@ export class ListingService {
     }
 
     if (options.location) {
-      query.location = options.location.toLowerCase();
+      const locationRegex = new RegExp(this.escapeRegex(options.location), 'i');
+      query.$or = [
+        { location: locationRegex },
+        { userLocation: locationRegex },
+      ];
     }
 
     if (options.minPrice !== undefined || options.maxPrice !== undefined) {
@@ -165,5 +177,10 @@ export class ListingService {
   async exists(id: string): Promise<boolean> {
     const listing = await this.listingModel.findById(id).select('_id').exec();
     return !!listing;
+  }
+
+  // Escape special regex characters
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

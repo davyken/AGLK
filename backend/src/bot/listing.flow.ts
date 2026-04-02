@@ -103,10 +103,7 @@ export class ListingFlowService {
     const parsed = this.parseListingCommand(command);
 
     if (!parsed || parsed.type !== 'sell') {
-      return this.msg(
-        channel,
-        `❌ Invalid format.\n\nUse: SELL maize 10 bags`,
-      );
+      return this.msg(channel, `❌ Invalid format.\n\nUse: SELL maize 10 bags`);
     }
 
     try {
@@ -168,10 +165,7 @@ export class ListingFlowService {
       );
     } catch (error) {
       console.error('Sell command error:', error);
-      return this.msg(
-        channel,
-        `❌ Failed to process. Please try again.`,
-      );
+      return this.msg(channel, `❌ Failed to process. Please try again.`);
     }
   }
 
@@ -183,10 +177,7 @@ export class ListingFlowService {
     const parsed = this.parseListingCommand(command);
 
     if (!parsed || parsed.type !== 'buy') {
-      return this.msg(
-        channel,
-        `❌ Invalid format.\n\nUse: BUY maize 20 bags`,
-      );
+      return this.msg(channel, `❌ Invalid format.\n\nUse: BUY maize 20 bags`);
     }
 
     try {
@@ -211,19 +202,24 @@ export class ListingFlowService {
       // Use filters if location or price range is provided
       let matchingListings;
       if (parsed.location || parsed.minPrice || parsed.maxPrice) {
-        matchingListings = await this.listingService.findWithFilters(parsed.product, {
-          location: parsed.location,
-          minPrice: parsed.minPrice,
-          maxPrice: parsed.maxPrice,
-          type: 'sell',
-        });
+        matchingListings = await this.listingService.findWithFilters(
+          parsed.product,
+          {
+            location: parsed.location,
+            minPrice: parsed.minPrice,
+            maxPrice: parsed.maxPrice,
+            type: 'sell',
+          },
+        );
       } else {
-        matchingListings = await this.listingService.findByProduct(parsed.product);
+        matchingListings = await this.listingService.findByProduct(
+          parsed.product,
+        );
       }
-      
+
       // Filter to active sell listings (if not already filtered by type)
       const sellListings = matchingListings.filter(
-        (l) => l.type === 'sell' && l.status === 'active'
+        (l) => l.type === 'sell' && l.status === 'active',
       );
 
       if (sellListings.length === 0) {
@@ -245,7 +241,7 @@ export class ListingFlowService {
             `Product: ${listing.product}\n` +
             `Quantity: ${listing.quantity} ${listing.unit}\n` +
             `Location: ${listing.location}\n\n` +
-            `📋 Request ID: ${listing._id}\n\n` +
+            // `📋 Request ID: ${listing._id}\n\n` +
             `We'll notify you when farmers list this product.\\n\\n` +
             `🏪 Type HELP for more options.`,
         );
@@ -253,7 +249,7 @@ export class ListingFlowService {
 
       // Show matching listings to buyer (limit to top 5)
       const topListings = sellListings.slice(0, 5);
-      
+
       // Store pending state
       pendingStates.set(phone, {
         type: 'buy_select',
@@ -276,7 +272,7 @@ export class ListingFlowService {
 
       // Build response message
       let message = `🔍 *Found ${sellListings.length} farmer(s) with ${this.capitalize(parsed.product)}*\n\n`;
-      
+
       topListings.forEach((listing, index) => {
         message += `${index + 1}️⃣ ${listing.userName}\n`;
         message += `   📦 ${listing.quantity} ${listing.unit}\n`;
@@ -290,7 +286,6 @@ export class ListingFlowService {
 
       message += `Reply with the number (1-${topListings.length}) to select a farmer.`;
 
-
       // Send text message first
       await this.metaSender.send(phone, message);
 
@@ -300,13 +295,13 @@ export class ListingFlowService {
           await this.metaSender.sendImageByMediaId(
             phone,
             listing.imageMediaId,
-            `${listing.userName}'s ${listing.product}`
+            `${listing.userName}'s ${listing.product}`,
           );
         } else if (listing.imageUrl) {
           await this.metaSender.sendImage(
             phone,
             listing.imageUrl,
-            `${listing.userName}'s ${listing.product}`
+            `${listing.userName}'s ${listing.product}`,
           );
         }
       }
@@ -314,10 +309,7 @@ export class ListingFlowService {
       return '';
     } catch (error) {
       console.error('Buy command error:', error);
-      return this.msg(
-        channel,
-        `❌ Failed to search. Please try again.`,
-      );
+      return this.msg(channel, `❌ Failed to search. Please try again.`);
     }
   }
 
@@ -328,7 +320,16 @@ export class ListingFlowService {
   ): Promise<string> {
     const pending = pendingStates.get(phone);
     if (!pending) {
-      return this.msg(channel, `❌ Something went wrong. Start fresh with a new command.`);
+      return this.msg(
+        channel,
+        `❌ Something went wrong. Start fresh with a new command.`,
+      );
+    }
+
+    // Handle CANCEL at any pending state
+    if (response.trim().toUpperCase() === 'CANCEL') {
+      pendingStates.delete(phone);
+      return this.msg(channel, `❌ Cancelled. Type HELP for options.`);
     }
 
     // SELL FLOW - Price selection
@@ -346,7 +347,10 @@ export class ListingFlowService {
       return this.handleBuySelect(phone, response, channel, pending);
     }
 
-    return this.msg(channel, `❌ Invalid state. Start fresh with a new command.`);
+    return this.msg(
+      channel,
+      `❌ Invalid state. Start fresh with a new command.`,
+    );
   }
 
   private async handleSellPending(
@@ -361,12 +365,15 @@ export class ListingFlowService {
     if (input === '1') {
       try {
         const priceData = await this.priceService.getPrice(pending.product);
-        
+
         if (!priceData) {
           pendingStates.delete(phone);
-          return this.msg(channel, `❌ Price data unavailable. Please try again.`);
+          return this.msg(
+            channel,
+            `❌ Price data unavailable. Please try again.`,
+          );
         }
-        
+
         // Change to waiting for image state
         pendingStates.set(phone, {
           type: 'sell_waiting_image',
@@ -383,13 +390,15 @@ export class ListingFlowService {
           channel,
           `📷 Would you like to add a photo of your product?
 
-` +
-            `Send me the image now, or reply SKIP to create listing without an image.`,
+` + `Send me the image now, or reply SKIP to create listing without an image.`,
         );
       } catch (error) {
         console.error('Price acceptance error:', error);
         pendingStates.delete(phone);
-        return this.msg(channel, `❌ Failed to create listing. Please try again.`);
+        return this.msg(
+          channel,
+          `❌ Failed to create listing. Please try again.`,
+        );
       }
     }
 
@@ -424,13 +433,15 @@ export class ListingFlowService {
           channel,
           `📷 Would you like to add a photo of your product?
 
-` +
-            `Send me the image now, or reply SKIP to create listing without an image.`,
+` + `Send me the image now, or reply SKIP to create listing without an image.`,
         );
       } catch (error) {
         console.error('Custom price listing error:', error);
         pendingStates.delete(phone);
-        return this.msg(channel, `❌ Failed to create listing. Please try again.`);
+        return this.msg(
+          channel,
+          `❌ Failed to create listing. Please try again.`,
+        );
       }
     }
 
@@ -450,21 +461,25 @@ export class ListingFlowService {
     channel: 'sms' | 'whatsapp',
     pending: PendingState,
   ): Promise<string> {
+    // Handle CANCEL before checking for number
+    if (response.trim().toUpperCase() === 'CANCEL') {
+      pendingStates.delete(phone);
+      return this.msg(channel, `❌ Cancelled. Type BUY to search again.`);
+    }
+
     const selection = parseInt(response.trim(), 10);
 
-    if (isNaN(selection) || selection < 1 || selection > (pending.listings?.length || 0)) {
+    if (
+      isNaN(selection) ||
+      selection < 1 ||
+      selection > (pending.listings?.length || 0)
+    ) {
       return this.msg(
         channel,
         `❌ Invalid selection.\n\n` +
           `Please reply with a number between 1 and ${pending.listings?.length}\n\n` +
           `Or type CANCEL to start over.`,
       );
-    }
-
-    // Handle CANCEL
-    if (response.trim().toUpperCase() === 'CANCEL') {
-      pendingStates.delete(phone);
-      return this.msg(channel, `❌ Cancelled. Type BUY to search again.`);
     }
 
     const selectedListing = pending.listings![selection - 1];
@@ -487,7 +502,9 @@ export class ListingFlowService {
 
       // Send notification to farmer
       try {
-        const farmerUser = await this.usersService.findByPhone(selectedListing.userPhone);
+        const farmerUser = await this.usersService.findByPhone(
+          selectedListing.userPhone,
+        );
         if (farmerUser?.phone) {
           // Store pending response for farmer
           pendingFarmerResponses.set(farmerUser.phone, {
@@ -505,7 +522,7 @@ export class ListingFlowService {
             pending.product,
             pending.quantity,
             pending.unit,
-            selectedListing.price
+            selectedListing.price,
           );
           await this.metaSender.send(farmerUser.phone, notificationMsg);
         }
@@ -519,23 +536,24 @@ export class ListingFlowService {
           `📦 ${selectedListing.quantity} ${pending.unit}\n` +
           `💰 ${this.formatPrice(selectedListing.price)}\n` +
           `📍 ${selectedListing.location}\n\n` +
-          `📋 Your Request ID: ${buyerListing._id}\n\n` +
+          // `📋 Your Request ID: ${buyerListing._id}\n\n` +
           `We've notified the farmer. They will contact you if interested.\n\n` +
           `🏪 Type HELP for more options.`,
       );
     } catch (error) {
       console.error('Buy selection error:', error);
       pendingStates.delete(phone);
-      return this.msg(channel, `❌ Failed to complete request. Please try again.`);
+      return this.msg(
+        channel,
+        `❌ Failed to complete request. Please try again.`,
+      );
     }
   }
 
-  private parseListingCommand(
-    command: string,
-  ): { 
-    type: 'sell' | 'buy'; 
-    product: string; 
-    quantity: number; 
+  private parseListingCommand(command: string): {
+    type: 'sell' | 'buy';
+    product: string;
+    quantity: number;
     unit: string;
     location?: string;
     minPrice?: number;
@@ -636,11 +654,11 @@ export class ListingFlowService {
     // Remove commas and spaces, try to parse as number
     const cleaned = text.replace(/[,\s]/g, '');
     const price = parseInt(cleaned, 10);
-    
+
     if (isNaN(price) || price <= 0) {
       return null;
     }
-    
+
     return price;
   }
 
@@ -655,7 +673,10 @@ export class ListingFlowService {
   private msg(channel: 'sms' | 'whatsapp', message: string): string {
     if (channel === 'sms') {
       return message
-        .replace(/[\u{1F300}-\u{1FFFF}|\u{2600}-\u{26FF}|\u{2700}-\u{27BF}]/gu, '')
+        .replace(
+          /[\u{1F300}-\u{1FFFF}|\u{2600}-\u{26FF}|\u{2700}-\u{27BF}]/gu,
+          '',
+        )
         .replace(/\*/g, '')
         .trim();
     }
@@ -669,14 +690,16 @@ export class ListingFlowService {
     unit: string,
     price: number,
   ): string {
-    return `🔔 *New Buyer Interest!*\n\n` +
+    return (
+      `🔔 *New Buyer Interest!*\n\n` +
       `Hi ${farmerName}!\n\n` +
       `A buyer wants your produce:\n\n` +
       `🌽 ${this.capitalize(product)}\n` +
       `📦 ${quantity} ${unit}\n` +
       `💰 Budget: ${this.formatPrice(price)}\n\n` +
       `To respond, reply YES or NO.\n\n` +
-      `Or type HELP for options.`;
+      `Or type HELP for options.`
+    );
   }
 
   isInPriceState(phone: string): boolean {
@@ -704,7 +727,13 @@ export class ListingFlowService {
       return `❌ No pending listing. Use SELL command to create a new listing.`;
     }
 
-    return this.createListingWithImage(phone, 'whatsapp', pending, imageUrl, imageMediaId);
+    return this.createListingWithImage(
+      phone,
+      'whatsapp',
+      pending,
+      imageUrl,
+      imageMediaId,
+    );
   }
 
   /**
@@ -761,12 +790,13 @@ export class ListingFlowService {
 
       pendingStates.delete(phone);
 
-      let message = `✅ *Listing Created!*\n\n` +
+      let message =
+        `✅ *Listing Created!*\n\n` +
         `🌽 Product: ${listing.product}\n` +
         `Quantity: ${listing.quantity} ${listing.unit}\n` +
         `Price: ${this.formatPrice(listing.price)}\n` +
-        `Location: ${listing.location}\n\n` +
-        `📋 Listing ID: ${listing._id}\n\n`;
+        `Location: ${listing.location}\n\n`;
+      // `📋 Listing ID: ${listing._id}\n\n`
 
       if (imageUrl || imageMediaId) {
         message += `📷 Photo added to listing!\n\n`;
@@ -774,9 +804,17 @@ export class ListingFlowService {
         await this.metaSender.send(phone, message);
         // Send the image
         if (imageMediaId) {
-          await this.metaSender.sendImageByMediaId(phone, imageMediaId, `📷 Your ${listing.product} listing image`);
+          await this.metaSender.sendImageByMediaId(
+            phone,
+            imageMediaId,
+            `📷 Your ${listing.product} listing image`,
+          );
         } else if (imageUrl) {
-          await this.metaSender.sendImage(phone, imageUrl, `📷 Your ${listing.product} listing image`);
+          await this.metaSender.sendImage(
+            phone,
+            imageUrl,
+            `📷 Your ${listing.product} listing image`,
+          );
         }
         return ''; // Already sent the message above
       }
@@ -787,7 +825,10 @@ export class ListingFlowService {
     } catch (error) {
       console.error('Create listing with image error:', error);
       pendingStates.delete(phone);
-      return this.msg(channel, `❌ Failed to create listing. Please try again.`);
+      return this.msg(
+        channel,
+        `❌ Failed to create listing. Please try again.`,
+      );
     }
   }
 
@@ -812,7 +853,10 @@ export class ListingFlowService {
     const listingId = parts[2];
 
     if (!offerAmount) {
-      return this.msg(channel, `❌ Invalid offer amount. Please enter a valid number.`);
+      return this.msg(
+        channel,
+        `❌ Invalid offer amount. Please enter a valid number.`,
+      );
     }
 
     try {
@@ -820,7 +864,10 @@ export class ListingFlowService {
       const targetListing = await this.listingService.findOne(listingId);
 
       if (!targetListing) {
-        return this.msg(channel, `❌ Listing not found. Please check the Listing ID.`);
+        return this.msg(
+          channel,
+          `❌ Listing not found. Please check the Listing ID.`,
+        );
       }
 
       if (targetListing.type !== 'sell' || targetListing.status !== 'active') {
@@ -830,7 +877,10 @@ export class ListingFlowService {
       // Get buyer details
       const buyer = await this.usersService.findByPhone(phone);
       if (!buyer || buyer.role !== 'buyer') {
-        return this.msg(channel, `❌ Only buyers can make offers. Please register as a buyer first.`);
+        return this.msg(
+          channel,
+          `❌ Only buyers can make offers. Please register as a buyer first.`,
+        );
       }
 
       // Create buyer's offer listing
@@ -845,8 +895,6 @@ export class ListingFlowService {
 
       const offerListing = await this.listingService.create(dto, phone);
 
-
-
       return this.msg(
         channel,
         `💰 *Offer Sent!*
@@ -859,13 +907,10 @@ export class ListingFlowService {
           `Location: ${targetListing.userLocation}
 
 ` +
-          `📋 Offer ID: ${offerListing._id}
-
-` +
           `The farmer has been notified. They will contact you if interested.
 
 ` +
-          `🏪 Type HELP for more options.`
+          `🏪 Type HELP for more options.`,
       );
     } catch (error) {
       console.error('Offer error:', error);
@@ -879,26 +924,34 @@ export class ListingFlowService {
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
     const user = await this.usersService.findByPhone(phone);
-    
+
     if (!user || user.role !== 'farmer') {
       return this.msg(channel, `❌ This command is for farmers only.`);
     }
 
     const pending = pendingFarmerResponses.get(phone);
-    
+
     if (!pending) {
-      return this.msg(channel, `❌ No pending requests. Type HELP for options.`);
+      return this.msg(
+        channel,
+        `❌ No pending requests. Type HELP for options.`,
+      );
     }
 
     const buyer = await this.usersService.findByPhone(pending.buyerPhone);
     pendingFarmerResponses.delete(phone);
 
     if (response.toUpperCase() === 'YES') {
-      await this.listingService.update(pending.sellerListingId, { status: 'matched' });
-      await this.listingService.update(pending.buyerListingId, { status: 'matched' });
+      await this.listingService.update(pending.sellerListingId, {
+        status: 'matched',
+      });
+      await this.listingService.update(pending.buyerListingId, {
+        status: 'matched',
+      });
 
       if (buyer?.phone) {
-        const buyerMsg = `✅ *Great News!*
+        const buyerMsg =
+          `✅ *Great News!*
 
 ` +
           `👨‍🌾 ${user.name} has accepted your request!
@@ -921,21 +974,23 @@ export class ListingFlowService {
         await this.metaSender.send(buyer.phone, buyerMsg);
       }
 
-      return this.msg(channel,
+      return this.msg(
+        channel,
         `✅ *Request Accepted!*
 
 ` +
-        `You've connected with ${buyer?.name || 'the buyer'}.
+          `You've connected with ${buyer?.name || 'the buyer'}.
 
 ` +
-        `They have been notified and will contact you.
+          `They have been notified and will contact you.
 
 ` +
-        `Type HELP for more options.`
+          `Type HELP for more options.`,
       );
     } else {
       if (buyer?.phone) {
-        const buyerMsg = `😔 *Update*
+        const buyerMsg =
+          `😔 *Update*
 
 ` +
           `Unfortunately, ${user.name} declined your request for ${pending.product}.
@@ -945,14 +1000,15 @@ export class ListingFlowService {
         await this.metaSender.send(buyer.phone, buyerMsg);
       }
 
-      return this.msg(channel,
+      return this.msg(
+        channel,
         `❌ *Request Declined*
 
 ` +
-        `The buyer has been notified.
+          `The buyer has been notified.
 
 ` +
-        `Type HELP for more options.`
+          `Type HELP for more options.`,
       );
     }
   }

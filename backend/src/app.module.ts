@@ -15,19 +15,21 @@ import { AiModule } from './ai/ai.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    
+
     // MongoDB connection using the provided URI
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGODB_URI') ?? 'mongodb://localhost:27017/app',
+        uri:
+          configService.get<string>('MONGODB_URI') ??
+          'mongodb://localhost:27017/app',
       }),
       inject: [ConfigService],
     }),
-    
+
     // AI Module for speech-to-text
     AiModule,
-    
+
     // Core App Modules
     BotModule,
     UsersModule,

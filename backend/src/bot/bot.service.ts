@@ -25,7 +25,7 @@ export class BotService {
 
     // Get user to check preferred language
     const user = await this.usersService.findByPhone(phone);
-    
+
     // Auto-detect language from message if user not registered
     let detectedLang = user?.preferredLanguage || 'english';
     if (!user || user.conversationState !== 'REGISTERED') {
@@ -50,6 +50,19 @@ export class BotService {
     // ── Normalized input (French → English) ────────────
     const normalizedInput = this.normalizeCommand(input);
 
+    // ── CANCEL command (works at any stage) ────────────────
+    if (normalizedInput === 'CANCEL') {
+      // Clear pending listing state if any
+      if (this.listingFlow.isInPriceState(phone)) {
+        return this.listingFlow.handle(phone, 'CANCEL', channel);
+      }
+      // If mid-registration, reset to start
+      if (user && user.conversationState !== 'REGISTERED') {
+        return this.translation.t(detectedLang, 'somethingWrong');
+      }
+      return this.translation.t(detectedLang, 'somethingWrong');
+    }
+
     const isRegistered = user?.conversationState === 'REGISTERED';
 
     // ── Not registered or mid-registration → registration flow
@@ -59,30 +72,34 @@ export class BotService {
       if (!reply) {
         // User is registered, proceed to main command router
         await this.usersService.updateChannel(phone, channel);
-        
+
         // Check if user is in pending price state (waiting for price choice)
         if (this.listingFlow.isInPriceState(phone)) {
           return this.listingFlow.handle(phone, text, channel);
         }
-        
+
         // Route to listing flow
         if (normalizedInput.startsWith('SELL')) {
           return await this.listingFlow.handle(phone, text, channel);
         }
-        
+
         if (normalizedInput.startsWith('BUY')) {
           return await this.listingFlow.handle(phone, text, channel);
         }
-        
+
         if (normalizedInput.startsWith('OFFER')) {
           return await this.listingFlow.handle(phone, text, channel);
         }
-        
+
         // YES/NO response from farmer - check if they have pending interest
         if (normalizedInput === 'YES' || normalizedInput === 'NO') {
-          return this.listingFlow.handleFarmerResponse(phone, normalizedInput, channel);
+          return this.listingFlow.handleFarmerResponse(
+            phone,
+            normalizedInput,
+            channel,
+          );
         }
-        
+
         // No command recognized, show help
         return this.helpMessage(channel, detectedLang);
       }
@@ -111,7 +128,11 @@ export class BotService {
 
     // YES/NO response from farmer - check if they have pending interest
     if (normalizedInput === 'YES' || normalizedInput === 'NO') {
-      return this.listingFlow.handleFarmerResponse(phone, normalizedInput, channel);
+      return this.listingFlow.handleFarmerResponse(
+        phone,
+        normalizedInput,
+        channel,
+      );
     }
 
     // ── Unrecognised command ───────────────────────────────
@@ -126,25 +147,66 @@ export class BotService {
     currentLang: string,
   ): Promise<string> {
     const input = text.trim().toLowerCase();
+    const currentUser = await this.usersService.findByPhone(phone);
+    // Preserve registration state if user is mid-registration
+    const previousState =
+      currentUser?.conversationState &&
+      currentUser.conversationState !== 'AWAITING_LANGUAGE'
+        ? currentUser.conversationState
+        : undefined;
 
     // Parse language selection
     if (input.includes('1') || input.includes('english')) {
-      await this.usersService.update(phone, { preferredLanguage: 'english', conversationState: 'REGISTERED' });
+      const update: any = { preferredLanguage: 'english' };
+      update.conversationState = previousState || 'REGISTERED';
+      await this.usersService.update(phone, update);
+      if (previousState) {
+        // User is mid-registration, show language set then resume registration
+        return (
+          this.translation.t('english', 'languageSet') +
+          '\n\n' +
+          this.registrationFlow.resumeMessage(phone, 'english', channel)
+        );
+      }
       return this.translation.t('english', 'languageSet');
     }
 
-    if (input.includes('2') || input.includes('french') || input.includes('français')) {
-      await this.usersService.update(phone, { preferredLanguage: 'french', conversationState: 'REGISTERED' });
+    if (
+      input.includes('2') ||
+      input.includes('french') ||
+      input.includes('français')
+    ) {
+      const update: any = { preferredLanguage: 'french' };
+      update.conversationState = previousState || 'REGISTERED';
+      await this.usersService.update(phone, update);
+      if (previousState) {
+        return (
+          this.translation.t('french', 'languageSet') +
+          '\n\n' +
+          this.registrationFlow.resumeMessage(phone, 'french', channel)
+        );
+      }
       return this.translation.t('french', 'languageSet');
     }
 
     if (input.includes('3') || input.includes('pidgin')) {
-      await this.usersService.update(phone, { preferredLanguage: 'pidgin', conversationState: 'REGISTERED' });
+      const update: any = { preferredLanguage: 'pidgin' };
+      update.conversationState = previousState || 'REGISTERED';
+      await this.usersService.update(phone, update);
+      if (previousState) {
+        return (
+          this.translation.t('pidgin', 'languageSet') +
+          '\n\n' +
+          this.registrationFlow.resumeMessage(phone, 'pidgin', channel)
+        );
+      }
       return this.translation.t('pidgin', 'languageSet');
     }
 
     // No valid selection → set state and show language menu
-    await this.usersService.update(phone, { conversationState: 'AWAITING_LANGUAGE' });
+    await this.usersService.update(phone, {
+      conversationState: 'AWAITING_LANGUAGE',
+    });
     return this.translation.t(currentLang, 'selectLanguage');
   }
 
@@ -216,6 +278,7 @@ export class BotService {
     if (normalized === 'NON') return 'NO';
     if (normalized === 'AIDE') return 'HELP';
     if (normalized === 'SAUTER') return 'SKIP';
+    if (normalized === 'ANNULER') return 'CANCEL';
 
     return normalized;
   }

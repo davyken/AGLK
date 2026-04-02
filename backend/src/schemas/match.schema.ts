@@ -20,14 +20,11 @@ export class Match {
   @Prop({ required: true })
   quantity: number;
 
-  
   @Prop({ default: null })
   suggestedPrice: number;
 
-  
   @Prop({ default: null })
   farmerPrice: number;
-
 
   @Prop({ default: null })
   proposedPrice: number;
@@ -46,23 +43,21 @@ export class Match {
   // Status
   @Prop({
     enum: [
-      'pending',      // match found, waiting for farmer to respond
-      'offer_sent',   // buyer made a counter offer, waiting for farmer
-      'accepted',     // farmer said YES → wa.me links sent to both
-      'rejected',     // farmer said NO
+      'pending', // match found, waiting for farmer to respond
+      'offer_sent', // buyer made a counter offer, waiting for farmer
+      'accepted', // farmer said YES → wa.me links sent to both
+      'rejected', // farmer said NO
     ],
     default: 'pending',
   })
   status: string;
 
- 
   @Prop({ default: null })
-  farmerWaLink: string; 
+  farmerWaLink: string;
 
   @Prop({ default: null })
-  buyerWaLink: string;  
+  buyerWaLink: string;
 
-  
   @Prop({ default: null })
   connectedAt: Date;
 }

@@ -66,14 +66,14 @@ export class BotController {
       if (image) {
         const imageUrl = image.link; // Direct URL if available
         const imageMediaId = image.id; // Media ID for uploaded images
-        
+
         return this.handleMediaMessage(phone, 'image', imageUrl, imageMediaId);
       }
 
       // Handle audio/voice note
       if (audio) {
         const audioMediaId = audio.id;
-        
+
         return this.handleMediaMessage(phone, 'audio', null, audioMediaId);
       }
 
@@ -106,7 +106,7 @@ export class BotController {
     try {
       // Check if user is registered
       const user = await this.usersService.findByPhone(phone);
-      
+
       if (!user || user.conversationState !== 'REGISTERED') {
         const reply = 'Please register first. Reply Hi to start.';
         await this.metaSender.send(phone, reply);
@@ -121,7 +121,8 @@ export class BotController {
         }
 
         // Otherwise, ask if they want to add image to a new listing
-        const reply = '📷 Image received!\n\nTo add this image to your listing, use:\nSELL maize 10 bags\n\nThen reply with this image after entering the price.\n\nOr type HELP for options.';
+        const reply =
+          '📷 Image received!\n\nTo add this image to your listing, use:\nSELL maize 10 bags\n\nThen reply with this image after entering the price.\n\nOr type HELP for options.';
         await this.metaSender.send(phone, reply);
         return { status: 'image_received' };
       }
@@ -135,7 +136,8 @@ export class BotController {
           );
 
           if (!transcription) {
-            const reply = '🎤 Sorry, I could not understand the voice note.\n\n' +
+            const reply =
+              '🎤 Sorry, I could not understand the voice note.\n\n' +
               'Please type your message or:\n' +
               '- SELL maize 10 bags\n' +
               '- BUY maize 20 bags\n\n' +
@@ -155,7 +157,8 @@ export class BotController {
           return { status: 'voice_processed' };
         } catch (error) {
           console.error('Voice transcription error:', error);
-          const reply = '🎤 Sorry, I could not process the voice note.\n\n' +
+          const reply =
+            '🎤 Sorry, I could not process the voice note.\n\n' +
             'Please try typing your message.';
           await this.metaSender.send(phone, reply);
           return { status: 'transcription_error' };

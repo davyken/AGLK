@@ -45,7 +45,11 @@ export class MetaSenderService {
    * @param imageUrl - URL to the image or media ID from WhatsApp
    * @param caption - Optional caption for the image
    */
-  async sendImage(to: string, imageUrl: string, caption?: string): Promise<void> {
+  async sendImage(
+    to: string,
+    imageUrl: string,
+    caption?: string,
+  ): Promise<void> {
     const phoneNumberId = this.config.get<string>('META_PHONE_NUMBER_ID');
     const accessToken = this.config.get<string>('META_ACCESS_TOKEN');
     const apiVersion = this.config.get<string>('META_API_VERSION') || 'v19.0';
@@ -83,7 +87,11 @@ export class MetaSenderService {
   /**
    * Send an image using a media ID (for pre-uploaded images)
    */
-  async sendImageByMediaId(to: string, mediaId: string, caption?: string): Promise<void> {
+  async sendImageByMediaId(
+    to: string,
+    mediaId: string,
+    caption?: string,
+  ): Promise<void> {
     const phoneNumberId = this.config.get<string>('META_PHONE_NUMBER_ID');
     const accessToken = this.config.get<string>('META_ACCESS_TOKEN');
     const apiVersion = this.config.get<string>('META_API_VERSION') || 'v19.0';

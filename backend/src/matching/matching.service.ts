@@ -101,7 +101,6 @@ export class MatchingService {
     return score;
   }
 
-  
   private getMatchReason(
     listing1: ListingDocument,
     listing2: ListingDocument,

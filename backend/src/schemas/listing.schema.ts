@@ -32,7 +32,6 @@ export class Listing {
   @Prop({ default: null })
   imageMediaId: string;
 
-  
   @Prop({ default: null })
   marketMinPrice: number;
 
@@ -42,7 +41,7 @@ export class Listing {
   @Prop({ default: null })
   marketMaxPrice: number;
 
-  // What the system recommended 
+  // What the system recommended
   @Prop({ default: null })
   suggestedPrice: number;
 
@@ -58,8 +57,6 @@ export class Listing {
   @Prop({ default: false })
   acceptedSuggestion: boolean;
 
-  
-  
   @Prop({
     enum: ['active', 'matched', 'completed', 'cancelled'],
     default: 'active',
@@ -79,4 +76,4 @@ ListingSchema.index({ product: 1, status: 1 });
 ListingSchema.index({ userPhone: 1 });
 ListingSchema.index({ location: 1 });
 ListingSchema.index({ type: 1, status: 1 });
-ListingSchema.index({ product: 1, location: 1, status: 1 }); 
+ListingSchema.index({ product: 1, location: 1, status: 1 });

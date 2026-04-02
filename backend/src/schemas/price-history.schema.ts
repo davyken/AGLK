@@ -21,10 +21,10 @@ export class PriceHistory {
   maxPrice: number;
 
   @Prop({ required: true })
-  suggestedPrice: number; 
+  suggestedPrice: number;
 
   @Prop({ default: 0 })
-  sampleSize: number; 
+  sampleSize: number;
 
   @Prop({ enum: ['transaction', 'api', 'manual'], default: 'manual' })
   source: string;

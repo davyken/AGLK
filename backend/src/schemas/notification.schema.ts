@@ -10,12 +10,18 @@ export class Notification {
 
   @Prop({
     required: true,
-    enum: ['match_found', 'match_accepted', 'match_rejected', 'price_update', 'new_listing'],
+    enum: [
+      'match_found',
+      'match_accepted',
+      'match_rejected',
+      'price_update',
+      'new_listing',
+    ],
   })
   type: string;
 
   @Prop({ required: true })
-  message: string; 
+  message: string;
 
   @Prop({ required: true, enum: ['sms', 'whatsapp'] })
   channel: string;
@@ -27,10 +33,10 @@ export class Notification {
   status: string;
 
   @Prop({ default: 0 })
-  retryCount: number; 
+  retryCount: number;
 }
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
 
 NotificationSchema.index({ userPhone: 1, status: 1 });
-NotificationSchema.index({ status: 1, retryCount: 1 }); 
+NotificationSchema.index({ status: 1, retryCount: 1 });

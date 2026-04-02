@@ -6,9 +6,7 @@ import { CreateUserDto, UpdateUserDto } from '../dto/user.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
-  ) {}
+  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
   // ─── Find by phone (main lookup throughout the app) ──────
   async findByPhone(phone: string): Promise<UserDocument | null> {
@@ -30,9 +28,9 @@ export class UsersService {
   ): Promise<UserDocument> {
     const user = new this.userModel({
       phone,
-      name: 'unknown',         // overwritten in step 2
-      role: 'farmer',          // overwritten in step 1
-      location: 'unknown',     // overwritten in step 3
+      name: 'unknown', // overwritten in step 2
+      role: 'farmer', // overwritten in step 1
+      location: 'unknown', // overwritten in step 3
       preferredChannel: channel,
       lastChannelUsed: channel,
       conversationState: 'AWAITING_ROLE',

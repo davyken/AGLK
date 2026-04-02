@@ -47,9 +47,9 @@ export class User {
       'AWAITING_ROLE',
       'AWAITING_NAME',
       'AWAITING_LOCATION',
-      'AWAITING_PRODUCES',   // farmer
-      'AWAITING_BUSINESS',   // buyer
-      'AWAITING_NEEDS',      // buyer
+      'AWAITING_PRODUCES', // farmer
+      'AWAITING_BUSINESS', // buyer
+      'AWAITING_NEEDS', // buyer
       'REGISTERED',
       'AWAITING_PRICE',
       'AWAITING_CONFIRM',
@@ -61,4 +61,3 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
-

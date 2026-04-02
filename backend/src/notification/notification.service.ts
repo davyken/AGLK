@@ -53,10 +53,10 @@ export class NotificationService {
   ): Promise<void> {
     for (const match of matches) {
       const buyerListing = match.listing;
-      
+
       // Get buyer's phone number
       const buyer = await this.usersService.findByPhone(buyerListing.userPhone);
-      
+
       if (buyer?.lastChannelUsed && buyer?.phone) {
         const message = this.buildSupplyNotification(
           sellListing,
@@ -82,10 +82,10 @@ export class NotificationService {
   ): Promise<void> {
     for (const match of matches) {
       const sellListing = match.listing;
-      
+
       // Get farmer's phone number
       const farmer = await this.usersService.findByPhone(sellListing.userPhone);
-      
+
       if (farmer?.lastChannelUsed && farmer?.phone) {
         const message = this.buildDemandNotification(
           buyListing,

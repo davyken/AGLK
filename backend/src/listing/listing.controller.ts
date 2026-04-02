@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Headers, NotFoundException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Headers,
+  NotFoundException,
+} from '@nestjs/common';
 import { ListingService } from './listing.service';
 import { CreateListingDto, UpdateListingDto } from '../dto/listing.dto';
 
@@ -19,7 +29,7 @@ export class ListingController {
   }
 
   // GET /listing - Get all listings
- 
+
   @Get()
   async findAll() {
     return this.listingService.findAll();
@@ -31,13 +41,13 @@ export class ListingController {
     return this.listingService.findActiveListings();
   }
 
-  // GET /listing/user/:phone 
+  // GET /listing/user/:phone
   @Get('user/:phone')
   async findByUser(@Param('phone') phone: string) {
     return this.listingService.findByUserPhone(phone);
   }
 
-  // GET /listing/:id 
+  // GET /listing/:id
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.listingService.findOne(id);
@@ -46,7 +56,10 @@ export class ListingController {
   // PATCH /listing/:id - Update a listing
   // Can update price, quantity, status etc
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() updateListingDto: UpdateListingDto) {
+  async update(
+    @Param('id') id: string,
+    @Body() updateListingDto: UpdateListingDto,
+  ) {
     return this.listingService.update(id, updateListingDto);
   }
 
