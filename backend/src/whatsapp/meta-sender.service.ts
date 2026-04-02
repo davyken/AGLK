@@ -39,12 +39,6 @@ export class MetaSenderService {
     }
   }
 
-  /**
-   * Send an image via WhatsApp
-   * @param to - Recipient phone number
-   * @param imageUrl - URL to the image or media ID from WhatsApp
-   * @param caption - Optional caption for the image
-   */
   async sendImage(
     to: string,
     imageUrl: string,
@@ -84,9 +78,6 @@ export class MetaSenderService {
     }
   }
 
-  /**
-   * Send an image using a media ID (for pre-uploaded images)
-   */
   async sendImageByMediaId(
     to: string,
     mediaId: string,

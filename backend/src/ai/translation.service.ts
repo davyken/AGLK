@@ -83,7 +83,6 @@ export class TranslationService {
         '📷 Image received!\n\nTo add this image to your listing, use:\nSELL maize 10 bags\n\nThen reply with this image after entering the price.',
       voiceReceived: '🎤 Voice note received and processed!',
     },
-
     french: {
       welcome: '👋 Bienvenue sur AGRO-LINK !',
       chooseRole:
@@ -156,7 +155,7 @@ export class TranslationService {
       requestSaved: 'Votre demande a été enregistrée.',
       requestId: '📋 ID de la demande',
       notifyWhenAvailable:
-        'Nous vousNotifierons lorsque les agriculteurs listeront ce produit.',
+        'Nous vous notifierons lorsque les agriculteurs listeront ce produit.',
       newInterest: "🔔 *Nouvel intérêt d'acheteur !*",
       buyerWants: 'Un acheteur veut vos produits :',
       budget: 'Budget',
@@ -175,7 +174,6 @@ export class TranslationService {
         '📷 Image reçue !\n\nPour ajouter cette image à votre annonce, utilisez :\nVENDRE maize 10 sacs\n\nPuis répondez avec cette image après avoir entré le prix.',
       voiceReceived: '🎤 Message vocal reçu et traité !',
     },
-
     pidgin: {
       welcome: '👋 Welcome to AGRO-LINK!',
       chooseRole:
@@ -255,129 +253,43 @@ export class TranslationService {
     },
   };
 
-  // Keywords for language detection
   private frenchKeywords = [
-    'bonjour',
-    'bonsoir',
-    'je',
-    'vous',
-    'vouloir',
-    'acheter',
-    'vendre',
-    'produit',
-    'mais',
-    'manioc',
-    'tomate',
-    'prix',
-    'quantité',
-    'sac',
-    'sacs',
-    ' localisation',
-    'enregistrer',
-    'merci',
-    'oui',
-    'non',
-    'agriculteur',
-    'acheteur',
-    'bienvenue',
-    'être',
-    'comment',
-    "s'il",
-    'vous plaît',
-    'merci',
-    'aide',
-    'trouver',
-    'chercher',
-    'disponible',
+    'bonjour', 'bonsoir', 'je', 'vous', 'vouloir', 'acheter', 'vendre',
+    'produit', 'mais', 'manioc', 'tomate', 'prix', 'quantité', 'sac',
+    'sacs', 'localisation', 'enregistrer', 'merci', 'oui', 'non',
+    'agriculteur', 'acheteur', 'bienvenue', 'être', 'comment', "s'il",
+    'vous plaît', 'merci', 'aide', 'trouver', 'chercher', 'disponible',
   ];
 
   private pidginKeywords = [
-    'you',
-    'don',
-    'dey',
-    'fit',
-    'wana',
-    'want',
-    'buy',
-    'sell',
-    'maize',
-    'cassava',
-    'tomatoes',
-    'price',
-    'bags',
-    'where',
-    'na',
-    'for',
-    'make',
-    'e.g',
-    'e.g.',
-    'naim',
-    'wetin',
-    'hello',
-    'hi',
-    'go',
-    'go be',
-    'your',
-    'my',
-    'give',
-    'abeg',
-    'pls',
-    'please',
-    'dis',
-    'dat',
-    'get',
-    'got',
-    'no',
-    'yes',
-    '号',
-    'we',
-    'go',
-    'come',
+    'you', 'don', 'dey', 'fit', 'wana', 'want', 'buy', 'sell', 'maize',
+    'cassava', 'tomatoes', 'price', 'bags', 'where', 'na', 'for', 'make',
+    'e.g', 'e.g.', 'naim', 'wetin', 'hello', 'hi', 'go', 'go be', 'your',
+    'my', 'give', 'abeg', 'pls', 'please', 'dis', 'dat', 'get', 'got',
+    'no', 'yes', 'we', 'go', 'come',
   ];
 
-  /**
-   * Auto-detect language from user message
-   */
   detectLanguage(text: string): string {
     const lowerText = text.toLowerCase();
-
     let frenchScore = 0;
     let pidginScore = 0;
 
-    // Check French keywords
     for (const keyword of this.frenchKeywords) {
-      if (lowerText.includes(keyword)) {
-        frenchScore++;
-      }
+      if (lowerText.includes(keyword)) frenchScore++;
     }
 
-    // Check Pidgin keywords
     for (const keyword of this.pidginKeywords) {
-      if (lowerText.includes(keyword)) {
-        pidginScore++;
-      }
+      if (lowerText.includes(keyword)) pidginScore++;
     }
 
-    // Determine language based on scores
-    if (frenchScore > pidginScore && frenchScore >= 2) {
-      return 'french';
-    }
-
-    if (pidginScore > frenchScore && pidginScore >= 2) {
-      return 'pidgin';
-    }
-
-    // Default to English
+    if (frenchScore > pidginScore && frenchScore >= 2) return 'french';
+    if (pidginScore > frenchScore && pidginScore >= 2) return 'pidgin';
     return 'english';
   }
 
-  /**
-   * Get translation for a key in the specified language
-   */
   t(language: string, key: string, ...args: any[]): string {
     const lang = (language || 'english') as keyof typeof this.translations;
     const translations = this.translations[lang] || this.translations.english;
-
     const translation = (translations as any)[key];
 
     if (typeof translation === 'function') {
@@ -387,9 +299,6 @@ export class TranslationService {
     return translation || key;
   }
 
-  /**
-   * Get all help text for a language
-   */
   getHelpText(language: string): string {
     const lang = (language || 'english') as keyof typeof this.translations;
     const t = this.translations[lang] || this.translations.english;

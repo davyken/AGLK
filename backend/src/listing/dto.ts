@@ -6,9 +6,10 @@ import {
   IsOptional,
   IsBoolean,
 } from 'class-validator';
+
 export class CreateListingDto {
   @IsEnum(['sell', 'buy'])
-  type: string; // sell = farmer listing | buy = buyer request
+  type: string;
 
   @IsString()
   @IsNotEmpty()

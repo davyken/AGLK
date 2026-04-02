@@ -1,13 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { ListingService } from '../listing/listing.service';
 import { UsersService } from '../users/users.service';
-import { CreateListingDto } from '../dto/listing.dto';
+import { CreateListingDto } from '../listing/dto';
 import { PriceService } from '../price/price.service';
-import { MatchingService } from '../matching/matching.service';
-import { MetaSenderService } from './meta-sender.service';
+import { MatchingService } from '../listing/matching.service';
+import { MetaSenderService } from '../whatsapp/meta-sender.service';
 
-// Simple in-memory store for conversation state
-// In production, this should be in Redis or database
 interface PendingState {
   type: 'sell' | 'sell_waiting_image' | 'buy_select';
   product: string;
@@ -107,7 +105,6 @@ export class ListingFlowService {
     }
 
     try {
-      // Get user details
       const user = await this.usersService.findByPhone(phone);
 
       if (!user || user.conversationState !== 'REGISTERED') {
@@ -124,7 +121,6 @@ export class ListingFlowService {
         );
       }
 
-      // Store pending listing for price selection
       pendingStates.set(phone, {
         type: 'sell',
         product: parsed.product,
@@ -134,10 +130,8 @@ export class ListingFlowService {
         userRole: user.role,
       });
 
-      // Get market prices from PriceService
       const priceData = await this.priceService.getPrice(parsed.product);
 
-      // If no price data, skip price options and go directly to custom price
       if (!priceData) {
         return this.msg(
           channel,
@@ -181,7 +175,6 @@ export class ListingFlowService {
     }
 
     try {
-      // Get user details
       const user = await this.usersService.findByPhone(phone);
 
       if (!user || user.conversationState !== 'REGISTERED') {
@@ -198,8 +191,6 @@ export class ListingFlowService {
         );
       }
 
-      // Search for matching SELL listings for this product
-      // Use filters if location or price range is provided
       let matchingListings;
       if (parsed.location || parsed.minPrice || parsed.maxPrice) {
         matchingListings = await this.listingService.findWithFilters(
@@ -217,13 +208,11 @@ export class ListingFlowService {
         );
       }
 
-      // Filter to active sell listings (if not already filtered by type)
       const sellListings = matchingListings.filter(
         (l) => l.type === 'sell' && l.status === 'active',
       );
 
       if (sellListings.length === 0) {
-        // No matching listings - create a buy request and notify
         const dto: CreateListingDto = {
           type: 'buy',
           product: parsed.product,
@@ -232,7 +221,12 @@ export class ListingFlowService {
           priceType: 'none',
         };
 
-        const listing = await this.listingService.create(dto, phone);
+        const listing = await this.listingService.createEnriched(dto, {
+          phone: user.phone,
+          name: user.name,
+          location: user.location,
+          channel: user.lastChannelUsed,
+        });
 
         return this.msg(
           channel,
@@ -241,16 +235,13 @@ export class ListingFlowService {
             `Product: ${listing.product}\n` +
             `Quantity: ${listing.quantity} ${listing.unit}\n` +
             `Location: ${listing.location}\n\n` +
-            // `📋 Request ID: ${listing._id}\n\n` +
             `We'll notify you when farmers list this product.\\n\\n` +
             `🏪 Type HELP for more options.`,
         );
       }
 
-      // Show matching listings to buyer (limit to top 5)
       const topListings = sellListings.slice(0, 5);
 
-      // Store pending state
       pendingStates.set(phone, {
         type: 'buy_select',
         product: parsed.product,
@@ -270,7 +261,6 @@ export class ListingFlowService {
         })),
       });
 
-      // Build response message
       let message = `🔍 *Found ${sellListings.length} farmer(s) with ${this.capitalize(parsed.product)}*\n\n`;
 
       topListings.forEach((listing, index) => {
@@ -286,10 +276,8 @@ export class ListingFlowService {
 
       message += `Reply with the number (1-${topListings.length}) to select a farmer.`;
 
-      // Send text message first
       await this.metaSender.send(phone, message);
 
-      // Send images for each listing that has images
       for (const listing of topListings) {
         if (listing.imageMediaId) {
           await this.metaSender.sendImageByMediaId(
@@ -326,23 +314,19 @@ export class ListingFlowService {
       );
     }
 
-    // Handle CANCEL at any pending state
     if (response.trim().toUpperCase() === 'CANCEL') {
       pendingStates.delete(phone);
       return this.msg(channel, `❌ Cancelled. Type HELP for options.`);
     }
 
-    // SELL FLOW - Price selection
     if (pending.type === 'sell') {
       return this.handleSellPending(phone, response, channel, pending);
     }
 
-    // SELL FLOW - Waiting for image
     if (pending.type === 'sell_waiting_image') {
       return this.handleSellWaitingImage(phone, response, channel, pending);
     }
 
-    // BUY FLOW - Select farmer
     if (pending.type === 'buy_select') {
       return this.handleBuySelect(phone, response, channel, pending);
     }
@@ -361,7 +345,6 @@ export class ListingFlowService {
   ): Promise<string> {
     const input = response.trim().toLowerCase();
 
-    // Option 1: Accept suggested price
     if (input === '1') {
       try {
         const priceData = await this.priceService.getPrice(pending.product);
@@ -374,7 +357,6 @@ export class ListingFlowService {
           );
         }
 
-        // Change to waiting for image state
         pendingStates.set(phone, {
           type: 'sell_waiting_image',
           product: pending.product,
@@ -382,15 +364,13 @@ export class ListingFlowService {
           unit: pending.unit,
           userPhone: phone,
           userRole: pending.userRole,
-          // Store the accepted price
           price: priceData.suggested,
         });
 
         return this.msg(
           channel,
-          `📷 Would you like to add a photo of your product?
-
-` + `Send me the image now, or reply SKIP to create listing without an image.`,
+          `📷 Would you like to add a photo of your product?\n\n` +
+            `Send me the image now, or reply SKIP to create listing without an image.`,
         );
       } catch (error) {
         console.error('Price acceptance error:', error);
@@ -402,7 +382,6 @@ export class ListingFlowService {
       }
     }
 
-    // Option 2: Set custom price - prompt for price
     if (input === '2') {
       return this.msg(
         channel,
@@ -412,13 +391,9 @@ export class ListingFlowService {
       );
     }
 
-    // Check if response is a custom price (number)
     const customPrice = this.parsePrice(response);
     if (customPrice !== null) {
       try {
-        const priceData = await this.priceService.getPrice(pending.product);
-
-        // Change to waiting for image state
         pendingStates.set(phone, {
           type: 'sell_waiting_image',
           product: pending.product,
@@ -431,9 +406,8 @@ export class ListingFlowService {
 
         return this.msg(
           channel,
-          `📷 Would you like to add a photo of your product?
-
-` + `Send me the image now, or reply SKIP to create listing without an image.`,
+          `📷 Would you like to add a photo of your product?\n\n` +
+            `Send me the image now, or reply SKIP to create listing without an image.`,
         );
       } catch (error) {
         console.error('Custom price listing error:', error);
@@ -445,7 +419,6 @@ export class ListingFlowService {
       }
     }
 
-    // Invalid response
     return this.msg(
       channel,
       `❌ Invalid response.\n\n` +
@@ -461,7 +434,6 @@ export class ListingFlowService {
     channel: 'sms' | 'whatsapp',
     pending: PendingState,
   ): Promise<string> {
-    // Handle CANCEL before checking for number
     if (response.trim().toUpperCase() === 'CANCEL') {
       pendingStates.delete(phone);
       return this.msg(channel, `❌ Cancelled. Type BUY to search again.`);
@@ -484,9 +456,7 @@ export class ListingFlowService {
 
     const selectedListing = pending.listings![selection - 1];
 
-    // Mark the buyer's listing as "matched" with the selected farmer
     try {
-      // Create the buyer's listing
       const dto: CreateListingDto = {
         type: 'buy',
         product: pending.product,
@@ -496,17 +466,21 @@ export class ListingFlowService {
         price: selectedListing.price,
       };
 
-      const buyerListing = await this.listingService.create(dto, phone);
+      const buyerUser = await this.usersService.findByPhone(phone);
+      const buyerListing = await this.listingService.createEnriched(dto, {
+        phone,
+        name: buyerUser?.name || '',
+        location: buyerUser?.location || '',
+        channel: buyerUser?.lastChannelUsed || 'whatsapp',
+      });
 
       pendingStates.delete(phone);
 
-      // Send notification to farmer
       try {
         const farmerUser = await this.usersService.findByPhone(
           selectedListing.userPhone,
         );
         if (farmerUser?.phone) {
-          // Store pending response for farmer
           pendingFarmerResponses.set(farmerUser.phone, {
             buyerPhone: phone,
             sellerListingId: selectedListing.id,
@@ -536,7 +510,6 @@ export class ListingFlowService {
           `📦 ${selectedListing.quantity} ${pending.unit}\n` +
           `💰 ${this.formatPrice(selectedListing.price)}\n` +
           `📍 ${selectedListing.location}\n\n` +
-          // `📋 Your Request ID: ${buyerListing._id}\n\n` +
           `We've notified the farmer. They will contact you if interested.\n\n` +
           `🏪 Type HELP for more options.`,
       );
@@ -561,33 +534,21 @@ export class ListingFlowService {
   } | null {
     const parts = command.trim().toLowerCase().split(/\s+/);
 
-    if (parts.length < 3) {
-      return null;
-    }
+    if (parts.length < 3) return null;
 
     const type = parts[0] as 'sell' | 'buy';
-    if (type !== 'sell' && type !== 'buy') {
-      return null;
-    }
+    if (type !== 'sell' && type !== 'buy') return null;
 
-    // Check for filter flags: @location, #min-max, $price
     let location: string | undefined;
     let minPrice: number | undefined;
     let maxPrice: number | undefined;
 
-    let product = '';
-    let quantityIndex = -1;
-
     for (let i = 1; i < parts.length; i++) {
       const part = parts[i];
-
-      // Location filter: @yaounde
       if (part.startsWith('@')) {
         location = part.substring(1);
         continue;
       }
-
-      // Price range filter: #10000-20000
       if (part.startsWith('#')) {
         const priceRange = part.substring(1).split('-');
         if (priceRange.length === 2) {
@@ -596,24 +557,11 @@ export class ListingFlowService {
         }
         continue;
       }
-
-      // Check if this is the quantity (last number in command)
-      if (/^\d+$/.test(part) && quantityIndex === -1) {
-        // Find the last number for quantity
-        for (let j = parts.length - 1; j >= 2; j--) {
-          if (/^\d+$/.test(parts[j])) {
-            quantityIndex = j;
-            break;
-          }
-        }
-      }
     }
 
-    // Find the last part that is a number (quantity)
-    quantityIndex = -1;
+    let quantityIndex = -1;
     for (let i = parts.length - 1; i >= 2; i--) {
       const part = parts[i];
-      // Skip if it's a filter
       if (part.startsWith('@') || part.startsWith('#')) continue;
       if (/^\d+$/.test(part)) {
         quantityIndex = i;
@@ -621,44 +569,31 @@ export class ListingFlowService {
       }
     }
 
-    if (quantityIndex === -1) {
-      return null;
-    }
+    if (quantityIndex === -1) return null;
 
-    // Product is everything between type and quantity (excluding filters)
     const productParts: string[] = [];
     for (let i = 1; i < quantityIndex; i++) {
       const part = parts[i];
-      // Skip filter parts
       if (!part.startsWith('@') && !part.startsWith('#')) {
         productParts.push(part);
       }
     }
-    product = productParts.join(' ');
+    const product = productParts.join(' ');
 
-    if (!product) {
-      return null;
-    }
+    if (!product) return null;
 
     const quantity = parseInt(parts[quantityIndex], 10);
     const unit = parts[quantityIndex + 1] || 'bags';
 
-    if (quantity <= 0) {
-      return null;
-    }
+    if (quantity <= 0) return null;
 
     return { type, product, quantity, unit, location, minPrice, maxPrice };
   }
 
   private parsePrice(text: string): number | null {
-    // Remove commas and spaces, try to parse as number
     const cleaned = text.replace(/[,\s]/g, '');
     const price = parseInt(cleaned, 10);
-
-    if (isNaN(price) || price <= 0) {
-      return null;
-    }
-
+    if (isNaN(price) || price <= 0) return null;
     return price;
   }
 
@@ -706,17 +641,11 @@ export class ListingFlowService {
     return pendingStates.has(phone);
   }
 
-  /**
-   * Check if user is in image-waiting state
-   */
   isInImageState(phone: string): boolean {
     const state = pendingStates.get(phone);
     return state?.type === 'sell_waiting_image';
   }
 
-  /**
-   * Handle image received from user during listing flow
-   */
   async handleImage(
     phone: string,
     imageUrl: string | null,
@@ -736,9 +665,6 @@ export class ListingFlowService {
     );
   }
 
-  /**
-   * Handle state when farmer is waiting to add image
-   */
   private async handleSellWaitingImage(
     phone: string,
     response: string,
@@ -747,21 +673,16 @@ export class ListingFlowService {
   ): Promise<string> {
     const input = response.trim().toUpperCase();
 
-    // Handle SKIP command (English and French)
     if (input === 'SKIP' || input === 'SAUTER') {
       return this.createListingWithImage(phone, channel, pending, null, null);
     }
 
-    // Invalid response - they should either send an image or type SKIP
     return this.msg(
       channel,
       `📷 Please send a photo of your product, or reply SKIP to skip.`,
     );
   }
 
-  /**
-   * Create listing with optional image
-   */
   private async createListingWithImage(
     phone: string,
     channel: 'sms' | 'whatsapp',
@@ -771,6 +692,7 @@ export class ListingFlowService {
   ): Promise<string> {
     try {
       const priceData = await this.priceService.getPrice(pending.product);
+      const user = await this.usersService.findByPhone(phone);
 
       const dto: CreateListingDto = {
         type: 'sell',
@@ -786,7 +708,12 @@ export class ListingFlowService {
         imageMediaId: imageMediaId || undefined,
       };
 
-      const listing = await this.listingService.create(dto, phone);
+      const listing = await this.listingService.createEnriched(dto, {
+        phone,
+        name: user?.name || '',
+        location: user?.location || '',
+        channel: user?.lastChannelUsed || 'whatsapp',
+      });
 
       pendingStates.delete(phone);
 
@@ -796,13 +723,10 @@ export class ListingFlowService {
         `Quantity: ${listing.quantity} ${listing.unit}\n` +
         `Price: ${this.formatPrice(listing.price)}\n` +
         `Location: ${listing.location}\n\n`;
-      // `📋 Listing ID: ${listing._id}\n\n`
 
       if (imageUrl || imageMediaId) {
         message += `📷 Photo added to listing!\n\n`;
-        // Send confirmation message with image
         await this.metaSender.send(phone, message);
-        // Send the image
         if (imageMediaId) {
           await this.metaSender.sendImageByMediaId(
             phone,
@@ -816,11 +740,10 @@ export class ListingFlowService {
             `📷 Your ${listing.product} listing image`,
           );
         }
-        return ''; // Already sent the message above
+        return '';
       }
 
       message += `👨‍🌾 Type HELP for more options.`;
-
       return this.msg(channel, message);
     } catch (error) {
       console.error('Create listing with image error:', error);
@@ -832,13 +755,11 @@ export class ListingFlowService {
     }
   }
 
-  // Handle OFFER command - Story 8: Make Offer
   private async handleOfferCommand(
     phone: string,
     command: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
-    // Parse: OFFER 20000 LISTING_ID
     const parts = command.trim().split(/\s+/);
 
     if (parts.length < 3) {
@@ -860,7 +781,6 @@ export class ListingFlowService {
     }
 
     try {
-      // Get the target listing (farmer's listing)
       const targetListing = await this.listingService.findOne(listingId);
 
       if (!targetListing) {
@@ -874,7 +794,6 @@ export class ListingFlowService {
         return this.msg(channel, `❌ Listing not available or already sold.`);
       }
 
-      // Get buyer details
       const buyer = await this.usersService.findByPhone(phone);
       if (!buyer || buyer.role !== 'buyer') {
         return this.msg(
@@ -883,7 +802,6 @@ export class ListingFlowService {
         );
       }
 
-      // Create buyer's offer listing
       const dto: CreateListingDto = {
         type: 'buy',
         product: targetListing.product,
@@ -893,23 +811,20 @@ export class ListingFlowService {
         priceType: 'manual',
       };
 
-      const offerListing = await this.listingService.create(dto, phone);
+      await this.listingService.createEnriched(dto, {
+        phone,
+        name: buyer.name,
+        location: buyer.location,
+        channel: buyer.lastChannelUsed,
+      });
 
       return this.msg(
         channel,
-        `💰 *Offer Sent!*
-
-` +
-          `You offered ${this.formatPrice(offerAmount)} for ${targetListing.product}
-` +
-          `Farmer: ${targetListing.userName}
-` +
-          `Location: ${targetListing.userLocation}
-
-` +
-          `The farmer has been notified. They will contact you if interested.
-
-` +
+        `💰 *Offer Sent!*\n\n` +
+          `You offered ${this.formatPrice(offerAmount)} for ${targetListing.product}\n` +
+          `Farmer: ${targetListing.userName}\n` +
+          `Location: ${targetListing.userLocation}\n\n` +
+          `The farmer has been notified. They will contact you if interested.\n\n` +
           `🏪 Type HELP for more options.`,
       );
     } catch (error) {
@@ -951,63 +866,37 @@ export class ListingFlowService {
 
       if (buyer?.phone) {
         const buyerMsg =
-          `✅ *Great News!*
-
-` +
-          `👨‍🌾 ${user.name} has accepted your request!
-
-` +
-          `🌽 Product: ${pending.product}
-` +
-          `📦 Quantity: ${pending.quantity} ${pending.unit}
-` +
-          `💰 Price: ${this.formatPrice(pending.price)}
-
-` +
-          `📍 Location: ${user.location}
-
-` +
-          `📞 Contact them at: ${user.phone}
-
-` +
+          `✅ *Great News!*\n\n` +
+          `👨‍🌾 ${user.name} has accepted your request!\n\n` +
+          `🌽 Product: ${pending.product}\n` +
+          `📦 Quantity: ${pending.quantity} ${pending.unit}\n` +
+          `💰 Price: ${this.formatPrice(pending.price)}\n\n` +
+          `📍 Location: ${user.location}\n\n` +
+          `📞 Contact them at: ${user.phone}\n\n` +
           `Happy trading! 🏪`;
         await this.metaSender.send(buyer.phone, buyerMsg);
       }
 
       return this.msg(
         channel,
-        `✅ *Request Accepted!*
-
-` +
-          `You've connected with ${buyer?.name || 'the buyer'}.
-
-` +
-          `They have been notified and will contact you.
-
-` +
+        `✅ *Request Accepted!*\n\n` +
+          `You've connected with ${buyer?.name || 'the buyer'}.\n\n` +
+          `They have been notified and will contact you.\n\n` +
           `Type HELP for more options.`,
       );
     } else {
       if (buyer?.phone) {
         const buyerMsg =
-          `😔 *Update*
-
-` +
-          `Unfortunately, ${user.name} declined your request for ${pending.product}.
-
-` +
+          `😔 *Update*\n\n` +
+          `Unfortunately, ${user.name} declined your request for ${pending.product}.\n\n` +
           `Type BUY to search for other farmers.`;
         await this.metaSender.send(buyer.phone, buyerMsg);
       }
 
       return this.msg(
         channel,
-        `❌ *Request Declined*
-
-` +
-          `The buyer has been notified.
-
-` +
+        `❌ *Request Declined*\n\n` +
+          `The buyer has been notified.\n\n` +
           `Type HELP for more options.`,
       );
     }

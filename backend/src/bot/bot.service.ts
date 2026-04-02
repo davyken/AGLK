@@ -23,40 +23,31 @@ export class BotService {
     const { phone, text, channel } = msg;
     const input = text.trim().toUpperCase();
 
-    // Get user to check preferred language
     const user = await this.usersService.findByPhone(phone);
 
-    // Auto-detect language from message if user not registered
     let detectedLang = user?.preferredLanguage || 'english';
     if (!user || user.conversationState !== 'REGISTERED') {
       detectedLang = this.translation.detectLanguage(text);
     }
 
-    // ── HELP command (works at any stage) ─────────────────
     if (input === 'HELP' || input === 'AIDE') {
       return this.helpMessage(channel, detectedLang);
     }
 
-    // ── AWAITING_LANGUAGE state → process selection ──────
     if (user?.conversationState === 'AWAITING_LANGUAGE') {
       return this.handleLanguageCommand(phone, text, channel, detectedLang);
     }
 
-    // ── LANGUAGE command (works at any stage) ───────────────
     if (input.startsWith('LANGUAGE') || input.startsWith('LANG')) {
       return this.handleLanguageCommand(phone, text, channel, detectedLang);
     }
 
-    // ── Normalized input (French → English) ────────────
     const normalizedInput = this.normalizeCommand(input);
 
-    // ── CANCEL command (works at any stage) ────────────────
     if (normalizedInput === 'CANCEL') {
-      // Clear pending listing state if any
       if (this.listingFlow.isInPriceState(phone)) {
         return this.listingFlow.handle(phone, 'CANCEL', channel);
       }
-      // If mid-registration, reset to start
       if (user && user.conversationState !== 'REGISTERED') {
         return this.translation.t(detectedLang, 'somethingWrong');
       }
@@ -65,33 +56,24 @@ export class BotService {
 
     const isRegistered = user?.conversationState === 'REGISTERED';
 
-    // ── Not registered or mid-registration → registration flow
     if (!user || !isRegistered) {
       const reply = await this.registrationFlow.handle(phone, text, channel);
-      // If reply is null, user is fully registered → continue to listing flow
       if (!reply) {
-        // User is registered, proceed to main command router
         await this.usersService.updateChannel(phone, channel);
 
-        // Check if user is in pending price state (waiting for price choice)
         if (this.listingFlow.isInPriceState(phone)) {
           return this.listingFlow.handle(phone, text, channel);
         }
 
-        // Route to listing flow
         if (normalizedInput.startsWith('SELL')) {
           return await this.listingFlow.handle(phone, text, channel);
         }
-
         if (normalizedInput.startsWith('BUY')) {
           return await this.listingFlow.handle(phone, text, channel);
         }
-
         if (normalizedInput.startsWith('OFFER')) {
           return await this.listingFlow.handle(phone, text, channel);
         }
-
-        // YES/NO response from farmer - check if they have pending interest
         if (normalizedInput === 'YES' || normalizedInput === 'NO') {
           return this.listingFlow.handleFarmerResponse(
             phone,
@@ -100,16 +82,13 @@ export class BotService {
           );
         }
 
-        // No command recognized, show help
         return this.helpMessage(channel, detectedLang);
       }
       return reply;
     }
 
-    // ── Registered → main command router ──────────────────
     await this.usersService.updateChannel(phone, channel);
 
-    // Check if user is in pending price state (waiting for price choice)
     if (this.listingFlow.isInPriceState(phone)) {
       return this.listingFlow.handle(phone, text, channel);
     }
@@ -117,16 +96,12 @@ export class BotService {
     if (normalizedInput.startsWith('SELL')) {
       return await this.listingFlow.handle(phone, text, channel);
     }
-
     if (normalizedInput.startsWith('BUY')) {
       return await this.listingFlow.handle(phone, text, channel);
     }
-
     if (normalizedInput.startsWith('OFFER')) {
       return await this.listingFlow.handle(phone, text, channel);
     }
-
-    // YES/NO response from farmer - check if they have pending interest
     if (normalizedInput === 'YES' || normalizedInput === 'NO') {
       return this.listingFlow.handleFarmerResponse(
         phone,
@@ -135,11 +110,9 @@ export class BotService {
       );
     }
 
-    // ── Unrecognised command ───────────────────────────────
     return this.unknownCommand(user.role, channel);
   }
 
-  // ─── Handle LANGUAGE command ────────────────────────────
   private async handleLanguageCommand(
     phone: string,
     text: string,
@@ -148,20 +121,17 @@ export class BotService {
   ): Promise<string> {
     const input = text.trim().toLowerCase();
     const currentUser = await this.usersService.findByPhone(phone);
-    // Preserve registration state if user is mid-registration
     const previousState =
       currentUser?.conversationState &&
       currentUser.conversationState !== 'AWAITING_LANGUAGE'
         ? currentUser.conversationState
         : undefined;
 
-    // Parse language selection
     if (input.includes('1') || input.includes('english')) {
       const update: any = { preferredLanguage: 'english' };
       update.conversationState = previousState || 'REGISTERED';
       await this.usersService.update(phone, update);
       if (previousState) {
-        // User is mid-registration, show language set then resume registration
         return (
           this.translation.t('english', 'languageSet') +
           '\n\n' +
@@ -203,16 +173,13 @@ export class BotService {
       return this.translation.t('pidgin', 'languageSet');
     }
 
-    // No valid selection → set state and show language menu
     await this.usersService.update(phone, {
       conversationState: 'AWAITING_LANGUAGE',
     });
     return this.translation.t(currentLang, 'selectLanguage');
   }
 
-  // ─── HELP message ────────────────────────────────────────
   private helpMessage(channel: 'sms' | 'whatsapp', language?: string): string {
-    // Use translation service if language is specified
     if (language && channel === 'whatsapp') {
       return this.translation.getHelpText(language);
     }
@@ -266,11 +233,8 @@ export class BotService {
       : `❓ Unknown command.\n\nTry:\nBUY maize 20 bags\n\nType HELP for all options.`;
   }
 
-  // ─── Normalize French/Pidgin commands to English ────────
   private normalizeCommand(input: string): string {
     const normalized = input.toUpperCase();
-
-    // Preserve original text after the command keyword for parsing (e.g. "VENDRE mais 10 sacs" → "SELL mais 10 sacs")
     if (normalized.startsWith('VENDRE')) return 'SELL' + normalized.slice(6);
     if (normalized.startsWith('ACHETER')) return 'BUY' + normalized.slice(7);
     if (normalized.startsWith('OFFRE')) return 'OFFER' + normalized.slice(5);
@@ -279,7 +243,6 @@ export class BotService {
     if (normalized === 'AIDE') return 'HELP';
     if (normalized === 'SAUTER') return 'SKIP';
     if (normalized === 'ANNULER') return 'CANCEL';
-
     return normalized;
   }
 }
