@@ -35,7 +35,7 @@ export class BotService {
     const parsedFirst = await this.aiService.parseIntent(text);
 
   // ── HELP (any stage, any language) ────────────────────
-    if (parsed.intent === 'help') {
+    if (parsedFirst.intent === 'help') {
       return this.aiService.reply('help', lang);
     }
 
@@ -45,7 +45,7 @@ export class BotService {
     }
 
     // ── CANCEL ────────────────────────────────────────────
-    if (parsedFirst.intent === 'no') {
+    if (parsedFirst.intent === 'unknown' && text.toUpperCase().includes('CANCEL')) {
       if (this.listingFlow.isInPriceState(phone)) {
         return this.listingFlow.handle(phone, text, channel);
       }

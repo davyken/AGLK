@@ -1,22 +1,26 @@
 import { Module } from '@nestjs/common';
 import { BotController } from './bot.controller';
 import { BotService } from './bot.service';
-import { MetaSenderService } from '../../src/whatsapp/meta-sender.service';
-import { RegistrationFlowService } from '../bot/registration.flow';
+import { ListingFlowService } from './listing.flow';
+import { RegistrationFlowService } from './registration.flow';
 import { UsersModule } from '../users/users.module';
 import { AiModule } from '../ai/ai.module';
+import { ListingModule } from '../listing/listing.module';
+import { PriceModule } from '../price/price.module';
 
 @Module({
   imports: [
     UsersModule,
     AiModule,
+    ListingModule,
+    PriceModule,
   ],
   controllers: [BotController],
   providers: [
     BotService,
-    MetaSenderService,
     RegistrationFlowService,
+    ListingFlowService,
   ],
-  exports: [MetaSenderService],
+  exports: [],
 })
 export class BotModule {}
