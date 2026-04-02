@@ -1,248 +1,194 @@
 import { Injectable } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
-import { RegistrationFlowService } from './registration.flow';
-import { ListingFlowService } from './listing.flow';
-import { TranslationService } from '../ai/translation.service';
+import { RegistrationFlowService } from '../bot/registration.flow';
+import { ListingFlowService } from '../bot/listing.flow';
+import { AiService, Language } from '../ai/ai.service';
 
 export interface IncomingMessage {
-  phone: string;
-  text: string;
+  phone:   string;
+  text:    string;
   channel: 'sms' | 'whatsapp';
 }
 
 @Injectable()
 export class BotService {
   constructor(
-    private readonly usersService: UsersService,
+    private readonly usersService:     UsersService,
     private readonly registrationFlow: RegistrationFlowService,
-    private readonly listingFlow: ListingFlowService,
-    private readonly translation: TranslationService,
+    private readonly listingFlow:      ListingFlowService,
+    private readonly aiService:        AiService,
   ) {}
 
   async handleMessage(msg: IncomingMessage): Promise<string> {
     const { phone, text, channel } = msg;
-    const input = text.trim().toUpperCase();
 
+    // ── Load user ─────────────────────────────────────────
     const user = await this.usersService.findByPhone(phone);
 
-    let detectedLang = user?.preferredLanguage || 'english';
+    // ── Resolve language ──────────────────────────────────
+    let lang: Language = (user as any)?.language ?? 'english';
     if (!user || user.conversationState !== 'REGISTERED') {
-      detectedLang = this.translation.detectLanguage(text);
+      const parsed = await this.aiService.parseIntent(text);
+      lang = parsed.language ?? 'english';
     }
 
-    if (input === 'HELP' || input === 'AIDE') {
-      return this.helpMessage(channel, detectedLang);
+    const parsedFirst = await this.aiService.parseIntent(text);
+
+  // ── HELP (any stage, any language) ────────────────────
+    if (parsed.intent === 'help') {
+      return this.aiService.reply('help', lang);
     }
 
-    if (user?.conversationState === 'AWAITING_LANGUAGE') {
-      return this.handleLanguageCommand(phone, text, channel, detectedLang);
+    // ── LANGUAGE switch ───────────────────────────────────
+    if (parsedFirst.intent === 'unknown' && (text.toLowerCase().includes('lang') || text.toLowerCase().includes('language') || text.toLowerCase().includes('langue'))) {
+      return this.handleLanguageSwitch(phone, text, channel, lang);
     }
 
-    if (input.startsWith('LANGUAGE') || input.startsWith('LANG')) {
-      return this.handleLanguageCommand(phone, text, channel, detectedLang);
-    }
-
-    const normalizedInput = this.normalizeCommand(input);
-
-    if (normalizedInput === 'CANCEL') {
+    // ── CANCEL ────────────────────────────────────────────
+    if (parsedFirst.intent === 'no') {
       if (this.listingFlow.isInPriceState(phone)) {
-        return this.listingFlow.handle(phone, 'CANCEL', channel);
+        return this.listingFlow.handle(phone, text, channel);
       }
-      if (user && user.conversationState !== 'REGISTERED') {
-        return this.translation.t(detectedLang, 'somethingWrong');
-      }
-      return this.translation.t(detectedLang, 'somethingWrong');
+      return this.aiService.reply('unknown_command', lang);
     }
 
+    // ── Not registered / mid-registration ─────────────────
     const isRegistered = user?.conversationState === 'REGISTERED';
 
     if (!user || !isRegistered) {
       const reply = await this.registrationFlow.handle(phone, text, channel);
-      if (!reply) {
-        await this.usersService.updateChannel(phone, channel);
-
-        if (this.listingFlow.isInPriceState(phone)) {
-          return this.listingFlow.handle(phone, text, channel);
-        }
-
-        if (normalizedInput.startsWith('SELL')) {
-          return await this.listingFlow.handle(phone, text, channel);
-        }
-        if (normalizedInput.startsWith('BUY')) {
-          return await this.listingFlow.handle(phone, text, channel);
-        }
-        if (normalizedInput.startsWith('OFFER')) {
-          return await this.listingFlow.handle(phone, text, channel);
-        }
-        if (normalizedInput === 'YES' || normalizedInput === 'NO') {
-          return this.listingFlow.handleFarmerResponse(
-            phone,
-            normalizedInput,
-            channel,
-          );
-        }
-
-        return this.helpMessage(channel, detectedLang);
-      }
-      return reply;
+      if (reply) return reply;
+      // null = registration just completed, fall through to commands
     }
 
+    // ── Update last channel used ──────────────────────────
     await this.usersService.updateChannel(phone, channel);
 
+    // ── Pending listing state takes full priority ─────────
     if (this.listingFlow.isInPriceState(phone)) {
       return this.listingFlow.handle(phone, text, channel);
     }
 
-    if (normalizedInput.startsWith('SELL')) {
-      return await this.listingFlow.handle(phone, text, channel);
-    }
-    if (normalizedInput.startsWith('BUY')) {
-      return await this.listingFlow.handle(phone, text, channel);
-    }
-    if (normalizedInput.startsWith('OFFER')) {
-      return await this.listingFlow.handle(phone, text, channel);
-    }
-    if (normalizedInput === 'YES' || normalizedInput === 'NO') {
-      return this.listingFlow.handleFarmerResponse(
-        phone,
-        normalizedInput,
-        channel,
-      );
+    // ── Farmer YES/NO response ────────────────────────────
+    if (this.listingFlow.hasPendingFarmerResponse(phone)) {
+      return this.listingFlow.handleFarmerResponse(phone, text, channel);
     }
 
-    return this.unknownCommand(user.role, channel);
+    // ── AI-powered command routing ────────────────────────
+    // Full reliance on aiService.parseIntent()
+    if (parsedFirst.intent === 'sell')  return this.listingFlow.handle(phone, text, channel);
+    if (parsedFirst.intent === 'buy')   return this.listingFlow.handle(phone, text, channel);
+    if (parsedFirst.intent === 'price') return this.listingFlow.handle(phone, text, channel);
+    if (parsedFirst.intent === 'yes')   return this.listingFlow.handleFarmerResponse(phone, text, channel);
+    if (parsedFirst.intent === 'no')    return this.listingFlow.handleFarmerResponse(phone, text, channel);
+
+    // ── Unknown ───────────────────────────────────────────
+    return this.aiService.reply('unknown_command', lang, {});
+
+    // ── Unknown ───────────────────────────────────────────
+    return this.aiService.reply('unknown_command', lang, {});
   }
 
-  private async handleLanguageCommand(
-    phone: string,
-    text: string,
-    channel: 'sms' | 'whatsapp',
-    currentLang: string,
+  // ─── Language switch ──────────────────────────────────────
+  private async handleLanguageSwitch(
+    phone:       string,
+    text:        string,
+    channel:     'sms' | 'whatsapp',
+    currentLang: Language,
   ): Promise<string> {
     const input = text.trim().toLowerCase();
-    const currentUser = await this.usersService.findByPhone(phone);
-    const previousState =
-      currentUser?.conversationState &&
-      currentUser.conversationState !== 'AWAITING_LANGUAGE'
-        ? currentUser.conversationState
-        : undefined;
 
-    if (input.includes('1') || input.includes('english')) {
-      const update: any = { preferredLanguage: 'english' };
-      update.conversationState = previousState || 'REGISTERED';
-      await this.usersService.update(phone, update);
-      if (previousState) {
-        return (
-          this.translation.t('english', 'languageSet') +
-          '\n\n' +
-          this.registrationFlow.resumeMessage(phone, 'english', channel)
-        );
-      }
-      return this.translation.t('english', 'languageSet');
-    }
+    let newLang: Language | null = null;
+    if (input.includes('1') || input.includes('english'))                                  newLang = 'english';
+    else if (input.includes('2') || input.includes('french') || input.includes('français')) newLang = 'french';
+    else if (input.includes('3') || input.includes('pidgin'))                              newLang = 'pidgin';
 
-    if (
-      input.includes('2') ||
-      input.includes('french') ||
-      input.includes('français')
-    ) {
-      const update: any = { preferredLanguage: 'french' };
-      update.conversationState = previousState || 'REGISTERED';
-      await this.usersService.update(phone, update);
-      if (previousState) {
-        return (
-          this.translation.t('french', 'languageSet') +
-          '\n\n' +
-          this.registrationFlow.resumeMessage(phone, 'french', channel)
-        );
-      }
-      return this.translation.t('french', 'languageSet');
-    }
-
-    if (input.includes('3') || input.includes('pidgin')) {
-      const update: any = { preferredLanguage: 'pidgin' };
-      update.conversationState = previousState || 'REGISTERED';
-      await this.usersService.update(phone, update);
-      if (previousState) {
-        return (
-          this.translation.t('pidgin', 'languageSet') +
-          '\n\n' +
-          this.registrationFlow.resumeMessage(phone, 'pidgin', channel)
-        );
-      }
-      return this.translation.t('pidgin', 'languageSet');
+    if (!newLang) {
+      await this.usersService.updateState(phone, 'AWAITING_LANGUAGE');
+      return `🌐 Choose your language:\n\n1️⃣ English\n2️⃣ Français\n3️⃣ Pidgin`;
     }
 
     await this.usersService.update(phone, {
-      conversationState: 'AWAITING_LANGUAGE',
+      conversationState: 'REGISTERED',
     });
-    return this.translation.t(currentLang, 'selectLanguage');
+    // Save language field separately
+    await (this.usersService as any).updateLanguage?.(phone, newLang)
+      ?? this.usersService.update(phone, { language: newLang } as any);
+
+    const confirms: Record<Language, string> = {
+      english: `✅ Language set to English.`,
+      french:  `✅ Langue définie sur Français.`,
+      pidgin:  `✅ Language don change to Pidgin.`,
+    };
+    return confirms[newLang];
   }
 
-  private helpMessage(channel: 'sms' | 'whatsapp', language?: string): string {
-    if (language && channel === 'whatsapp') {
-      return this.translation.getHelpText(language);
-    }
-
+  // ─── Help message (3 languages) ───────────────────────────
+  private helpMessage(channel: 'sms' | 'whatsapp', lang: Language): string {
     if (channel === 'sms') {
-      return [
-        'Agro-link Help:',
-        'SELL maize 10 bags',
-        'BUY maize 20 bags',
-        'BUY maize 20 bags @yaounde (filter by city)',
-        'BUY maize 20 bags #10000-20000 (filter by price)',
-        'LANGUAGE - change language',
-        'HELP - show this menu',
-      ].join('\n');
+      const sms: Record<Language, string> = {
+        english: `AgroLink Help:\nSELL maize 10 bags\nBUY maize 20 bags\nLANGUAGE - change language\nHELP - this menu`,
+        french:  `AgroLink Aide:\nVENDRE maïs 10 sacs\nACHETER maïs 20 sacs\nLANGUE - changer langue\nAIDE - ce menu`,
+        pidgin:  `AgroLink Help:\nSELL maize 10 bags\nBUY maize 20 bags\nLANGUAGE - change language\nHELP - this menu`,
+      };
+      return sms[lang];
     }
 
-    return [
-      '📋 *Agro-link Help*',
-      '',
-      '👨‍🌾 *Farmer commands:*',
-      'SELL maize 10 bags',
-      '  Then send an image of your product!',
-      '',
-      '🏪 *Buyer commands:*',
-      'BUY maize 20 bags',
-      'BUY maize 20 bags @yaounde (filter by city)',
-      'BUY maize 20 bags #10000-20000 (price range)',
-      'BUY maize 20 bags @yaounde #15000-25000 (city + price)',
-      '',
-      '🌐 *Language:*',
-      'LANGUAGE - change language (English/French/Pidgin)',
-      '',
-      '💡 *Tips:*',
-      '- Use @ before city name to filter by location',
-      '- Use #min-max for price range (e.g. #10000-20000)',
-      '- Add an image when selling to attract buyers!',
-      '',
-      'Reply HELP anytime to see this menu.',
-    ].join('\n');
+    const help: Record<Language, string> = {
+      english: [
+        `📋 *AgroLink Help*\n`,
+        `👨‍🌾 *Farmer:*`,
+        `SELL maize 10 bags`,
+        `(send a photo after listing!)\n`,
+        `🏪 *Buyer:*`,
+        `BUY maize 20 bags`,
+        `BUY maize 20 bags @yaounde`,
+        `BUY maize 20 bags #10000-20000\n`,
+        `🌐 *Language:* LANGUAGE\n`,
+        `Type HELP anytime for this menu.`,
+      ].join('\n'),
+
+      french: [
+        `📋 *Aide AgroLink*\n`,
+        `👨‍🌾 *Agriculteur:*`,
+        `VENDRE maïs 10 sacs`,
+        `(envoyez une photo après!)\n`,
+        `🏪 *Acheteur:*`,
+        `ACHETER maïs 20 sacs`,
+        `ACHETER maïs 20 sacs @yaounde`,
+        `ACHETER maïs 20 sacs #10000-20000\n`,
+        `🌐 *Langue:* LANGUE\n`,
+        `Tapez AIDE pour ce menu.`,
+      ].join('\n'),
+
+      pidgin: [
+        `📋 *AgroLink Help*\n`,
+        `👨‍🌾 *Farmer:*`,
+        `SELL maize 10 bags`,
+        `(send photo of your thing!)\n`,
+        `🏪 *Buyer:*`,
+        `BUY maize 20 bags`,
+        `BUY maize 20 bags @yaounde`,
+        `BUY maize 20 bags #10000-20000\n`,
+        `🌐 *Language:* LANGUAGE\n`,
+        `Type HELP anytime.`,
+      ].join('\n'),
+    };
+
+    return help[lang];
   }
 
-  private unknownCommand(role: string, channel: 'sms' | 'whatsapp'): string {
-    if (channel === 'sms') {
-      return role === 'farmer'
-        ? 'Unknown command. Try: SELL maize 10 bags'
-        : 'Unknown command. Try: BUY maize 20 bags';
-    }
-
-    return role === 'farmer'
-      ? `❓ Unknown command.\n\nTry:\nSELL maize 10 bags\n\nType HELP for all options.`
-      : `❓ Unknown command.\n\nTry:\nBUY maize 20 bags\n\nType HELP for all options.`;
-  }
-
+  // ─── Normalize French/Pidgin → English commands ───────────
   private normalizeCommand(input: string): string {
-    const normalized = input.toUpperCase();
-    if (normalized.startsWith('VENDRE')) return 'SELL' + normalized.slice(6);
-    if (normalized.startsWith('ACHETER')) return 'BUY' + normalized.slice(7);
-    if (normalized.startsWith('OFFRE')) return 'OFFER' + normalized.slice(5);
-    if (normalized === 'OUI') return 'YES';
-    if (normalized === 'NON') return 'NO';
-    if (normalized === 'AIDE') return 'HELP';
-    if (normalized === 'SAUTER') return 'SKIP';
-    if (normalized === 'ANNULER') return 'CANCEL';
-    return normalized;
+    if (input.startsWith('VENDRE'))  return 'SELL'     + input.slice(6);
+    if (input.startsWith('ACHETER')) return 'BUY'      + input.slice(7);
+    if (input.startsWith('OFFRE'))   return 'OFFER'    + input.slice(5);
+    if (input.startsWith('LANGUE'))  return 'LANGUAGE' + input.slice(6);
+    if (input === 'OUI')             return 'YES';
+    if (input === 'NON')             return 'NO';
+    if (input === 'AIDE')            return 'HELP';
+    if (input === 'SAUTER')          return 'SKIP';
+    if (input === 'ANNULER')         return 'CANCEL';
+    return input;
   }
 }
