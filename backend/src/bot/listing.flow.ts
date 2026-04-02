@@ -5,7 +5,9 @@ import { CreateListingDto } from '../listing/dto';
 import { PriceService } from '../price/price.service';
 import { MatchingService } from '../listing/matching.service';
 import { MetaSenderService } from '../whatsapp/meta-sender.service';
+import { AiService, Language } from '../ai/ai.service';
 
+// ─── In-memory state (persists across messages in same session) ───
 interface PendingState {
   type: 'sell' | 'sell_waiting_image' | 'buy_select';
   product: string;
@@ -13,6 +15,7 @@ interface PendingState {
   unit: string;
   userPhone: string;
   userRole: string;
+  language: Language;   // ← added: remember language per user
   price?: number;
   imageUrl?: string;
   imageMediaId?: string;
@@ -28,8 +31,6 @@ interface PendingState {
   }>;
 }
 
-const pendingStates = new Map<string, PendingState>();
-
 interface PendingFarmerResponse {
   buyerPhone: string;
   sellerListingId: string;
@@ -38,8 +39,10 @@ interface PendingFarmerResponse {
   quantity: number;
   unit: string;
   price: number;
+  language: Language;  // ← added
 }
 
+const pendingStates          = new Map<string, PendingState>();
 const pendingFarmerResponses = new Map<string, PendingFarmerResponse>();
 
 @Injectable()
@@ -50,855 +53,702 @@ export class ListingFlowService {
     private readonly priceService: PriceService,
     private readonly matchingService: MatchingService,
     private readonly metaSender: MetaSenderService,
+    private readonly aiService: AiService,           // ← injected
   ) {}
 
+  // ─── Main entry point ─────────────────────────────────────
   async handle(
     phone: string,
     text: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
-    const input = this.normalizeCommand(text);
 
+    // ── Get user language from DB (default english) ────────
+    const user = await this.usersService.findByPhone(phone);
+    const lang: Language = (user as any)?.language ?? 'english';
+
+    // ── If there is a pending state → resume it ────────────
     if (pendingStates.has(phone)) {
-      return this.handlePendingState(phone, input, channel);
+      return this.handlePendingState(phone, text.trim(), channel, lang);
     }
 
-    if (input.toUpperCase().startsWith('SELL')) {
-      return this.handleSellCommand(phone, input, channel);
+    // ── Use AI to parse intent from ANY language input ─────
+    const parsed = await this.aiService.parseIntent(text);
+
+    // Normalize French/Pidgin commands to structured intent
+    if (parsed.intent === 'sell') {
+      return this.handleSellIntent(phone, parsed.product ?? '', parsed.quantity ?? 0, parsed.unit ?? 'bags', channel, lang);
     }
 
-    if (input.toUpperCase().startsWith('BUY')) {
-      return this.handleBuyCommand(phone, input, channel);
+    if (parsed.intent === 'buy') {
+      return this.handleBuyIntent(phone, parsed.product ?? '', parsed.quantity ?? 0, parsed.unit ?? 'bags', channel, lang);
     }
 
-    if (input.toUpperCase().startsWith('OFFER')) {
-      return this.handleOfferCommand(phone, input, channel);
+    if (parsed.intent === 'price') {
+      return this.handlePriceQuery(parsed.product ?? '', lang, channel);
     }
 
-    return this.msg(
-      channel,
-      `❌ Invalid command.\n\nUse: SELL maize 10 bags\nor: BUY maize 20 bags`,
+    // ── Fallback: try classic command parsing ──────────────
+    const normalized = this.normalizeCommand(text);
+    const upper = normalized.toUpperCase();
+
+    if (upper.startsWith('SELL')) {
+      const p = this.parseListingCommand(normalized);
+      if (p) return this.handleSellIntent(phone, p.product, p.quantity, p.unit, channel, lang);
+    }
+
+    if (upper.startsWith('BUY')) {
+      const p = this.parseListingCommand(normalized);
+      if (p) return this.handleBuyIntent(phone, p.product, p.quantity, p.unit, channel, lang);
+    }
+
+    if (upper.startsWith('OFFER')) {
+      return this.handleOfferCommand(phone, normalized, channel, lang);
+    }
+
+    // ── Unknown command ────────────────────────────────────
+    return this.aiService.reply('unknown_command', lang, {});
+  }
+
+  // ─── Sell Intent ──────────────────────────────────────────
+  private async handleSellIntent(
+    phone: string,
+    product: string,
+    quantity: number,
+    unit: string,
+    channel: 'sms' | 'whatsapp',
+    lang: Language,
+  ): Promise<string> {
+    if (!product || quantity <= 0) {
+      const errors: Record<Language, string> = {
+        english: `❌ Invalid format.\n\nUse: SELL maize 10 bags`,
+        french:  `❌ Format invalide.\n\nUtilisez: VENDRE maïs 10 sacs`,
+        pidgin:  `❌ No correct.\n\nTry: SELL maize 10 bags`,
+      };
+      return errors[lang];
+    }
+
+    const user = await this.usersService.findByPhone(phone);
+
+    if (!user || user.conversationState !== 'REGISTERED') {
+      const msgs: Record<Language, string> = {
+        english: `❌ Register first. Reply Hi to start.`,
+        french:  `❌ Enregistrez-vous d'abord. Répondez Bonjour pour commencer.`,
+        pidgin:  `❌ You must register first. Reply Hi.`,
+      };
+      return msgs[lang];
+    }
+
+    if (user.role !== 'farmer') {
+      const msgs: Record<Language, string> = {
+        english: `❌ Only farmers can sell.`,
+        french:  `❌ Seuls les agriculteurs peuvent vendre.`,
+        pidgin:  `❌ Only farmer fit sell.`,
+      };
+      return msgs[lang];
+    }
+
+    // Store pending state with language
+    pendingStates.set(phone, {
+      type: 'sell',
+      product,
+      quantity,
+      unit,
+      userPhone: phone,
+      userRole: user.role,
+      language: lang,
+    });
+
+    const priceData = await this.priceService.getPrice(product);
+
+    if (!priceData) {
+      const msgs: Record<Language, string> = {
+        english: `📦 *Listing: ${this.cap(product)}*\n\nQty: ${quantity} ${unit}\n\n💰 No market price available.\nPlease enter your price.\n\nExample: 20000`,
+        french:  `📦 *Annonce: ${this.cap(product)}*\n\nQté: ${quantity} ${unit}\n\n💰 Pas de prix disponible.\nEntrez votre prix.\n\nExemple: 20000`,
+        pidgin:  `📦 *Listing: ${this.cap(product)}*\n\nQty: ${quantity} ${unit}\n\n💰 No price data.\nSend your price.\n\nExample: 20000`,
+      };
+      return msgs[lang];
+    }
+
+    return this.aiService.reply('price_suggestion', lang, {
+      product:   this.cap(product),
+      min:       this.fmt(priceData.low),
+      avg:       this.fmt(priceData.avg),
+      max:       this.fmt(priceData.high),
+      suggested: this.fmt(priceData.suggested),
+    });
+  }
+
+  // ─── Buy Intent ───────────────────────────────────────────
+  private async handleBuyIntent(
+    phone: string,
+    product: string,
+    quantity: number,
+    unit: string,
+    channel: 'sms' | 'whatsapp',
+    lang: Language,
+  ): Promise<string> {
+    if (!product || quantity <= 0) {
+      const errors: Record<Language, string> = {
+        english: `❌ Invalid format.\n\nUse: BUY maize 20 bags`,
+        french:  `❌ Format invalide.\n\nUtilisez: ACHETER maïs 20 sacs`,
+        pidgin:  `❌ No correct.\n\nTry: BUY maize 20 bags`,
+      };
+      return errors[lang];
+    }
+
+    const user = await this.usersService.findByPhone(phone);
+
+    if (!user || user.conversationState !== 'REGISTERED') {
+      const msgs: Record<Language, string> = {
+        english: `❌ Register first. Reply Hi to start.`,
+        french:  `❌ Enregistrez-vous d'abord.`,
+        pidgin:  `❌ Register first. Reply Hi.`,
+      };
+      return msgs[lang];
+    }
+
+    if (user.role !== 'buyer') {
+      const msgs: Record<Language, string> = {
+        english: `❌ Only buyers can buy.`,
+        french:  `❌ Seuls les acheteurs peuvent acheter.`,
+        pidgin:  `❌ Only buyer fit buy.`,
+      };
+      return msgs[lang];
+    }
+
+    const matchingListings = await this.listingService.findByProduct(product);
+    const sellListings = matchingListings.filter(
+      (l) => l.type === 'sell' && l.status === 'active',
     );
+
+    // No listings found → save buy request
+    if (sellListings.length === 0) {
+      const dto: CreateListingDto = {
+        type: 'buy',
+        product,
+        quantity,
+        unit,
+        priceType: 'none',
+      };
+      await this.listingService.createEnriched(dto, {
+        phone: user.phone,
+        name: user.name,
+        location: user.location,
+        channel: user.lastChannelUsed,
+      });
+
+      const msgs: Record<Language, string> = {
+        english: `🔍 No listings for ${this.cap(product)} yet.\n\nYour request is saved.\nWe'll notify you when a farmer lists this product.`,
+        french:  `🔍 Aucune annonce pour ${this.cap(product)}.\n\nVotre demande est enregistrée.\nNous vous notifierons quand un agriculteur listera ce produit.`,
+        pidgin:  `🔍 No farmer get ${this.cap(product)} now.\n\nWe don save your request.\nWe go tell you when farmer list am.`,
+      };
+      return msgs[lang];
+    }
+
+    // Listings found → show top 5
+    const top = sellListings.slice(0, 5);
+
+    pendingStates.set(phone, {
+      type: 'buy_select',
+      product,
+      quantity,
+      unit,
+      userPhone: phone,
+      userRole: user.role,
+      language: lang,
+      listings: top.map((l) => ({
+        id:           l._id.toString(),
+        userPhone:    l.userPhone,
+        farmerName:   l.userName,
+        location:     l.userLocation,
+        quantity:     l.quantity,
+        price:        l.price || 0,
+        imageUrl:     l.imageUrl,
+        imageMediaId: l.imageMediaId,
+      })),
+    });
+
+    // Build listing header
+    const headers: Record<Language, string> = {
+      english: `🔍 *Found ${sellListings.length} farmer(s) with ${this.cap(product)}*\n\n`,
+      french:  `🔍 *${sellListings.length} agriculteur(s) avec ${this.cap(product)}*\n\n`,
+      pidgin:  `🔍 *${sellListings.length} farmer(s) get ${this.cap(product)}*\n\n`,
+    };
+
+    let message = headers[lang];
+
+    top.forEach((listing, i) => {
+      message += `${i + 1}️⃣ ${listing.userName}\n`;
+      message += `   📦 ${listing.quantity} ${listing.unit}\n`;
+      message += `   💰 ${this.fmt(listing.price || 0)}\n`;
+      message += `   📍 ${listing.userLocation}\n`;
+      if (listing.imageUrl || listing.imageMediaId) {
+        message += `   📷 Photo available\n`;
+      }
+      message += `\n`;
+    });
+
+    const footers: Record<Language, string> = {
+      english: `Reply with number (1-${top.length}) to select.`,
+      french:  `Répondez avec le numéro (1-${top.length}) pour choisir.`,
+      pidgin:  `Send number (1-${top.length}) to pick one.`,
+    };
+    message += footers[lang];
+
+    await this.metaSender.send(phone, message);
+
+    // Send images if any
+    for (const listing of top) {
+      if (listing.imageMediaId) {
+        await this.metaSender.sendImageByMediaId(phone, listing.imageMediaId, listing.product);
+      } else if (listing.imageUrl) {
+        await this.metaSender.sendImage(phone, listing.imageUrl, listing.product);
+      }
+    }
+
+    return '';
   }
 
-  private normalizeCommand(text: string): string {
-    const upper = text.trim().toUpperCase();
-    if (upper.startsWith('VENDRE')) return 'SELL' + upper.slice(6);
-    if (upper.startsWith('ACHETER')) return 'BUY' + upper.slice(7);
-    if (upper.startsWith('OFFRE')) return 'OFFER' + upper.slice(5);
-    if (upper === 'OUI') return 'YES';
-    if (upper === 'NON') return 'NO';
-    if (upper === 'AIDE') return 'HELP';
-    if (upper === 'SAUTER') return 'SKIP';
-    return text.trim();
-  }
-
-  private async handleSellCommand(
-    phone: string,
-    command: string,
+  // ─── Price Query ──────────────────────────────────────────
+  private async handlePriceQuery(
+    product: string,
+    lang: Language,
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
-    const parsed = this.parseListingCommand(command);
-
-    if (!parsed || parsed.type !== 'sell') {
-      return this.msg(channel, `❌ Invalid format.\n\nUse: SELL maize 10 bags`);
+    if (!product) {
+      const msgs: Record<Language, string> = {
+        english: `❓ Which product price do you want?\nExample: price maize`,
+        french:  `❓ Quel produit vous intéresse?\nExemple: prix maïs`,
+        pidgin:  `❓ Which product price you want?\nExample: price maize`,
+      };
+      return msgs[lang];
     }
 
-    try {
-      const user = await this.usersService.findByPhone(phone);
-
-      if (!user || user.conversationState !== 'REGISTERED') {
-        return this.msg(
-          channel,
-          `❌ You need to register first.\n\nReply Hi to start registration.`,
-        );
-      }
-
-      if (user.role !== 'farmer') {
-        return this.msg(
-          channel,
-          `❌ Only farmers can sell. You are registered as a ${user.role}.`,
-        );
-      }
-
-      pendingStates.set(phone, {
-        type: 'sell',
-        product: parsed.product,
-        quantity: parsed.quantity,
-        unit: parsed.unit,
-        userPhone: phone,
-        userRole: user.role,
-      });
-
-      const priceData = await this.priceService.getPrice(parsed.product);
-
-      if (!priceData) {
-        return this.msg(
-          channel,
-          `📦 *Listing: ${this.capitalize(parsed.product)}*\n\n` +
-            `Quantity: ${parsed.quantity} ${parsed.unit}\n\n` +
-            `💰 No market price available for this product.\n` +
-            `Please enter your custom price.\n\n` +
-            `Example: 20000\n\n` +
-            `Reply with the price you want to set.`,
-        );
-      }
-
-      return this.msg(
-        channel,
-        `📊 *Market Price for ${this.capitalize(parsed.product)}*\n\n` +
-          `Current market prices:\n` +
-          `Low: ${this.formatPrice(priceData.low)}\n` +
-          `Average: ${this.formatPrice(priceData.avg)}\n` +
-          `High: ${this.formatPrice(priceData.high)}\n\n` +
-          `*Suggested: ${this.formatPrice(priceData.suggested)}*\\n\\n` +
-          `What would you like to do?\n` +
-          `1️⃣ Accept suggested price (${this.formatPrice(priceData.suggested)})\n` +
-          `2️⃣ Set custom price\\n\\n` +
-          `Reply 1 or 2`,
-      );
-    } catch (error) {
-      console.error('Sell command error:', error);
-      return this.msg(channel, `❌ Failed to process. Please try again.`);
+    const priceData = await this.priceService.getPrice(product);
+    if (!priceData) {
+      const msgs: Record<Language, string> = {
+        english: `❌ No price data for ${this.cap(product)}.`,
+        french:  `❌ Pas de données de prix pour ${this.cap(product)}.`,
+        pidgin:  `❌ No price data for ${this.cap(product)}.`,
+      };
+      return msgs[lang];
     }
+
+    return this.aiService.reply('price_suggestion', lang, {
+      product:   this.cap(product),
+      min:       this.fmt(priceData.low),
+      avg:       this.fmt(priceData.avg),
+      max:       this.fmt(priceData.high),
+      suggested: this.fmt(priceData.suggested),
+    });
   }
 
-  private async handleBuyCommand(
-    phone: string,
-    command: string,
-    channel: 'sms' | 'whatsapp',
-  ): Promise<string> {
-    const parsed = this.parseListingCommand(command);
-
-    if (!parsed || parsed.type !== 'buy') {
-      return this.msg(channel, `❌ Invalid format.\n\nUse: BUY maize 20 bags`);
-    }
-
-    try {
-      const user = await this.usersService.findByPhone(phone);
-
-      if (!user || user.conversationState !== 'REGISTERED') {
-        return this.msg(
-          channel,
-          `❌ You need to register first.\n\nReply Hi to start registration.`,
-        );
-      }
-
-      if (user.role !== 'buyer') {
-        return this.msg(
-          channel,
-          `❌ Only buyers can buy. You are registered as a ${user.role}.`,
-        );
-      }
-
-      let matchingListings;
-      if (parsed.location || parsed.minPrice || parsed.maxPrice) {
-        matchingListings = await this.listingService.findWithFilters(
-          parsed.product,
-          {
-            location: parsed.location,
-            minPrice: parsed.minPrice,
-            maxPrice: parsed.maxPrice,
-            type: 'sell',
-          },
-        );
-      } else {
-        matchingListings = await this.listingService.findByProduct(
-          parsed.product,
-        );
-      }
-
-      const sellListings = matchingListings.filter(
-        (l) => l.type === 'sell' && l.status === 'active',
-      );
-
-      if (sellListings.length === 0) {
-        const dto: CreateListingDto = {
-          type: 'buy',
-          product: parsed.product,
-          quantity: parsed.quantity,
-          unit: parsed.unit,
-          priceType: 'none',
-        };
-
-        const listing = await this.listingService.createEnriched(dto, {
-          phone: user.phone,
-          name: user.name,
-          location: user.location,
-          channel: user.lastChannelUsed,
-        });
-
-        return this.msg(
-          channel,
-          `🔍 *No listings found for ${this.capitalize(parsed.product)}*\\n\\n` +
-            `Your request has been saved.\n` +
-            `Product: ${listing.product}\n` +
-            `Quantity: ${listing.quantity} ${listing.unit}\n` +
-            `Location: ${listing.location}\n\n` +
-            `We'll notify you when farmers list this product.\\n\\n` +
-            `🏪 Type HELP for more options.`,
-        );
-      }
-
-      const topListings = sellListings.slice(0, 5);
-
-      pendingStates.set(phone, {
-        type: 'buy_select',
-        product: parsed.product,
-        quantity: parsed.quantity,
-        unit: parsed.unit,
-        userPhone: phone,
-        userRole: user.role,
-        listings: topListings.map((l) => ({
-          id: l._id.toString(),
-          userPhone: l.userPhone,
-          farmerName: l.userName,
-          location: l.userLocation,
-          quantity: l.quantity,
-          price: l.price || 0,
-          imageUrl: l.imageUrl,
-          imageMediaId: l.imageMediaId,
-        })),
-      });
-
-      let message = `🔍 *Found ${sellListings.length} farmer(s) with ${this.capitalize(parsed.product)}*\n\n`;
-
-      topListings.forEach((listing, index) => {
-        message += `${index + 1}️⃣ ${listing.userName}\n`;
-        message += `   📦 ${listing.quantity} ${listing.unit}\n`;
-        message += `   💰 ${this.formatPrice(listing.price || 0)}\n`;
-        message += `   📍 ${listing.userLocation}\n`;
-        if (listing.imageUrl || listing.imageMediaId) {
-          message += `   📷 Photo available\n`;
-        }
-        message += `\n`;
-      });
-
-      message += `Reply with the number (1-${topListings.length}) to select a farmer.`;
-
-      await this.metaSender.send(phone, message);
-
-      for (const listing of topListings) {
-        if (listing.imageMediaId) {
-          await this.metaSender.sendImageByMediaId(
-            phone,
-            listing.imageMediaId,
-            `${listing.userName}'s ${listing.product}`,
-          );
-        } else if (listing.imageUrl) {
-          await this.metaSender.sendImage(
-            phone,
-            listing.imageUrl,
-            `${listing.userName}'s ${listing.product}`,
-          );
-        }
-      }
-
-      return '';
-    } catch (error) {
-      console.error('Buy command error:', error);
-      return this.msg(channel, `❌ Failed to search. Please try again.`);
-    }
-  }
-
+  // ─── Handle pending state responses ──────────────────────
   private async handlePendingState(
     phone: string,
     response: string,
     channel: 'sms' | 'whatsapp',
+    lang: Language,
   ): Promise<string> {
     const pending = pendingStates.get(phone);
-    if (!pending) {
-      return this.msg(
-        channel,
-        `❌ Something went wrong. Start fresh with a new command.`,
-      );
-    }
+    if (!pending) return this.aiService.reply('unknown_command', lang, {});
 
-    if (response.trim().toUpperCase() === 'CANCEL') {
+    // Use saved language from pending state
+    const savedLang = pending.language ?? lang;
+
+    if (response.toUpperCase() === 'CANCEL' || response.toUpperCase() === 'ANNULER') {
       pendingStates.delete(phone);
-      return this.msg(channel, `❌ Cancelled. Type HELP for options.`);
+      const msgs: Record<Language, string> = {
+        english: `❌ Cancelled. Type HELP for options.`,
+        french:  `❌ Annulé. Tapez AIDE pour les options.`,
+        pidgin:  `❌ Cancelled. Type HELP for options.`,
+      };
+      return msgs[savedLang];
     }
 
-    if (pending.type === 'sell') {
-      return this.handleSellPending(phone, response, channel, pending);
-    }
+    if (pending.type === 'sell')              return this.handleSellPending(phone, response, channel, pending, savedLang);
+    if (pending.type === 'sell_waiting_image') return this.handleSellWaitingImage(phone, response, channel, pending, savedLang);
+    if (pending.type === 'buy_select')        return this.handleBuySelect(phone, response, channel, pending, savedLang);
 
-    if (pending.type === 'sell_waiting_image') {
-      return this.handleSellWaitingImage(phone, response, channel, pending);
-    }
-
-    if (pending.type === 'buy_select') {
-      return this.handleBuySelect(phone, response, channel, pending);
-    }
-
-    return this.msg(
-      channel,
-      `❌ Invalid state. Start fresh with a new command.`,
-    );
+    return this.aiService.reply('unknown_command', savedLang, {});
   }
 
+  // ─── Sell pending: waiting for price choice ───────────────
   private async handleSellPending(
     phone: string,
     response: string,
     channel: 'sms' | 'whatsapp',
     pending: PendingState,
+    lang: Language,
   ): Promise<string> {
     const input = response.trim().toLowerCase();
 
+    // Accept suggested price
     if (input === '1') {
-      try {
-        const priceData = await this.priceService.getPrice(pending.product);
-
-        if (!priceData) {
-          pendingStates.delete(phone);
-          return this.msg(
-            channel,
-            `❌ Price data unavailable. Please try again.`,
-          );
-        }
-
-        pendingStates.set(phone, {
-          type: 'sell_waiting_image',
-          product: pending.product,
-          quantity: pending.quantity,
-          unit: pending.unit,
-          userPhone: phone,
-          userRole: pending.userRole,
-          price: priceData.suggested,
-        });
-
-        return this.msg(
-          channel,
-          `📷 Would you like to add a photo of your product?\n\n` +
-            `Send me the image now, or reply SKIP to create listing without an image.`,
-        );
-      } catch (error) {
-        console.error('Price acceptance error:', error);
+      const priceData = await this.priceService.getPrice(pending.product);
+      if (!priceData) {
         pendingStates.delete(phone);
-        return this.msg(
-          channel,
-          `❌ Failed to create listing. Please try again.`,
-        );
+        return lang === 'french' ? `❌ Prix indisponible. Réessayez.` : `❌ Price unavailable. Try again.`;
       }
+      pendingStates.set(phone, { ...pending, type: 'sell_waiting_image', price: priceData.suggested });
+      return this.askForImage(lang);
     }
 
+    // Custom price selected
     if (input === '2') {
-      return this.msg(
-        channel,
-        `💰 Please enter your custom price.\n\n` +
-          `Example: 20000\n\n` +
-          `You can also send an image of your product after setting the price!`,
-      );
+      const msgs: Record<Language, string> = {
+        english: `💰 Enter your custom price.\n\nExample: 20000`,
+        french:  `💰 Entrez votre prix.\n\nExemple: 20000`,
+        pidgin:  `💰 Send your price.\n\nExample: 20000`,
+      };
+      return msgs[lang];
     }
 
+    // User typed an actual price number
     const customPrice = this.parsePrice(response);
     if (customPrice !== null) {
-      try {
-        pendingStates.set(phone, {
-          type: 'sell_waiting_image',
-          product: pending.product,
-          quantity: pending.quantity,
-          unit: pending.unit,
-          userPhone: phone,
-          userRole: pending.userRole,
-          price: customPrice,
-        });
-
-        return this.msg(
-          channel,
-          `📷 Would you like to add a photo of your product?\n\n` +
-            `Send me the image now, or reply SKIP to create listing without an image.`,
-        );
-      } catch (error) {
-        console.error('Custom price listing error:', error);
-        pendingStates.delete(phone);
-        return this.msg(
-          channel,
-          `❌ Failed to create listing. Please try again.`,
-        );
-      }
+      pendingStates.set(phone, { ...pending, type: 'sell_waiting_image', price: customPrice });
+      return this.askForImage(lang);
     }
 
-    return this.msg(
-      channel,
-      `❌ Invalid response.\n\n` +
-        `1️⃣ Accept suggested price\n` +
-        `2️⃣ Set custom price\n\n` +
-        `Reply 1 or 2`,
-    );
+    // Invalid
+    const msgs: Record<Language, string> = {
+      english: `❌ Reply 1 to accept suggested price or 2 to set custom price.`,
+      french:  `❌ Répondez 1 pour accepter le prix suggéré ou 2 pour personnaliser.`,
+      pidgin:  `❌ Send 1 for suggested price or 2 for your own price.`,
+    };
+    return msgs[lang];
   }
 
+  // ─── Ask user for image ───────────────────────────────────
+  private askForImage(lang: Language): string {
+    const msgs: Record<Language, string> = {
+      english: `📷 Would you like to add a photo?\n\nSend image now or reply SKIP.`,
+      french:  `📷 Voulez-vous ajouter une photo?\n\nEnvoyez l'image ou tapez SAUTER.`,
+      pidgin:  `📷 You want add photo?\n\nSend image now or reply SKIP.`,
+    };
+    return msgs[lang];
+  }
+
+  // ─── Sell waiting for image ───────────────────────────────
+  private async handleSellWaitingImage(
+    phone: string,
+    response: string,
+    channel: 'sms' | 'whatsapp',
+    pending: PendingState,
+    lang: Language,
+  ): Promise<string> {
+    const input = response.trim().toUpperCase();
+    if (input === 'SKIP' || input === 'SAUTER') {
+      return this.createListingWithImage(phone, channel, pending, null, null, lang);
+    }
+    return this.askForImage(lang);
+  }
+
+  // ─── Create listing (final step) ─────────────────────────
+  async createListingWithImage(
+    phone: string,
+    channel: 'sms' | 'whatsapp',
+    pending: PendingState,
+    imageUrl: string | null,
+    imageMediaId: string | null,
+    lang?: Language,
+  ): Promise<string> {
+    const savedLang = lang ?? pending.language ?? 'english';
+    try {
+      const priceData = await this.priceService.getPrice(pending.product);
+      const user      = await this.usersService.findByPhone(phone);
+
+      const dto: CreateListingDto = {
+        type:           'sell',
+        product:        pending.product,
+        quantity:       pending.quantity,
+        unit:           pending.unit,
+        marketAvgPrice: priceData?.avg,
+        marketMinPrice: priceData?.low,
+        marketMaxPrice: priceData?.high,
+        price:          pending.price,
+        priceType:      pending.price ? 'manual' : 'auto',
+        imageUrl:       imageUrl  || undefined,
+        imageMediaId:   imageMediaId || undefined,
+      };
+
+      const listing = await this.listingService.createEnriched(dto, {
+        phone,
+        name:     user?.name    || '',
+        location: user?.location || '',
+        channel:  user?.lastChannelUsed || 'whatsapp',
+      });
+
+      pendingStates.delete(phone);
+
+      return this.aiService.reply('listing_confirmed', savedLang, {
+        product:  listing.product,
+        quantity: listing.quantity,
+        unit:     listing.unit,
+        price:    this.fmt(listing.price),
+      });
+    } catch {
+      pendingStates.delete(phone);
+      const msgs: Record<Language, string> = {
+        english: `❌ Failed to create listing. Try again.`,
+        french:  `❌ Échec de la création. Réessayez.`,
+        pidgin:  `❌ Listing no create. Try again.`,
+      };
+      return msgs[savedLang];
+    }
+  }
+
+  // ─── Buy select: user picks a farmer ─────────────────────
   private async handleBuySelect(
     phone: string,
     response: string,
     channel: 'sms' | 'whatsapp',
     pending: PendingState,
+    lang: Language,
   ): Promise<string> {
-    if (response.trim().toUpperCase() === 'CANCEL') {
-      pendingStates.delete(phone);
-      return this.msg(channel, `❌ Cancelled. Type BUY to search again.`);
-    }
-
     const selection = parseInt(response.trim(), 10);
 
-    if (
-      isNaN(selection) ||
-      selection < 1 ||
-      selection > (pending.listings?.length || 0)
-    ) {
-      return this.msg(
-        channel,
-        `❌ Invalid selection.\n\n` +
-          `Please reply with a number between 1 and ${pending.listings?.length}\n\n` +
-          `Or type CANCEL to start over.`,
-      );
+    if (isNaN(selection) || selection < 1 || selection > (pending.listings?.length || 0)) {
+      const msgs: Record<Language, string> = {
+        english: `❌ Invalid. Reply with a number between 1 and ${pending.listings?.length}.`,
+        french:  `❌ Invalide. Répondez avec un numéro entre 1 et ${pending.listings?.length}.`,
+        pidgin:  `❌ No correct. Send number between 1 and ${pending.listings?.length}.`,
+      };
+      return msgs[lang];
     }
 
-    const selectedListing = pending.listings![selection - 1];
+    const selected = pending.listings![selection - 1];
 
     try {
-      const dto: CreateListingDto = {
-        type: 'buy',
-        product: pending.product,
-        quantity: pending.quantity,
-        unit: pending.unit,
-        priceType: 'manual',
-        price: selectedListing.price,
-      };
-
       const buyerUser = await this.usersService.findByPhone(phone);
+      const dto: CreateListingDto = {
+        type: 'buy', product: pending.product,
+        quantity: pending.quantity, unit: pending.unit,
+        price: selected.price, priceType: 'manual',
+      };
       const buyerListing = await this.listingService.createEnriched(dto, {
-        phone,
-        name: buyerUser?.name || '',
+        phone, name: buyerUser?.name || '',
         location: buyerUser?.location || '',
         channel: buyerUser?.lastChannelUsed || 'whatsapp',
       });
 
       pendingStates.delete(phone);
 
-      try {
-        const farmerUser = await this.usersService.findByPhone(
-          selectedListing.userPhone,
-        );
-        if (farmerUser?.phone) {
-          pendingFarmerResponses.set(farmerUser.phone, {
-            buyerPhone: phone,
-            sellerListingId: selectedListing.id,
-            buyerListingId: buyerListing._id.toString(),
-            product: pending.product,
+      // Notify farmer in THEIR language
+      const farmerUser = await this.usersService.findByPhone(selected.userPhone);
+      const farmerLang: Language = (farmerUser as any)?.language ?? 'english';
+
+      if (farmerUser?.phone) {
+        pendingFarmerResponses.set(farmerUser.phone, {
+          buyerPhone:      phone,
+          sellerListingId: selected.id,
+          buyerListingId:  buyerListing._id.toString(),
+          product:         pending.product,
+          quantity:        pending.quantity,
+          unit:            pending.unit,
+          price:           selected.price,
+          language:        farmerLang,
+        });
+
+        await this.metaSender.send(
+          farmerUser.phone,
+          this.aiService.reply('match_found_farmer', farmerLang, {
+            location: buyerUser?.location || '',
+            product:  pending.product,
             quantity: pending.quantity,
-            unit: pending.unit,
-            price: selectedListing.price,
-          });
-
-          const notificationMsg = this.buildFarmerNotification(
-            farmerUser.name || 'Farmer',
-            pending.product,
-            pending.quantity,
-            pending.unit,
-            selectedListing.price,
-          );
-          await this.metaSender.send(farmerUser.phone, notificationMsg);
-        }
-      } catch {}
-
-      return this.msg(
-        channel,
-        `🤝 *Connection Requested!*\n\n` +
-          `You've selected:\n` +
-          `👨‍🌾 ${selectedListing.farmerName}\n` +
-          `📦 ${selectedListing.quantity} ${pending.unit}\n` +
-          `💰 ${this.formatPrice(selectedListing.price)}\n` +
-          `📍 ${selectedListing.location}\n\n` +
-          `We've notified the farmer. They will contact you if interested.\n\n` +
-          `🏪 Type HELP for more options.`,
-      );
-    } catch (error) {
-      console.error('Buy selection error:', error);
-      pendingStates.delete(phone);
-      return this.msg(
-        channel,
-        `❌ Failed to complete request. Please try again.`,
-      );
-    }
-  }
-
-  private parseListingCommand(command: string): {
-    type: 'sell' | 'buy';
-    product: string;
-    quantity: number;
-    unit: string;
-    location?: string;
-    minPrice?: number;
-    maxPrice?: number;
-  } | null {
-    const parts = command.trim().toLowerCase().split(/\s+/);
-
-    if (parts.length < 3) return null;
-
-    const type = parts[0] as 'sell' | 'buy';
-    if (type !== 'sell' && type !== 'buy') return null;
-
-    let location: string | undefined;
-    let minPrice: number | undefined;
-    let maxPrice: number | undefined;
-
-    for (let i = 1; i < parts.length; i++) {
-      const part = parts[i];
-      if (part.startsWith('@')) {
-        location = part.substring(1);
-        continue;
-      }
-      if (part.startsWith('#')) {
-        const priceRange = part.substring(1).split('-');
-        if (priceRange.length === 2) {
-          minPrice = parseInt(priceRange[0], 10);
-          maxPrice = parseInt(priceRange[1], 10);
-        }
-        continue;
-      }
-    }
-
-    let quantityIndex = -1;
-    for (let i = parts.length - 1; i >= 2; i--) {
-      const part = parts[i];
-      if (part.startsWith('@') || part.startsWith('#')) continue;
-      if (/^\d+$/.test(part)) {
-        quantityIndex = i;
-        break;
-      }
-    }
-
-    if (quantityIndex === -1) return null;
-
-    const productParts: string[] = [];
-    for (let i = 1; i < quantityIndex; i++) {
-      const part = parts[i];
-      if (!part.startsWith('@') && !part.startsWith('#')) {
-        productParts.push(part);
-      }
-    }
-    const product = productParts.join(' ');
-
-    if (!product) return null;
-
-    const quantity = parseInt(parts[quantityIndex], 10);
-    const unit = parts[quantityIndex + 1] || 'bags';
-
-    if (quantity <= 0) return null;
-
-    return { type, product, quantity, unit, location, minPrice, maxPrice };
-  }
-
-  private parsePrice(text: string): number | null {
-    const cleaned = text.replace(/[,\s]/g, '');
-    const price = parseInt(cleaned, 10);
-    if (isNaN(price) || price <= 0) return null;
-    return price;
-  }
-
-  private formatPrice(price: number): string {
-    return price.toLocaleString() + ' XAF';
-  }
-
-  private capitalize(str: string): string {
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
-
-  private msg(channel: 'sms' | 'whatsapp', message: string): string {
-    if (channel === 'sms') {
-      return message
-        .replace(
-          /[\u{1F300}-\u{1FFFF}|\u{2600}-\u{26FF}|\u{2700}-\u{27BF}]/gu,
-          '',
-        )
-        .replace(/\*/g, '')
-        .trim();
-    }
-    return message;
-  }
-
-  private buildFarmerNotification(
-    farmerName: string,
-    product: string,
-    quantity: number,
-    unit: string,
-    price: number,
-  ): string {
-    return (
-      `🔔 *New Buyer Interest!*\n\n` +
-      `Hi ${farmerName}!\n\n` +
-      `A buyer wants your produce:\n\n` +
-      `🌽 ${this.capitalize(product)}\n` +
-      `📦 ${quantity} ${unit}\n` +
-      `💰 Budget: ${this.formatPrice(price)}\n\n` +
-      `To respond, reply YES or NO.\n\n` +
-      `Or type HELP for options.`
-    );
-  }
-
-  isInPriceState(phone: string): boolean {
-    return pendingStates.has(phone);
-  }
-
-  isInImageState(phone: string): boolean {
-    const state = pendingStates.get(phone);
-    return state?.type === 'sell_waiting_image';
-  }
-
-  async handleImage(
-    phone: string,
-    imageUrl: string | null,
-    imageMediaId: string | null,
-  ): Promise<string> {
-    const pending = pendingStates.get(phone);
-    if (!pending || pending.type !== 'sell_waiting_image') {
-      return `❌ No pending listing. Use SELL command to create a new listing.`;
-    }
-
-    return this.createListingWithImage(
-      phone,
-      'whatsapp',
-      pending,
-      imageUrl,
-      imageMediaId,
-    );
-  }
-
-  private async handleSellWaitingImage(
-    phone: string,
-    response: string,
-    channel: 'sms' | 'whatsapp',
-    pending: PendingState,
-  ): Promise<string> {
-    const input = response.trim().toUpperCase();
-
-    if (input === 'SKIP' || input === 'SAUTER') {
-      return this.createListingWithImage(phone, channel, pending, null, null);
-    }
-
-    return this.msg(
-      channel,
-      `📷 Please send a photo of your product, or reply SKIP to skip.`,
-    );
-  }
-
-  private async createListingWithImage(
-    phone: string,
-    channel: 'sms' | 'whatsapp',
-    pending: PendingState,
-    imageUrl: string | null,
-    imageMediaId: string | null,
-  ): Promise<string> {
-    try {
-      const priceData = await this.priceService.getPrice(pending.product);
-      const user = await this.usersService.findByPhone(phone);
-
-      const dto: CreateListingDto = {
-        type: 'sell',
-        product: pending.product,
-        quantity: pending.quantity,
-        unit: pending.unit,
-        marketAvgPrice: priceData?.avg,
-        marketMinPrice: priceData?.low,
-        marketMaxPrice: priceData?.high,
-        price: pending.price,
-        priceType: pending.price ? 'manual' : 'auto',
-        imageUrl: imageUrl || undefined,
-        imageMediaId: imageMediaId || undefined,
-      };
-
-      const listing = await this.listingService.createEnriched(dto, {
-        phone,
-        name: user?.name || '',
-        location: user?.location || '',
-        channel: user?.lastChannelUsed || 'whatsapp',
-      });
-
-      pendingStates.delete(phone);
-
-      let message =
-        `✅ *Listing Created!*\n\n` +
-        `🌽 Product: ${listing.product}\n` +
-        `Quantity: ${listing.quantity} ${listing.unit}\n` +
-        `Price: ${this.formatPrice(listing.price)}\n` +
-        `Location: ${listing.location}\n\n`;
-
-      if (imageUrl || imageMediaId) {
-        message += `📷 Photo added to listing!\n\n`;
-        await this.metaSender.send(phone, message);
-        if (imageMediaId) {
-          await this.metaSender.sendImageByMediaId(
-            phone,
-            imageMediaId,
-            `📷 Your ${listing.product} listing image`,
-          );
-        } else if (imageUrl) {
-          await this.metaSender.sendImage(
-            phone,
-            imageUrl,
-            `📷 Your ${listing.product} listing image`,
-          );
-        }
-        return '';
-      }
-
-      message += `👨‍🌾 Type HELP for more options.`;
-      return this.msg(channel, message);
-    } catch (error) {
-      console.error('Create listing with image error:', error);
-      pendingStates.delete(phone);
-      return this.msg(
-        channel,
-        `❌ Failed to create listing. Please try again.`,
-      );
-    }
-  }
-
-  private async handleOfferCommand(
-    phone: string,
-    command: string,
-    channel: 'sms' | 'whatsapp',
-  ): Promise<string> {
-    const parts = command.trim().split(/\s+/);
-
-    if (parts.length < 3) {
-      return this.msg(
-        channel,
-        `❌ Invalid format.\n\nUse: OFFER 20000 LISTING_ID\n\n` +
-          `Example: OFFER 20000 abc123xyz`,
-      );
-    }
-
-    const offerAmount = this.parsePrice(parts[1]);
-    const listingId = parts[2];
-
-    if (!offerAmount) {
-      return this.msg(
-        channel,
-        `❌ Invalid offer amount. Please enter a valid number.`,
-      );
-    }
-
-    try {
-      const targetListing = await this.listingService.findOne(listingId);
-
-      if (!targetListing) {
-        return this.msg(
-          channel,
-          `❌ Listing not found. Please check the Listing ID.`,
+            unit:     pending.unit,
+          }),
         );
       }
 
-      if (targetListing.type !== 'sell' || targetListing.status !== 'active') {
-        return this.msg(channel, `❌ Listing not available or already sold.`);
-      }
-
-      const buyer = await this.usersService.findByPhone(phone);
-      if (!buyer || buyer.role !== 'buyer') {
-        return this.msg(
-          channel,
-          `❌ Only buyers can make offers. Please register as a buyer first.`,
-        );
-      }
-
-      const dto: CreateListingDto = {
-        type: 'buy',
-        product: targetListing.product,
-        quantity: targetListing.quantity,
-        unit: targetListing.unit,
-        price: offerAmount,
-        priceType: 'manual',
+      const msgs: Record<Language, string> = {
+        english: `🤝 Request sent to ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nWe'll notify you when they respond.`,
+        french:  `🤝 Demande envoyée à ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nNous vous notifierons quand ils répondront.`,
+        pidgin:  `🤝 We don send request to ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nWe go tell you when dem reply.`,
       };
-
-      await this.listingService.createEnriched(dto, {
-        phone,
-        name: buyer.name,
-        location: buyer.location,
-        channel: buyer.lastChannelUsed,
-      });
-
-      return this.msg(
-        channel,
-        `💰 *Offer Sent!*\n\n` +
-          `You offered ${this.formatPrice(offerAmount)} for ${targetListing.product}\n` +
-          `Farmer: ${targetListing.userName}\n` +
-          `Location: ${targetListing.userLocation}\n\n` +
-          `The farmer has been notified. They will contact you if interested.\n\n` +
-          `🏪 Type HELP for more options.`,
-      );
-    } catch (error) {
-      console.error('Offer error:', error);
-      return this.msg(channel, `❌ Failed to send offer. Please try again.`);
+      return msgs[lang];
+    } catch {
+      pendingStates.delete(phone);
+      return this.aiService.reply('unknown_command', lang, {});
     }
   }
 
+  // ─── Farmer YES/NO response ───────────────────────────────
   async handleFarmerResponse(
     phone: string,
     response: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
-    const user = await this.usersService.findByPhone(phone);
-
-    if (!user || user.role !== 'farmer') {
-      return this.msg(channel, `❌ This command is for farmers only.`);
-    }
-
+    const user    = await this.usersService.findByPhone(phone);
+    const lang: Language = (user as any)?.language ?? 'english';
     const pending = pendingFarmerResponses.get(phone);
 
     if (!pending) {
-      return this.msg(
-        channel,
-        `❌ No pending requests. Type HELP for options.`,
-      );
+      const msgs: Record<Language, string> = {
+        english: `❌ No pending requests. Type HELP for options.`,
+        french:  `❌ Pas de demandes en attente. Tapez AIDE.`,
+        pidgin:  `❌ No pending request. Type HELP.`,
+      };
+      return msgs[lang];
     }
 
-    const buyer = await this.usersService.findByPhone(pending.buyerPhone);
+    const buyer     = await this.usersService.findByPhone(pending.buyerPhone);
+    const buyerLang: Language = (buyer as any)?.language ?? 'english';
     pendingFarmerResponses.delete(phone);
 
-    if (response.toUpperCase() === 'YES') {
-      await this.listingService.update(pending.sellerListingId, {
-        status: 'matched',
-      });
-      await this.listingService.update(pending.buyerListingId, {
-        status: 'matched',
-      });
+    // Use AI to detect YES/NO regardless of language
+    const parsed = await this.aiService.parseIntent(response);
+    const accepted = parsed.intent === 'yes';
 
+    await this.listingService.update(pending.sellerListingId, { status: 'matched' });
+    await this.listingService.update(pending.buyerListingId,  { status: 'matched' });
+
+    if (accepted) {
+      // Notify buyer with wa.me link in THEIR language
       if (buyer?.phone) {
-        const buyerMsg =
-          `✅ *Great News!*\n\n` +
-          `👨‍🌾 ${user.name} has accepted your request!\n\n` +
-          `🌽 Product: ${pending.product}\n` +
-          `📦 Quantity: ${pending.quantity} ${pending.unit}\n` +
-          `💰 Price: ${this.formatPrice(pending.price)}\n\n` +
-          `📍 Location: ${user.location}\n\n` +
-          `📞 Contact them at: ${user.phone}\n\n` +
-          `Happy trading! 🏪`;
-        await this.metaSender.send(buyer.phone, buyerMsg);
+        await this.metaSender.send(
+          buyer.phone,
+          this.aiService.reply('connected', buyerLang, {
+            link:     `https://wa.me/${phone}`,
+            product:  pending.product,
+            quantity: pending.quantity,
+            unit:     pending.unit,
+            price:    this.fmt(pending.price),
+          }),
+        );
       }
 
-      return this.msg(
-        channel,
-        `✅ *Request Accepted!*\n\n` +
-          `You've connected with ${buyer?.name || 'the buyer'}.\n\n` +
-          `They have been notified and will contact you.\n\n` +
-          `Type HELP for more options.`,
-      );
-    } else {
-      if (buyer?.phone) {
-        const buyerMsg =
-          `😔 *Update*\n\n` +
-          `Unfortunately, ${user.name} declined your request for ${pending.product}.\n\n` +
-          `Type BUY to search for other farmers.`;
-        await this.metaSender.send(buyer.phone, buyerMsg);
-      }
-
-      return this.msg(
-        channel,
-        `❌ *Request Declined*\n\n` +
-          `The buyer has been notified.\n\n` +
-          `Type HELP for more options.`,
-      );
+      // Confirm to farmer in THEIR language
+      return this.aiService.reply('connected', lang, {
+        link:     `https://wa.me/${pending.buyerPhone}`,
+        product:  pending.product,
+        quantity: pending.quantity,
+        unit:     pending.unit,
+        price:    this.fmt(pending.price),
+      });
     }
+
+    // Farmer said NO — notify buyer
+    if (buyer?.phone) {
+      const rejMsgs: Record<Language, string> = {
+        english: `😔 ${user?.name} declined your request for ${pending.product}.\n\nType BUY to find other farmers.`,
+        french:  `😔 ${user?.name} a refusé votre demande de ${pending.product}.\n\nTapez ACHETER pour trouver d'autres agriculteurs.`,
+        pidgin:  `😔 ${user?.name} no agree for your ${pending.product}.\n\nType BUY find another farmer.`,
+      };
+      await this.metaSender.send(buyer.phone, rejMsgs[buyerLang]);
+    }
+
+    const declinedMsgs: Record<Language, string> = {
+      english: `❌ Request declined. Buyer has been notified.\n\nType HELP for options.`,
+      french:  `❌ Demande refusée. L'acheteur a été notifié.\n\nTapez AIDE pour les options.`,
+      pidgin:  `❌ You don decline. Buyer don hear. Type HELP.`,
+    };
+    return declinedMsgs[lang];
   }
+
+  // ─── Offer command ────────────────────────────────────────
+  private async handleOfferCommand(
+    phone: string,
+    command: string,
+    channel: 'sms' | 'whatsapp',
+    lang: Language,
+  ): Promise<string> {
+    const parts       = command.trim().split(/\s+/);
+    const offerAmount = this.parsePrice(parts[1]);
+    const listingId   = parts[2];
+
+    if (!offerAmount || !listingId) {
+      const msgs: Record<Language, string> = {
+        english: `❌ Use: OFFER 20000 LISTING_ID`,
+        french:  `❌ Utilisez: OFFRE 20000 LISTING_ID`,
+        pidgin:  `❌ Try: OFFER 20000 LISTING_ID`,
+      };
+      return msgs[lang];
+    }
+
+    const targetListing = await this.listingService.findOne(listingId);
+    if (!targetListing || targetListing.type !== 'sell' || targetListing.status !== 'active') {
+      const msgs: Record<Language, string> = {
+        english: `❌ Listing not found or unavailable.`,
+        french:  `❌ Annonce introuvable ou indisponible.`,
+        pidgin:  `❌ Listing no dey or not available.`,
+      };
+      return msgs[lang];
+    }
+
+    const buyer = await this.usersService.findByPhone(phone);
+    if (!buyer || buyer.role !== 'buyer') {
+      const msgs: Record<Language, string> = {
+        english: `❌ Only buyers can make offers.`,
+        french:  `❌ Seuls les acheteurs peuvent faire des offres.`,
+        pidgin:  `❌ Only buyer fit make offer.`,
+      };
+      return msgs[lang];
+    }
+
+    const msgs: Record<Language, string> = {
+      english: `💰 Offer of ${this.fmt(offerAmount)} sent for ${targetListing.product}!\n\nFarmer will respond shortly.`,
+      french:  `💰 Offre de ${this.fmt(offerAmount)} envoyée pour ${targetListing.product}!\n\nL'agriculteur répondra bientôt.`,
+      pidgin:  `💰 Offer of ${this.fmt(offerAmount)} don go for ${targetListing.product}!\n\nFarmer go reply soon.`,
+    };
+    return msgs[lang];
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────
+  isInPendingState(phone: string): boolean   { return pendingStates.has(phone); }
+  isInPriceState(phone: string): boolean    { return pendingStates.has(phone); } // alias used by BotService
+  isInImageState(phone: string): boolean     { return pendingStates.get(phone)?.type === 'sell_waiting_image'; }
+  hasPendingFarmerResponse(phone: string): boolean { return pendingFarmerResponses.has(phone); }
+
+  async handleImage(phone: string, imageUrl: string | null, imageMediaId: string | null): Promise<string> {
+    const pending  = pendingStates.get(phone);
+    const lang: Language = pending?.language ?? 'english';
+    if (!pending || pending.type !== 'sell_waiting_image') {
+      return lang === 'french' ? `❌ Aucune annonce en attente.` : `❌ No pending listing.`;
+    }
+    return this.createListingWithImage(phone, 'whatsapp', pending, imageUrl, imageMediaId, lang);
+  }
+
+  private normalizeCommand(text: string): string {
+    const upper = text.trim().toUpperCase();
+    if (upper.startsWith('VENDRE'))  return 'SELL'  + text.trim().slice(6);
+    if (upper.startsWith('ACHETER')) return 'BUY'   + text.trim().slice(7);
+    if (upper.startsWith('OFFRE'))   return 'OFFER' + text.trim().slice(5);
+    if (upper === 'OUI')   return 'YES';
+    if (upper === 'NON')   return 'NO';
+    if (upper === 'AIDE')  return 'HELP';
+    if (upper === 'SAUTER') return 'SKIP';
+    return text.trim();
+  }
+
+  private parseListingCommand(command: string) {
+    const parts = command.trim().toLowerCase().split(/\s+/);
+    if (parts.length < 3) return null;
+    const type = parts[0] as 'sell' | 'buy';
+    if (type !== 'sell' && type !== 'buy') return null;
+
+    let qtyIndex = -1;
+    for (let i = parts.length - 1; i >= 2; i--) {
+      if (/^\d+$/.test(parts[i])) { qtyIndex = i; break; }
+    }
+    if (qtyIndex === -1) return null;
+
+    const product  = parts.slice(1, qtyIndex).join(' ');
+    const quantity = parseInt(parts[qtyIndex], 10);
+    const unit     = parts[qtyIndex + 1] || 'bags';
+
+    if (!product || quantity <= 0) return null;
+    return { type, product, quantity, unit };
+  }
+
+  private parsePrice(text: string): number | null {
+    const cleaned = text?.replace(/[,\s]/g, '') ?? '';
+    const price   = parseInt(cleaned, 10);
+    return isNaN(price) || price <= 0 ? null : price;
+  }
+
+  private fmt(price: number): string { return price?.toLocaleString() + ' FCFA'; }
+  private cap(str: string): string   { return str.charAt(0).toUpperCase() + str.slice(1); }
 }

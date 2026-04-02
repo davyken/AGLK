@@ -20,18 +20,21 @@ export class User {
   @Prop({ enum: ['sms', 'whatsapp'], default: 'whatsapp' })
   preferredChannel: string;
 
+  // Detected language — bot replies in this language throughout
+  @Prop({ enum: ['english', 'french', 'pidgin'], default: 'english' })
+  language: string;
+
   @Prop({ enum: ['sms', 'whatsapp'], default: 'whatsapp' })
   lastChannelUsed: string;
-
-  @Prop({ enum: ['english', 'french', 'pidgin'], default: 'english' })
-  preferredLanguage: string;
 
   @Prop({ default: 0 })
   trustScore: number;
 
+  // Farmer only
   @Prop({ type: [String], default: [] })
   produces: string[];
 
+  // Buyer only
   @Prop({ trim: true })
   businessName: string;
 
@@ -44,13 +47,12 @@ export class User {
       'AWAITING_ROLE',
       'AWAITING_NAME',
       'AWAITING_LOCATION',
-      'AWAITING_PRODUCES',
-      'AWAITING_BUSINESS',
-      'AWAITING_NEEDS',
+      'AWAITING_PRODUCES',   // farmer
+      'AWAITING_BUSINESS',   // buyer
+      'AWAITING_NEEDS',      // buyer
       'REGISTERED',
       'AWAITING_PRICE',
       'AWAITING_CONFIRM',
-      'AWAITING_LANGUAGE',
     ],
     default: 'START',
   })
@@ -58,3 +60,6 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// Index for fast lookup by phone
+UserSchema.index({ phone: 1 });

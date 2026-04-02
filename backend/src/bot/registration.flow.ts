@@ -1,163 +1,174 @@
 import { Injectable } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
-import { TranslationService } from '../ai/translation.service';
+import { AiService } from '../ai/ai.service';
+
+type Language = 'english' | 'french' | 'pidgin';
 
 @Injectable()
 export class RegistrationFlowService {
+  resumeMessage(phone: string, arg1: string, channel: string) {
+    throw new Error('Method not implemented.');
+  }
   constructor(
     private readonly usersService: UsersService,
-    private readonly translation: TranslationService,
+    private readonly aiService: AiService,
   ) {}
 
-  resumeMessage(
-    phone: string,
-    language: string,
-    channel: 'sms' | 'whatsapp',
-  ): string {
-    return this.msg(
-      channel,
-      this.translation.t(language, 'welcome') +
-        '\n\n' +
-        this.translation.t(language, 'chooseRole') +
-        '\n\nReply 1 or 2',
-    );
-  }
-
+  // ─── Main entry point ─────────────────────────────────────
   async handle(
     phone: string,
     text: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string | null> {
-    const input = text.trim();
     const user = await this.usersService.findByPhone(phone);
 
+    // Fully registered → hand off to main bot
     if (user?.conversationState === 'REGISTERED') {
       await this.usersService.updateChannel(phone, channel);
       return null;
     }
 
-    const lang = user?.preferredLanguage || 'english';
+    // Detect language from message
+    const parsed = await this.aiService.parseIntent(text);
+    const lang: Language = parsed.language ?? 'english';
 
+    // Brand new user
     if (!user) {
-      await this.usersService.createStub(phone, channel);
-      return this.msg(
-        channel,
-        this.translation.t(lang, 'welcome') +
-          '\n\n' +
-          this.translation.t(lang, 'chooseRole') +
-          '\n\nReply 1 or 2',
-      );
+      await this.usersService.createStub(phone, channel, lang);
+      return this.aiService.reply('welcome', lang, {});
     }
 
+    // Resume registration
     await this.usersService.updateChannel(phone, channel);
-    return this.resume(phone, input, user.conversationState, channel, lang);
+    const savedLang = (user as any).language ?? lang;
+    return this.resume(phone, text.trim(), user.conversationState, savedLang);
   }
 
+  // ─── Resume from saved state ──────────────────────────────
   private async resume(
     phone: string,
     input: string,
     state: string,
-    channel: 'sms' | 'whatsapp',
-    lang: string,
+    lang: Language,
   ): Promise<string> {
     switch (state) {
-      case 'AWAITING_ROLE':
-        return this.handleRole(phone, input, channel, lang);
-      case 'AWAITING_NAME':
-        return this.handleName(phone, input, channel, lang);
-      case 'AWAITING_LOCATION':
-        return this.handleLocation(phone, input, channel, lang);
-      case 'AWAITING_PRODUCES':
-        return this.handleProduces(phone, input, channel, lang);
-      case 'AWAITING_BUSINESS':
-        return this.handleBusiness(phone, input, channel, lang);
-      case 'AWAITING_NEEDS':
-        return this.handleNeeds(phone, input, channel, lang);
+      case 'AWAITING_ROLE':     return this.handleRole(phone, input, lang);
+      case 'AWAITING_NAME':     return this.handleName(phone, input, lang);
+      case 'AWAITING_LOCATION': return this.handleLocation(phone, input, lang);
+      case 'AWAITING_PRODUCES': return this.handleProduces(phone, input, lang);
+      case 'AWAITING_BUSINESS': return this.handleBusiness(phone, input, lang);
+      case 'AWAITING_NEEDS':    return this.handleNeeds(phone, input, lang);
       default:
-        return this.msg(
-          channel,
-          '❌ Something went wrong. Reply Hi to restart.',
-        );
+        return this.aiService.reply('unknown_command', lang, {});
     }
   }
 
+  // ─── Step 1: Role ─────────────────────────────────────────
   private async handleRole(
     phone: string,
     input: string,
-    channel: 'sms' | 'whatsapp',
-    lang: string,
+    lang: Language,
   ): Promise<string> {
+    // Accept: 1, 2, farmer, buyer, agriculteur, acheteur, I dey sell, etc.
+    const farmerKeywords = ['1', 'farmer', 'agriculteur', 'sell', 'vend', 'farm'];
+    const buyerKeywords  = ['2', 'buyer', 'acheteur', 'buy', 'achet', 'buy'];
+
     const lower = input.toLowerCase();
-    const frenchFarmer = ['agriculteur', 'fermier', 'paysan'];
-    const frenchBuyer = ['acheteur', 'commerçant', 'commercant'];
-    const isFarmer = ['1', 'farmer', ...frenchFarmer].includes(lower);
-    const isBuyer = ['2', 'buyer', ...frenchBuyer].includes(lower);
+    const isFarmer = farmerKeywords.some((k) => lower.includes(k));
+    const isBuyer  = buyerKeywords.some((k) => lower.includes(k));
 
     if (!isFarmer && !isBuyer) {
-      return this.msg(channel, this.translation.t(lang, 'invalidRole'));
+      // Use AI to detect intent
+      const parsed = await this.aiService.parseIntent(input);
+      if (parsed.intent !== 'register') {
+        const errorMsgs: Record<Language, string> = {
+          english: '❌ Please reply 1 for Farmer or 2 for Buyer.',
+          french:  '❌ Veuillez répondre 1 pour Agriculteur ou 2 pour Acheteur.',
+          pidgin:  '❌ Send 1 if you be Farmer, 2 if you be Buyer.',
+        };
+        return errorMsgs[lang];
+      }
     }
 
-    const role = isFarmer ? 'farmer' : 'buyer';
+    const role = isBuyer ? 'buyer' : 'farmer';
+
     await this.usersService.update(phone, {
       role,
       conversationState: 'AWAITING_NAME',
     });
-    return this.msg(channel, this.translation.t(lang, 'enterName'));
+
+    return this.aiService.reply('ask_name', lang, {});
   }
 
+  // ─── Step 2: Name ─────────────────────────────────────────
   private async handleName(
     phone: string,
     input: string,
-    channel: 'sms' | 'whatsapp',
-    lang: string,
+    lang: Language,
   ): Promise<string> {
     if (input.length < 2) {
-      return this.msg(channel, this.translation.t(lang, 'invalidName'));
+      const errorMsgs: Record<Language, string> = {
+        english: '❌ Please enter a valid name.',
+        french:  '❌ Veuillez entrer un nom valide.',
+        pidgin:  '❌ Put your real name abeg.',
+      };
+      return errorMsgs[lang];
     }
 
     await this.usersService.update(phone, {
       name: input,
       conversationState: 'AWAITING_LOCATION',
     });
-    return this.msg(channel, this.translation.t(lang, 'enterLocation'));
+
+    return this.aiService.reply('ask_location', lang, {});
   }
 
+  // ─── Step 3: Location ─────────────────────────────────────
   private async handleLocation(
     phone: string,
     input: string,
-    channel: 'sms' | 'whatsapp',
-    lang: string,
+    lang: Language,
   ): Promise<string> {
     if (input.length < 2) {
-      return this.msg(channel, this.translation.t(lang, 'invalidLocation'));
+      const errorMsgs: Record<Language, string> = {
+        english: '❌ Please enter a valid location.',
+        french:  '❌ Veuillez entrer une localité valide.',
+        pidgin:  '❌ Tell us which side you dey.',
+      };
+      return errorMsgs[lang];
     }
 
     const user = await this.usersService.findByPhone(phone);
+
     await this.usersService.update(phone, {
       location: input,
       conversationState:
         user?.role === 'farmer' ? 'AWAITING_PRODUCES' : 'AWAITING_BUSINESS',
     });
 
-    if (user?.role === 'farmer') {
-      return this.msg(channel, this.translation.t(lang, 'enterProduces'));
-    }
-    return this.msg(channel, this.translation.t(lang, 'enterBusiness'));
+    return user?.role === 'farmer'
+      ? this.aiService.reply('ask_produces', lang, {})
+      : this.aiService.reply('ask_business', lang, {});
   }
 
+  // ─── Step 4a: FARMER — Produces ──────────────────────────
   private async handleProduces(
     phone: string,
     input: string,
-    channel: 'sms' | 'whatsapp',
-    lang: string,
+    lang: Language,
   ): Promise<string> {
     const produces = input
-      .split(',')
+      .split(/[,،،]/)
       .map((p) => p.trim().toLowerCase())
       .filter((p) => p.length > 0);
 
     if (produces.length === 0) {
-      return this.msg(channel, '❌ Please list at least one product.');
+      const errorMsgs: Record<Language, string> = {
+        english: '❌ Please list at least one product.',
+        french:  '❌ Veuillez lister au moins un produit.',
+        pidgin:  '❌ List at least one thing wey you dey farm.',
+      };
+      return errorMsgs[lang];
     }
 
     const user = await this.usersService.update(phone, {
@@ -165,42 +176,50 @@ export class RegistrationFlowService {
       conversationState: 'REGISTERED',
     });
 
-    return this.msg(
-      channel,
-      this.translation.t(lang, 'registeredFarmer', user.name),
-    );
+    return this.aiService.reply('registered_farmer', lang, { name: user.name });
   }
 
+  // ─── Step 4b: BUYER — Business ────────────────────────────
   private async handleBusiness(
     phone: string,
     input: string,
-    channel: 'sms' | 'whatsapp',
-    lang: string,
+    lang: Language,
   ): Promise<string> {
     if (input.length < 2) {
-      return this.msg(channel, '❌ Please enter a valid business name.');
+      const errorMsgs: Record<Language, string> = {
+        english: '❌ Please enter a valid business name.',
+        french:  '❌ Veuillez entrer un nom d\'entreprise valide.',
+        pidgin:  '❌ Put your business name abeg.',
+      };
+      return errorMsgs[lang];
     }
 
     await this.usersService.update(phone, {
       businessName: input,
       conversationState: 'AWAITING_NEEDS',
     });
-    return this.msg(channel, this.translation.t(lang, 'enterNeeds'));
+
+    return this.aiService.reply('ask_needs', lang, {});
   }
 
+  // ─── Step 5b: BUYER — Needs ───────────────────────────────
   private async handleNeeds(
     phone: string,
     input: string,
-    channel: 'sms' | 'whatsapp',
-    lang: string,
+    lang: Language,
   ): Promise<string> {
     const needs = input
-      .split(',')
+      .split(/[,،،]/)
       .map((n) => n.trim().toLowerCase())
       .filter((n) => n.length > 0);
 
     if (needs.length === 0) {
-      return this.msg(channel, '❌ Please list at least one product.');
+      const errorMsgs: Record<Language, string> = {
+        english: '❌ Please list at least one product.',
+        french:  '❌ Veuillez lister au moins un produit.',
+        pidgin:  '❌ List at least one thing wey you need.',
+      };
+      return errorMsgs[lang];
     }
 
     const user = await this.usersService.update(phone, {
@@ -208,21 +227,6 @@ export class RegistrationFlowService {
       conversationState: 'REGISTERED',
     });
 
-    return this.msg(
-      channel,
-      this.translation.t(lang, 'registeredBuyer', user.name),
-    );
-  }
-
-  private msg(channel: 'sms' | 'whatsapp', message: string): string {
-    if (channel === 'sms') {
-      return message
-        .replace(
-          /[\u{1F300}-\u{1FFFF}|\u{2600}-\u{26FF}|\u{2700}-\u{27BF}]/gu,
-          '',
-        )
-        .trim();
-    }
-    return message;
+    return this.aiService.reply('registered_buyer', lang, { name: user.name });
   }
 }
