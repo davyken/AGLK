@@ -64,9 +64,10 @@ Return: {"intent":"","language":"","product":null,"quantity":null,"unit":"bags",
       const parsed = JSON.parse(clean);
       return { ...parsed, raw: message };
 
-    } catch (err) {
+    } catch (err: any) {
       // ── Groq failed → use smart regex fallback ────────────
-      this.logger.warn('Groq failed, using regex fallback');
+      // Log the REAL error so we can fix it
+      this.logger.warn(`Groq failed [${err?.status ?? err?.code ?? 'unknown'}]: ${err?.message ?? err}`);
       return this.regexParse(message);
     }
   }
