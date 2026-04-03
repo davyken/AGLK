@@ -30,7 +30,21 @@ export class BotService {
 
     // ── Load user ─────────────────────────────────────────
     const user = await this.usersService.findByPhone(phone);
-    const lang: Language = (user as any)?.language ?? 'english';
+
+    // ── Detect language from current message ──────────────
+    // Always re-detect so switching language mid-conversation works
+    const detectedLang = this.detectLangFromText(trimmed);
+
+    // Use detected language if it is not the default English detection
+    // (meaning we found a real French or Pidgin signal)
+    // Otherwise fall back to what is saved in DB
+    const savedLang: Language = (user as any)?.language ?? 'english';
+    const lang: Language = detectedLang !== 'english' ? detectedLang : savedLang;
+
+    // Persist new language if it changed
+    if (user && lang !== savedLang) {
+      await this.usersService.updateLanguage(phone, lang);
+    }
 
     // ─────────────────────────────────────────────────────
     // PRIORITY 1: Direct string checks — NO AI needed
@@ -240,6 +254,28 @@ export class BotService {
       ].join('\n'),
     };
     return help[lang];
+  }
+
+  // ─── Fast language detection (no API) ──────────────────────
+  private detectLangFromText(text: string): Language {
+    const lower = text.toLowerCase();
+
+    const frenchSignals = [
+      'bonjour', 'salut', 'vendre', 'acheter', 'maïs', 'mais',
+      "j'ai", 'je ', 'du ', 'de la', 'des ', 'oui', 'non',
+      'merci', 'sacs', 'sac', 'quel', 'prix', 'aide', 'manioc',
+      'tomate', 'tomates', 'combien', 'langue', 'français',
+    ];
+
+    const pidginSignals = [
+      'i get', 'i wan', 'i dey', 'na so', 'abeg', 'wetin',
+      'plenty', 'dem ', 'for sell', 'for buy', 'no be',
+      'wey', 'oga', 'chop', 'kanji', 'nyanga',
+    ];
+
+    if (frenchSignals.some((w) => lower.includes(w))) return 'french';
+    if (pidginSignals.some((w) => lower.includes(w))) return 'pidgin';
+    return 'english';
   }
 
   // ─── Normalize French/Pidgin → English ───────────────────
