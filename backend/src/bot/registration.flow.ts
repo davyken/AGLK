@@ -6,9 +6,6 @@ type Language = 'english' | 'french' | 'pidgin';
 
 @Injectable()
 export class RegistrationFlowService {
-  resumeMessage(phone: string, arg1: string, channel: string) {
-    throw new Error('Method not implemented.');
-  }
   constructor(
     private readonly usersService: UsersService,
     private readonly aiService: AiService,
@@ -28,7 +25,7 @@ export class RegistrationFlowService {
       return null;
     }
 
-    // Detect language from message
+    // Detect language from message using regex (no AI needed)
     const parsed = await this.aiService.parseIntent(text);
     const lang: Language = parsed.language ?? 'english';
 
@@ -38,10 +35,17 @@ export class RegistrationFlowService {
       return this.aiService.reply('welcome', lang, {});
     }
 
+    // ── If language changed mid-registration, update it ────
+    // e.g user said "Bonjour" after starting in English
+    const savedLang: Language = (user as any).language ?? 'english';
+    if (lang !== savedLang && lang !== 'english') {
+      await this.usersService.updateLanguage(phone, lang);
+    }
+    const activeLang = lang !== 'english' ? lang : savedLang;
+
     // Resume registration
     await this.usersService.updateChannel(phone, channel);
-    const savedLang = (user as any).language ?? lang;
-    return this.resume(phone, text.trim(), user.conversationState, savedLang);
+    return this.resume(phone, text.trim(), user.conversationState, activeLang);
   }
 
   // ─── Resume from saved state ──────────────────────────────
