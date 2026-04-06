@@ -25,9 +25,8 @@ export class RegistrationFlowService {
       return null;
     }
 
-    // Detect language from message using regex (no AI needed)
-    const parsed = await this.aiService.parseIntent(text);
-    const lang: Language = parsed.language ?? 'english';
+    // Detect language from first message — no API needed
+    const lang: Language = this.aiService.detectLanguage(text);
 
     // Brand new user
     if (!user) {
