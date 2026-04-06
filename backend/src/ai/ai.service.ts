@@ -192,40 +192,110 @@ JSON format: {"intent":"","language":"","product":null,"quantity":null,"unit":"b
   // 5. EXTRACT PRODUCT + QUANTITY from message
   // ─────────────────────────────────────────────────────────
   private extractProductQty(text: string): {
-    product?: string; quantity?: number; unit: string;
+    product?: string;
+    productOriginal?: string; // preserves original language name e.g. "manioc"
+    quantity?: number;
+    unit: string;
   } {
-    const unitWords   = ['bags', 'bag', 'sacs', 'sac', 'kg', 'tonnes', 'tonne', 'crates', 'crate'];
-    const stopWords   = [
-      'sell', 'buy', 'vendre', 'acheter', 'i', 'get', 'wan',
-      'dey', 'for', 'have', 'je', 'du', "j'ai", 'la', 'le',
-      'les', 'des', 'want', 'need', 'plenty', 'some', 'available',
-      'fresh', 'good', 'quality', 'fraîches', 'fraîche',
+    const unitWords = [
+      'bags', 'bag', 'sacs', 'sac', 'kg', 'kilogrammes', 'kilogramme',
+      'tonnes', 'tonne', 'crates', 'crate', 'cageots', 'cageot',
+      'régimes', 'régime', 'bunches', 'bunch', 'litres', 'litre',
+      'pieces', 'piece', 'pièces', 'pièce',
+    ];
+    const stopWords = [
+      'sell', 'buy', 'vendre', 'acheter', 'i', 'get', 'wan', 'dey',
+      'for', 'have', 'je', 'du', "j'ai", 'la', 'le', 'les', 'des',
+      'want', 'need', 'plenty', 'some', 'available', 'fresh', 'good',
+      'quality', 'fraîches', 'fraîche', 'à', 'vendre', 'en', 'vente',
+      'cherche', 'besoin', 'veux', 'voudrais', 'ai',
     ];
 
+    // French → English normalization (for DB storage + matching)
     const frenchToEnglish: Record<string, string> = {
-      'maïs': 'maize', 'mais': 'maize', 'tomate': 'tomatoes',
-      'tomates': 'tomatoes', 'manioc': 'cassava', 'igname': 'yam',
-      'ignames': 'yam', 'plantain': 'plantain', 'gombo': 'okra',
-      'haricot': 'beans', 'haricots': 'beans', 'arachide': 'groundnuts',
-      'arachides': 'groundnuts', 'poisson': 'fish', 'poulet': 'chicken',
-      'macabo': 'macabo', 'njama': 'njama njama',
+      'maïs': 'maize', 'mais': 'maize',
+      'tomate': 'tomatoes', 'tomates': 'tomatoes',
+      'manioc': 'cassava',
+      'igname': 'yam', 'ignames': 'yam',
+      'plantain': 'plantain', 'plantains': 'plantain',
+      'gombo': 'okra',
+      'haricot': 'beans', 'haricots': 'beans',
+      'arachide': 'groundnuts', 'arachides': 'groundnuts',
+      'poisson': 'fish',
+      'poulet': 'chicken',
+      'macabo': 'macabo',
+      'njama': 'njama njama',
+      'palmier': 'palm oil', 'palme': 'palm oil',
+      'concombre': 'cucumber', 'concombres': 'cucumber',
+      'aubergine': 'eggplant', 'aubergines': 'eggplant',
+      'piment': 'pepper', 'piments': 'pepper',
+      'oignon': 'onion', 'oignons': 'onion',
+      'ail': 'garlic',
     };
 
+    // ── Fix 2: Extract quantity from natural language ──────
+    // Handles: "I have 20 bags", "j'ai 20 sacs", "about 15 kg"
+    const naturalQtyMatch = text.match(/(?:i have|j'ai|j'en ai|about|environ|around|roughly)\s+(\d+)/i);
+    if (naturalQtyMatch) {
+      // Will be picked up by the number scan below
+    }
+
     const parts    = text.toLowerCase().split(/\s+/);
-    let product: string | undefined;
-    let quantity: number | undefined;
-    let unit = 'bags';
+    let product:         string | undefined;
+    let productOriginal: string | undefined;
+    let quantity:        number | undefined;
+    let unit = '';
 
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i];
+
       if (unitWords.includes(p)) { unit = p; continue; }
-      if (/^\d+$/.test(p))       { quantity = parseInt(p, 10); continue; }
-      if (frenchToEnglish[p])    { product = frenchToEnglish[p]; continue; }
-      if (stopWords.includes(p)) { continue; }
-      if (p.length > 2)          { product = p; }
+
+      if (/^\d+$/.test(p)) { quantity = parseInt(p, 10); continue; }
+
+      if (frenchToEnglish[p]) {
+        productOriginal = p;            // keep "manioc" for display
+        product = frenchToEnglish[p];   // store "cassava" for DB
+        continue;
+      }
+
+      if (stopWords.includes(p)) continue;
+      if (p.length > 2) {
+        productOriginal = p;
+        product = p;
+      }
     }
 
-    return { product, quantity, unit };
+    // ── Fix 3: Smart default unit per product ─────────────
+    if (!unit) {
+      unit = this.defaultUnitForProduct(product ?? productOriginal ?? '');
+    }
+
+    return { product, productOriginal, quantity, unit };
+  }
+
+  // ─── Smart default unit based on product type ─────────────
+  defaultUnitForProduct(product: string): string {
+    const lower = product.toLowerCase();
+
+    // Sold by crate
+    const byCrate = ['tomatoes', 'tomate', 'tomato', 'pepper', 'piment', 'eggplant', 'aubergine', 'cucumber', 'concombre', 'okra', 'gombo'];
+    if (byCrate.some((p) => lower.includes(p))) return 'crates';
+
+    // Sold by kg
+    const byKg = ['garlic', 'ail', 'onion', 'oignon', 'ginger', 'gingembre', 'groundnuts', 'arachide', 'pepper'];
+    if (byKg.some((p) => lower.includes(p))) return 'kg';
+
+    // Sold by bunch/régime
+    const byBunch = ['plantain', 'banana', 'banane'];
+    if (byBunch.some((p) => lower.includes(p))) return 'bunches';
+
+    // Sold by litre
+    const byLitre = ['palm oil', 'palme', 'oil', 'huile', 'milk', 'lait'];
+    if (byLitre.some((p) => lower.includes(p))) return 'litres';
+
+    // Default
+    return 'bags';
   }
 
   // ─────────────────────────────────────────────────────────
@@ -321,9 +391,11 @@ JSON format: {"intent":"","language":"","product":null,"quantity":null,"unit":"b
         pidgin:  `❌ I no hear the voice well.\nAbeg type your message.`,
       },
       price_suggestion: {
-        english: `📊 *\${product} Market Prices*\n\nMin: \${min}\nAvg: \${avg}\nMax: \${max}\n\n✨ Suggested: *\${suggested}*\n\nReply with your price or type *AUTO*`,
-        french:  `📊 *Prix du \${product}*\n\nMin: \${min}\nMoy: \${avg}\nMax: \${max}\n\n✨ Suggéré: *\${suggested}*\n\nRépondez avec votre prix ou tapez *AUTO*`,
-        pidgin:  `📊 *\${product} Price*\n\nSmall: \${min}\nNormal: \${avg}\nBig: \${max}\n\n✨ We suggest: *\${suggested}*\n\nSend your price or type *AUTO*`,
+        // Note: pass product as the display name (original language)
+        // e.g. French user → "manioc" not "cassava"
+        english: `📊 *\${product} Market Prices*\n\nMin: \${min}\nAvg: \${avg}\nMax: \${max}\n\n✨ Suggested: *\${suggested}*\n\n1️⃣ Accept suggested price\n2️⃣ Set custom price\n\nReply 1 or 2`,
+        french:  `📊 *Prix du \${product}*\n\nMin: \${min}\nMoy: \${avg}\nMax: \${max}\n\n✨ Suggéré: *\${suggested}*\n\n1️⃣ Accepter le prix suggéré\n2️⃣ Définir un prix personnalisé\n\nRépondez 1 ou 2`,
+        pidgin:  `📊 *\${product} Price*\n\nSmall: \${min}\nNormal: \${avg}\nBig: \${max}\n\n✨ We suggest: *\${suggested}*\n\n1️⃣ Accept suggested price\n2️⃣ Set your own price\n\nSend 1 or 2`,
       },
       listing_confirmed: {
         english: `✅ *Listing Created!*\n\n🌽 \${product}\n📦 \${quantity} \${unit}\n💰 \${price}\n\nBuyers will be notified.`,
