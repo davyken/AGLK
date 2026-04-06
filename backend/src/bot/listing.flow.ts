@@ -7,16 +7,18 @@ import { MatchingService } from '../listing/matching.service';
 import { MetaSenderService } from '../whatsapp/meta-sender.service';
 import { AiService, Language } from '../ai/ai.service';
 import { FilterParserService } from './filter-parser.service';
+import { CropMediaService } from './Crop media.service';
 
 // ─── In-memory state (persists across messages in same session) ───
 interface PendingState {
   type: 'sell' | 'sell_waiting_image' | 'buy_select';
   product: string;
+  productDisplay?: string;  // original name user typed e.g. "manioc"
   quantity: number;
   unit: string;
   userPhone: string;
   userRole: string;
-  language: Language;   
+  language: Language;
   price?: number;
   imageUrl?: string;
   imageMediaId?: string;
@@ -40,7 +42,7 @@ interface PendingFarmerResponse {
   quantity: number;
   unit: string;
   price: number;
-  language: Language; 
+  language: Language;  // ← added
 }
 
 const pendingStates          = new Map<string, PendingState>();
@@ -56,52 +58,66 @@ export class ListingFlowService {
     private readonly metaSender: MetaSenderService,
     private readonly aiService: AiService,
     private readonly filterParser: FilterParserService,
+    private readonly cropMedia:    CropMediaService,
   ) {}
 
-
+  // ─── Main entry point ─────────────────────────────────────
   async handle(
     phone: string,
     text: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
 
-    
+    // ── Get user language from DB (default english) ────────
     const user = await this.usersService.findByPhone(phone);
     const lang: Language = (user as any)?.language ?? 'english';
 
-    
+    // ── If there is a pending state → resume it ────────────
     if (pendingStates.has(phone)) {
       return this.handlePendingState(phone, text.trim(), channel, lang);
     }
 
-   
+    // ── Use AI to parse intent from ANY language input ─────
     const parsed = await this.aiService.parseIntent(text);
 
-   
+    // Normalize French/Pidgin commands to structured intent
     if (parsed.intent === 'sell') {
-      return this.handleSellIntent(phone, parsed.product ?? '', parsed.quantity ?? 0, parsed.unit ?? 'bags', channel, lang);
+      const unit = parsed.unit && parsed.unit !== 'bags'
+        ? parsed.unit
+        : this.aiService.defaultUnitForProduct(parsed.product ?? '');
+      return this.handleSellIntent(
+        phone,
+        parsed.product ?? '',
+        (parsed as any).productOriginal ?? parsed.product ?? '',
+        parsed.quantity ?? 0,
+        unit,
+        channel,
+        lang,
+      );
     }
 
     if (parsed.intent === 'buy') {
-    
       if (this.filterParser.hasFilters(text)) {
         const filtered = this.filterParser.parse(text);
         if (filtered) return this.handleBuyIntentWithFilters(phone, filtered, text, channel, lang);
       }
-      return this.handleBuyIntent(phone, parsed.product ?? '', parsed.quantity ?? 0, parsed.unit ?? 'bags', channel, lang);
+      const unit = parsed.unit && parsed.unit !== 'bags'
+        ? parsed.unit
+        : this.aiService.defaultUnitForProduct(parsed.product ?? '');
+      return this.handleBuyIntent(phone, parsed.product ?? '', parsed.quantity ?? 0, unit, channel, lang);
     }
 
     if (parsed.intent === 'price') {
       return this.handlePriceQuery(parsed.product ?? '', lang, channel);
     }
 
-    
+    // ── Fallback: try classic command parsing ──────────────
     const normalized = this.normalizeCommand(text);
     const upper = normalized.toUpperCase();
 
     if (upper.startsWith('SELL')) {
       const p = this.parseListingCommand(normalized);
-      if (p) return this.handleSellIntent(phone, p.product, p.quantity, p.unit, channel, lang);
+      if (p) return this.handleSellIntent(phone, p.product, p.product, p.quantity, p.unit, channel, lang);
     }
 
     if (upper.startsWith('BUY')) {
@@ -114,40 +130,48 @@ export class ListingFlowService {
       return this.handleOfferCommand(phone, normalized, channel, lang);
     }
 
-   
+    // ── Unknown command ────────────────────────────────────
     return this.aiService.reply('unknown_command', lang, {});
   }
 
-  
+  // ─── Sell Intent ──────────────────────────────────────────
   private async handleSellIntent(
     phone: string,
-    product: string,
+    product: string,          // normalized English name for DB (e.g. "cassava")
+    productDisplay: string,   // original name user typed (e.g. "manioc")
     quantity: number,
     unit: string,
     channel: 'sms' | 'whatsapp',
     lang: Language,
   ): Promise<string> {
-   
+    // displayName = what user sees (preserves French/Pidgin product names)
+    const displayName = productDisplay || product;
+    const smartEmoji  = this.cropMedia.getEmoji(product);
+    const smartUnit   = unit || this.aiService.defaultUnitForProduct(product);
+
+    // ── Product detected but NO quantity → ask for it ─────
+    // Handles: "I have maize to sell" → bot asks "How many bags?"
     if (product && (!quantity || quantity <= 0)) {
       pendingStates.set(phone, {
-        type:     'sell',
+        type:           'sell',
         product,
-        quantity: 0,  // will be filled by next message
-        unit:     unit || 'bags',
-        userPhone: phone,
-        userRole: 'farmer',
-        language: lang,
+        productDisplay: displayName,
+        quantity:       0,
+        unit:           smartUnit,
+        userPhone:      phone,
+        userRole:       'farmer',
+        language:       lang,
       });
       const msgs: Record<Language, string> = {
-        english: ` Got it — you want to sell *${this.cap(product)}*.
+        english: `${smartEmoji} Got it — you want to sell *${this.cap(displayName)}*.
 
-How many bags do you have?`,
-        french:  ` Compris — vous voulez vendre *${this.cap(product)}*.
+How many ${smartUnit} do you have?`,
+        french:  `${smartEmoji} Compris — vous voulez vendre *${this.cap(displayName)}*.
 
-Combien de sacs avez-vous?`,
-        pidgin:  ` Okay — you wan sell *${this.cap(product)}*.
+Combien de ${smartUnit} avez-vous?`,
+        pidgin:  `${smartEmoji} Okay — you wan sell *${this.cap(displayName)}*.
 
-How many bags you get?`,
+How many ${smartUnit} you get?`,
       };
       return msgs[lang];
     }
@@ -181,30 +205,52 @@ How many bags you get?`,
       return msgs[lang];
     }
 
-    // Store pending state with language
+    // Store pending state with language and display name
     pendingStates.set(phone, {
-      type: 'sell',
+      type:           'sell',
       product,
+      productDisplay: displayName,  // preserved for messages
       quantity,
       unit,
-      userPhone: phone,
-      userRole: user.role,
-      language: lang,
+      userPhone:      phone,
+      userRole:       user.role,
+      language:       lang,
     });
 
     const priceData = await this.priceService.getPrice(product);
 
     if (!priceData) {
       const msgs: Record<Language, string> = {
-        english: `📦 *Listing: ${this.cap(product)}*\n\nQty: ${quantity} ${unit}\n\n💰 No market price available.\nPlease enter your price.\n\nExample: 20000`,
-        french:  `📦 *Annonce: ${this.cap(product)}*\n\nQté: ${quantity} ${unit}\n\n💰 Pas de prix disponible.\nEntrez votre prix.\n\nExemple: 20000`,
-        pidgin:  `📦 *Listing: ${this.cap(product)}*\n\nQty: ${quantity} ${unit}\n\n💰 No price data.\nSend your price.\n\nExample: 20000`,
+        english: `${smartEmoji} *Listing: ${this.cap(displayName)}*
+
+Qty: ${quantity} ${unit}
+
+💰 No market price available.
+Please enter your price.
+
+Example: 20000`,
+        french:  `${smartEmoji} *Annonce: ${this.cap(displayName)}*
+
+Qté: ${quantity} ${unit}
+
+💰 Pas de prix disponible.
+Entrez votre prix.
+
+Exemple: 20000`,
+        pidgin:  `${smartEmoji} *Listing: ${this.cap(displayName)}*
+
+Qty: ${quantity} ${unit}
+
+💰 No price data.
+Send your price.
+
+Example: 20000`,
       };
       return msgs[lang];
     }
 
     return this.aiService.reply('price_suggestion', lang, {
-      product:   this.cap(product),
+      product:   this.cap(displayName), // show "Manioc" not "Cassava" in French
       min:       this.fmt(priceData.low),
       avg:       this.fmt(priceData.avg),
       max:       this.fmt(priceData.high),
@@ -566,18 +612,32 @@ ${filterSummary}
 
     // ── Quantity was missing → user is now sending it ──────
     if (pending.quantity === 0) {
-      const qty = parseInt(response.trim(), 10);
+      // ── Extract number from natural language ──────────────
+      // Handles: "20", "I have 20 bags", "j'ai 20 sacs",
+      //          "about 20", "20 bags", "around 15 kg"
+      const numberMatch = response.match(/\d+/);
+      const qty = numberMatch ? parseInt(numberMatch[0], 10) : 0;
+
+      // Also detect if user specified a different unit in their reply
+      const unitMatch = response.toLowerCase().match(
+        /\b(bags?|sacs?|kg|kilogrammes?|tonnes?|crates?|cageots?|régimes?|bunches?|litres?|pieces?|pièces?)\b/
+      );
+      if (unitMatch) {
+        pendingStates.set(phone, { ...pending, unit: unitMatch[0] });
+      }
+
       if (!qty || qty <= 0) {
+        const unitLabel = pending.unit || this.aiService.defaultUnitForProduct(pending.product);
         const msgs: Record<Language, string> = {
           english: `❌ Please enter a valid number.
 
-How many bags of ${this.cap(pending.product)}?`,
+How many ${unitLabel} of ${this.cap(pending.product)} do you have?`,
           french:  `❌ Entrez un nombre valide.
 
-Combien de sacs de ${this.cap(pending.product)}?`,
+Combien de ${unitLabel} de ${this.cap(pending.product)} avez-vous?`,
           pidgin:  `❌ Send a correct number.
 
-How many bags of ${this.cap(pending.product)}?`,
+How many ${unitLabel} of ${this.cap(pending.product)} you get?`,
         };
         return msgs[lang];
       }
@@ -612,7 +672,7 @@ Example: 20000`,
       }
 
       return this.aiService.reply('price_suggestion', lang, {
-        product:   this.cap(pending.product),
+        product:   this.cap((pending as any).productDisplay ?? pending.product),
         min:       this.fmt(priceData.low),
         avg:       this.fmt(priceData.avg),
         max:       this.fmt(priceData.high),
@@ -719,12 +779,31 @@ Example: 20000`,
 
       pendingStates.delete(phone);
 
-      return this.aiService.reply('listing_confirmed', savedLang, {
-        product:  listing.product,
-        quantity: listing.quantity,
-        unit:     listing.unit,
-        price:    this.fmt(listing.price),
-      });
+      // ── Get correct emoji + real crop image ──────────────
+      const { emoji, imageUrl: cropImageUrl } =
+        await this.cropMedia.getMedia(listing.product);
+
+      // Build confirmation message with correct emoji
+      const productDisplay = (pending as any).productDisplay ?? listing.product;
+      const confirmMsg = this.cropMedia.buildListingConfirmedMessage(
+        listing.product,
+        productDisplay,
+        listing.quantity,
+        listing.unit,
+        this.fmt(listing.price),
+        savedLang,
+        emoji,
+      );
+
+      // If no farmer image was uploaded AND we got a crop image → send it
+      if (!imageUrl && !imageMediaId && cropImageUrl && channel === 'whatsapp') {
+        await this.metaSender.send(phone, confirmMsg);
+        await this.metaSender.sendImage(phone, cropImageUrl, `${emoji} ${productDisplay}`);
+        return '';
+      }
+
+      return confirmMsg;
+
     } catch {
       pendingStates.delete(phone);
       const msgs: Record<Language, string> = {
@@ -884,7 +963,7 @@ Example: 20000`,
     return declinedMsgs[lang];
   }
 
-  // Offer command
+  // ─── Offer command ────────────────────────────────────────
   private async handleOfferCommand(
     phone: string,
     command: string,
@@ -932,9 +1011,9 @@ Example: 20000`,
     return msgs[lang];
   }
 
-  // ─── Helpers 
+  // ─── Helpers ──────────────────────────────────────────────
   isInPendingState(phone: string): boolean   { return pendingStates.has(phone); }
-  isInPriceState(phone: string): boolean    { return pendingStates.has(phone); } 
+  isInPriceState(phone: string): boolean    { return pendingStates.has(phone); } // alias used by BotService
   isInImageState(phone: string): boolean     { return pendingStates.get(phone)?.type === 'sell_waiting_image'; }
   hasPendingFarmerResponse(phone: string): boolean { return pendingFarmerResponses.has(phone); }
 
