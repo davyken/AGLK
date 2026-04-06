@@ -16,7 +16,7 @@ interface PendingState {
   unit: string;
   userPhone: string;
   userRole: string;
-  language: Language;   // ← added: remember language per user
+  language: Language;   
   price?: number;
   imageUrl?: string;
   imageMediaId?: string;
@@ -40,7 +40,7 @@ interface PendingFarmerResponse {
   quantity: number;
   unit: string;
   price: number;
-  language: Language;  // ← added
+  language: Language; 
 }
 
 const pendingStates          = new Map<string, PendingState>();
@@ -58,32 +58,32 @@ export class ListingFlowService {
     private readonly filterParser: FilterParserService,
   ) {}
 
-  // ─── Main entry point ─────────────────────────────────────
+
   async handle(
     phone: string,
     text: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
 
-    // ── Get user language from DB (default english) ────────
+    
     const user = await this.usersService.findByPhone(phone);
     const lang: Language = (user as any)?.language ?? 'english';
 
-    // ── If there is a pending state → resume it ────────────
+    
     if (pendingStates.has(phone)) {
       return this.handlePendingState(phone, text.trim(), channel, lang);
     }
 
-    // ── Use AI to parse intent from ANY language input ─────
+   
     const parsed = await this.aiService.parseIntent(text);
 
-    // Normalize French/Pidgin commands to structured intent
+   
     if (parsed.intent === 'sell') {
       return this.handleSellIntent(phone, parsed.product ?? '', parsed.quantity ?? 0, parsed.unit ?? 'bags', channel, lang);
     }
 
     if (parsed.intent === 'buy') {
-      // Check if original text has filters
+    
       if (this.filterParser.hasFilters(text)) {
         const filtered = this.filterParser.parse(text);
         if (filtered) return this.handleBuyIntentWithFilters(phone, filtered, text, channel, lang);
@@ -95,7 +95,7 @@ export class ListingFlowService {
       return this.handlePriceQuery(parsed.product ?? '', lang, channel);
     }
 
-    // ── Fallback: try classic command parsing ──────────────
+    
     const normalized = this.normalizeCommand(text);
     const upper = normalized.toUpperCase();
 
@@ -114,11 +114,11 @@ export class ListingFlowService {
       return this.handleOfferCommand(phone, normalized, channel, lang);
     }
 
-    // ── Unknown command ────────────────────────────────────
+   
     return this.aiService.reply('unknown_command', lang, {});
   }
 
-  // ─── Sell Intent ──────────────────────────────────────────
+  
   private async handleSellIntent(
     phone: string,
     product: string,
@@ -127,6 +127,31 @@ export class ListingFlowService {
     channel: 'sms' | 'whatsapp',
     lang: Language,
   ): Promise<string> {
+   
+    if (product && (!quantity || quantity <= 0)) {
+      pendingStates.set(phone, {
+        type:     'sell',
+        product,
+        quantity: 0,  // will be filled by next message
+        unit:     unit || 'bags',
+        userPhone: phone,
+        userRole: 'farmer',
+        language: lang,
+      });
+      const msgs: Record<Language, string> = {
+        english: ` Got it — you want to sell *${this.cap(product)}*.
+
+How many bags do you have?`,
+        french:  ` Compris — vous voulez vendre *${this.cap(product)}*.
+
+Combien de sacs avez-vous?`,
+        pidgin:  ` Okay — you wan sell *${this.cap(product)}*.
+
+How many bags you get?`,
+      };
+      return msgs[lang];
+    }
+
     if (!product || quantity <= 0) {
       const errors: Record<Language, string> = {
         english: `❌ Invalid format.\n\nUse: SELL maize 10 bags`,
@@ -529,7 +554,7 @@ ${filterSummary}
     return this.aiService.reply('unknown_command', savedLang, {});
   }
 
-  // ─── Sell pending: waiting for price choice ───────────────
+  // ─── Sell pending: waiting for quantity OR price ────────────
   private async handleSellPending(
     phone: string,
     response: string,
@@ -538,6 +563,62 @@ ${filterSummary}
     lang: Language,
   ): Promise<string> {
     const input = response.trim().toLowerCase();
+
+    // ── Quantity was missing → user is now sending it ──────
+    if (pending.quantity === 0) {
+      const qty = parseInt(response.trim(), 10);
+      if (!qty || qty <= 0) {
+        const msgs: Record<Language, string> = {
+          english: `❌ Please enter a valid number.
+
+How many bags of ${this.cap(pending.product)}?`,
+          french:  `❌ Entrez un nombre valide.
+
+Combien de sacs de ${this.cap(pending.product)}?`,
+          pidgin:  `❌ Send a correct number.
+
+How many bags of ${this.cap(pending.product)}?`,
+        };
+        return msgs[lang];
+      }
+
+      // Update pending state with the quantity
+      pendingStates.set(phone, { ...pending, quantity: qty });
+
+      // Now fetch price data
+      const priceData = await this.priceService.getPrice(pending.product);
+      if (!priceData) {
+        const msgs: Record<Language, string> = {
+          english: `📦 ${qty} bags of ${this.cap(pending.product)} noted.
+
+💰 No market price available.
+Please enter your price.
+
+Example: 20000`,
+          french:  `📦 ${qty} sacs de ${this.cap(pending.product)} noté.
+
+💰 Pas de données de prix.
+Entrez votre prix.
+
+Exemple: 20000`,
+          pidgin:  `📦 ${qty} bags ${this.cap(pending.product)} noted.
+
+💰 No price data.
+Send your price.
+
+Example: 20000`,
+        };
+        return msgs[lang];
+      }
+
+      return this.aiService.reply('price_suggestion', lang, {
+        product:   this.cap(pending.product),
+        min:       this.fmt(priceData.low),
+        avg:       this.fmt(priceData.avg),
+        max:       this.fmt(priceData.high),
+        suggested: this.fmt(priceData.suggested),
+      });
+    }
 
     // Accept suggested price
     if (input === '1') {
@@ -803,7 +884,7 @@ ${filterSummary}
     return declinedMsgs[lang];
   }
 
-  // ─── Offer command ────────────────────────────────────────
+  // Offer command
   private async handleOfferCommand(
     phone: string,
     command: string,
@@ -851,9 +932,9 @@ ${filterSummary}
     return msgs[lang];
   }
 
-  // ─── Helpers ──────────────────────────────────────────────
+  // ─── Helpers 
   isInPendingState(phone: string): boolean   { return pendingStates.has(phone); }
-  isInPriceState(phone: string): boolean    { return pendingStates.has(phone); } // alias used by BotService
+  isInPriceState(phone: string): boolean    { return pendingStates.has(phone); } 
   isInImageState(phone: string): boolean     { return pendingStates.get(phone)?.type === 'sell_waiting_image'; }
   hasPendingFarmerResponse(phone: string): boolean { return pendingFarmerResponses.has(phone); }
 

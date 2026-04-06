@@ -74,15 +74,13 @@ export class BotService {
       return msgs[lang];
     }
 
-    // ─────────────────────────────────────────────────────
-    // PRIORITY 2: Pending state — takes over everything
-    // ─────────────────────────────────────────────────────
+    
     if (this.listingFlow.isInPriceState(phone)) {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
     if (this.listingFlow.hasPendingFarmerResponse(phone)) {
-      // YES / NO check directly — no AI needed
+      
       if (['YES', 'OUI', 'YES NA', 'NA SO'].includes(upper) ||
           ['NO', 'NON', 'NO BE DAT'].includes(upper)) {
         return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
@@ -102,9 +100,7 @@ export class BotService {
 
     await this.usersService.updateChannel(phone, channel);
 
-    // ─────────────────────────────────────────────────────
-    // PRIORITY 4: Direct command matching — NO AI needed
-    // ─────────────────────────────────────────────────────
+    
 
     // SELL (English + French + Pidgin variants)
     if (normalized.startsWith('SELL') ||
