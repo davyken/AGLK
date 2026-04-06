@@ -31,17 +31,18 @@ export class BotService {
     // ── Load user ─────────────────────────────────────────
     const user = await this.usersService.findByPhone(phone);
 
-    // ── Detect language from current message ──────────────
-    // Always re-detect so switching language mid-conversation works
-    const detectedLang = this.detectLangFromText(trimmed);
+    // ── Language Resolution ──────────────────────────────
+    // 1. Detect from current message (no API — pure keyword matching)
+    // 2. If clear signal found → use it and save to DB
+    // 3. If no signal (e.g. user typed "1" or "20") → use saved language
+    // This means once a user speaks French, ALL replies stay French
+    const detectedLang: Language = this.aiService.detectLanguage(trimmed);
+    const savedLang:    Language = (user as any)?.language ?? 'english';
 
-    // Use detected language if it is not the default English detection
-    // (meaning we found a real French or Pidgin signal)
-    // Otherwise fall back to what is saved in DB
-    const savedLang: Language = (user as any)?.language ?? 'english';
+    // Only override saved language if we found a clear non-English signal
     const lang: Language = detectedLang !== 'english' ? detectedLang : savedLang;
 
-    // Persist new language if it changed
+    // Save language to DB if it changed
     if (user && lang !== savedLang) {
       await this.usersService.updateLanguage(phone, lang);
     }
@@ -74,13 +75,15 @@ export class BotService {
       return msgs[lang];
     }
 
-    
+    // ─────────────────────────────────────────────────────
+    // PRIORITY 2: Pending state — takes over everything
+    // ─────────────────────────────────────────────────────
     if (this.listingFlow.isInPriceState(phone)) {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
     if (this.listingFlow.hasPendingFarmerResponse(phone)) {
-      
+      // YES / NO check directly — no AI needed
       if (['YES', 'OUI', 'YES NA', 'NA SO'].includes(upper) ||
           ['NO', 'NON', 'NO BE DAT'].includes(upper)) {
         return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
@@ -100,7 +103,9 @@ export class BotService {
 
     await this.usersService.updateChannel(phone, channel);
 
-    
+    // ─────────────────────────────────────────────────────
+    // PRIORITY 4: Direct command matching — NO AI needed
+    // ─────────────────────────────────────────────────────
 
     // SELL (English + French + Pidgin variants)
     if (normalized.startsWith('SELL') ||
@@ -250,28 +255,6 @@ export class BotService {
       ].join('\n'),
     };
     return help[lang];
-  }
-
-  // ─── Fast language detection (no API) ──────────────────────
-  private detectLangFromText(text: string): Language {
-    const lower = text.toLowerCase();
-
-    const frenchSignals = [
-      'bonjour', 'salut', 'vendre', 'acheter', 'maïs', 'mais',
-      "j'ai", 'je ', 'du ', 'de la', 'des ', 'oui', 'non',
-      'merci', 'sacs', 'sac', 'quel', 'prix', 'aide', 'manioc',
-      'tomate', 'tomates', 'combien', 'langue', 'français',
-    ];
-
-    const pidginSignals = [
-      'i get', 'i wan', 'i dey', 'na so', 'abeg', 'wetin',
-      'plenty', 'dem ', 'for sell', 'for buy', 'no be',
-      'wey', 'oga', 'chop', 'kanji', 'nyanga',
-    ];
-
-    if (frenchSignals.some((w) => lower.includes(w))) return 'french';
-    if (pidginSignals.some((w) => lower.includes(w))) return 'pidgin';
-    return 'english';
   }
 
   // ─── Normalize French/Pidgin → English ───────────────────
