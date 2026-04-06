@@ -4,28 +4,23 @@ export interface ParsedBuyCommand {
   product:  string;
   quantity: number;
   unit:     string;
-  location?: string;   // from @yaounde
-  minPrice?: number;   // from #10000-20000
+  location?: string;   
+  minPrice?: number;   
   maxPrice?: number;
 }
 
 @Injectable()
 export class FilterParserService {
 
-  // ─── Parse BUY command with optional filters ──────────────
-  // Supports:
-  //   BUY maize 20 bags
-  //   BUY maize 20 bags @yaounde
-  //   BUY maize 20 bags #10000-20000
-  //   BUY maize 20 bags @yaounde #10000-20000
-  //   ACHETER maïs 20 sacs @yaounde
+  
+  
   parse(command: string): ParsedBuyCommand | null {
     const normalized = this.normalizeCommand(command.trim());
     const parts      = normalized.toLowerCase().split(/\s+/);
 
     if (parts.length < 3) return null;
 
-    // Remove command keyword (buy/sell)
+    
     const keyword = parts[0];
     if (keyword !== 'buy' && keyword !== 'sell') return null;
 
@@ -33,7 +28,7 @@ export class FilterParserService {
     let minPrice: number | undefined;
     let maxPrice: number | undefined;
 
-    // ── Extract filters (@location, #price) ──────────────
+    
     const cleanParts: string[] = [];
 
     for (const part of parts.slice(1)) {
@@ -117,8 +112,8 @@ export class FilterParserService {
     return filters.join('\n');
   }
 
-  // ─── Normalize location name ──────────────────────────────
-  // yaounde → Yaoundé, bafoussam → Bafoussam
+  
+
   private normalizeLocation(loc: string): string {
     const locationMap: Record<string, string> = {
       'yaounde':    'Yaoundé',
