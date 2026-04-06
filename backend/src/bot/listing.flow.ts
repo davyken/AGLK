@@ -6,6 +6,7 @@ import { PriceService } from '../price/price.service';
 import { MatchingService } from '../listing/matching.service';
 import { MetaSenderService } from '../whatsapp/meta-sender.service';
 import { AiService, Language } from '../ai/ai.service';
+import { FilterParserService } from './filter-parser.service';
 
 // ─── In-memory state (persists across messages in same session) ───
 interface PendingState {
@@ -53,7 +54,8 @@ export class ListingFlowService {
     private readonly priceService: PriceService,
     private readonly matchingService: MatchingService,
     private readonly metaSender: MetaSenderService,
-    private readonly aiService: AiService,           // ← injected
+    private readonly aiService: AiService,
+    private readonly filterParser: FilterParserService,
   ) {}
 
   // ─── Main entry point ─────────────────────────────────────
@@ -81,6 +83,11 @@ export class ListingFlowService {
     }
 
     if (parsed.intent === 'buy') {
+      // Check if original text has filters
+      if (this.filterParser.hasFilters(text)) {
+        const filtered = this.filterParser.parse(text);
+        if (filtered) return this.handleBuyIntentWithFilters(phone, filtered, text, channel, lang);
+      }
       return this.handleBuyIntent(phone, parsed.product ?? '', parsed.quantity ?? 0, parsed.unit ?? 'bags', channel, lang);
     }
 
@@ -98,8 +105,9 @@ export class ListingFlowService {
     }
 
     if (upper.startsWith('BUY')) {
-      const p = this.parseListingCommand(normalized);
-      if (p) return this.handleBuyIntent(phone, p.product, p.quantity, p.unit, channel, lang);
+      // Use filterParser so @location and #price filters work
+      const p = this.filterParser.parse(normalized);
+      if (p) return this.handleBuyIntentWithFilters(phone, p, text, channel, lang);
     }
 
     if (upper.startsWith('OFFER')) {
@@ -305,6 +313,153 @@ export class ListingFlowService {
       } else if (listing.imageUrl) {
         await this.metaSender.sendImage(phone, listing.imageUrl, listing.product);
       }
+    }
+
+    return '';
+  }
+
+  // ─── Buy with filters (@location #price) ────────────────
+  private async handleBuyIntentWithFilters(
+    phone: string,
+    parsed: { product: string; quantity: number; unit: string; location?: string; minPrice?: number; maxPrice?: number },
+    originalText: string,
+    channel: 'sms' | 'whatsapp',
+    lang: Language,
+  ): Promise<string> {
+    const user = await this.usersService.findByPhone(phone);
+
+    if (!user || user.conversationState !== 'REGISTERED') {
+      const msgs: Record<Language, string> = {
+        english: `❌ Register first. Reply Hi to start.`,
+        french:  `❌ Enregistrez-vous d'abord.`,
+        pidgin:  `❌ Register first. Reply Hi.`,
+      };
+      return msgs[lang];
+    }
+
+    if (user.role !== 'buyer') {
+      const msgs: Record<Language, string> = {
+        english: `❌ Only buyers can search listings.`,
+        french:  `❌ Seuls les acheteurs peuvent chercher.`,
+        pidgin:  `❌ Only buyer fit search.`,
+      };
+      return msgs[lang];
+    }
+
+    // ── Fetch listings with filters ────────────────────────
+    let allListings = await this.listingService.findByProduct(parsed.product);
+    let sellListings = allListings.filter(
+      (l) => l.type === 'sell' && l.status === 'active',
+    );
+
+    // Apply location filter
+    if (parsed.location) {
+      const locLower = parsed.location.toLowerCase();
+      sellListings = sellListings.filter(
+        (l) => l.userLocation?.toLowerCase().includes(locLower),
+      );
+    }
+
+    // Apply price filter
+    if (parsed.minPrice) {
+      sellListings = sellListings.filter((l) => (l.price || 0) >= parsed.minPrice!);
+    }
+    if (parsed.maxPrice) {
+      sellListings = sellListings.filter((l) => (l.price || 0) <= parsed.maxPrice!);
+    }
+
+    // ── Build filter summary to show user ─────────────────
+    const filterSummary = this.filterParser.buildFilterSummary(parsed, lang);
+
+    // ── No results with filters ───────────────────────────
+    if (sellListings.length === 0) {
+      const msgs: Record<Language, string> = {
+        english: `🔍 No listings found for *${this.cap(parsed.product)}* with your filters:
+${filterSummary}
+
+Try removing filters:
+BUY ${parsed.product} ${parsed.quantity} bags`,
+        french:  `🔍 Aucune annonce pour *${this.cap(parsed.product)}* avec vos filtres:
+${filterSummary}
+
+Essayez sans filtres:
+ACHETER ${parsed.product} ${parsed.quantity} sacs`,
+        pidgin:  `🔍 No listing for *${this.cap(parsed.product)}* with your filter:
+${filterSummary}
+
+Try without filter:
+BUY ${parsed.product} ${parsed.quantity} bags`,
+      };
+      return msgs[lang];
+    }
+
+    // ── Show filtered results ─────────────────────────────
+    const top = sellListings.slice(0, 5);
+
+    pendingStates.set(phone, {
+      type:     'buy_select',
+      product:  parsed.product,
+      quantity: parsed.quantity,
+      unit:     parsed.unit,
+      userPhone: phone,
+      userRole: user.role,
+      language: lang,
+      listings: top.map((l) => ({
+        id:           l._id.toString(),
+        userPhone:    l.userPhone,
+        farmerName:   l.userName,
+        location:     l.userLocation,
+        quantity:     l.quantity,
+        price:        l.price || 0,
+        imageUrl:     l.imageUrl,
+        imageMediaId: l.imageMediaId,
+      })),
+    });
+
+    const headers: Record<Language, string> = {
+      english: `🔍 *${sellListings.length} result(s) for ${this.cap(parsed.product)}*
+${filterSummary}
+
+`,
+      french:  `🔍 *${sellListings.length} résultat(s) pour ${this.cap(parsed.product)}*
+${filterSummary}
+
+`,
+      pidgin:  `🔍 *${sellListings.length} result(s) for ${this.cap(parsed.product)}*
+${filterSummary}
+
+`,
+    };
+
+    let message = headers[lang];
+
+    top.forEach((listing, i) => {
+      message += `${i + 1}️⃣ ${listing.userName}
+`;
+      message += `   📦 ${listing.quantity} ${listing.unit}
+`;
+      message += `   💰 ${this.fmt(listing.price || 0)}
+`;
+      message += `   📍 ${listing.userLocation}
+`;
+      if (listing.imageUrl || listing.imageMediaId) message += `   📷 Photo available
+`;
+      message += `
+`;
+    });
+
+    const footers: Record<Language, string> = {
+      english: `Reply with number (1-${top.length}) to select.`,
+      french:  `Répondez avec le numéro (1-${top.length}) pour choisir.`,
+      pidgin:  `Send number (1-${top.length}) to pick one.`,
+    };
+    message += footers[lang];
+
+    await this.metaSender.send(phone, message);
+
+    for (const listing of top) {
+      if (listing.imageMediaId) await this.metaSender.sendImageByMediaId(phone, listing.imageMediaId, listing.product);
+      else if (listing.imageUrl) await this.metaSender.sendImage(phone, listing.imageUrl, listing.product);
     }
 
     return '';
