@@ -7,6 +7,8 @@ import { UsersModule } from '../users/users.module';
 import { AiModule } from '../ai/ai.module';
 import { ListingModule } from '../listing/listing.module';
 import { PriceModule } from '../price/price.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { FilterParserService } from './filter-parser.service';
 
 @Module({
   imports: [
@@ -14,13 +16,16 @@ import { PriceModule } from '../price/price.module';
     AiModule,
     ListingModule,
     PriceModule,
+    WhatsappModule,
   ],
   controllers: [BotController],
   providers: [
     BotService,
     RegistrationFlowService,
     ListingFlowService,
+    FilterParserService,
   ],
+
   exports: [],
 })
 export class BotModule {}
