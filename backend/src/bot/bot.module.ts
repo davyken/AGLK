@@ -9,6 +9,7 @@ import { ListingModule } from '../listing/listing.module';
 import { PriceModule } from '../price/price.module';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { FilterParserService } from './filter-parser.service';
+import { CropMediaService } from './Crop media.service';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { FilterParserService } from './filter-parser.service';
     RegistrationFlowService,
     ListingFlowService,
     FilterParserService,
+    CropMediaService,
   ],
 
   exports: [],
