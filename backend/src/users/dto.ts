@@ -4,6 +4,8 @@ import {
   IsOptional,
   IsArray,
   IsNotEmpty,
+  IsBoolean,
+  IsNumber,
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -81,4 +83,12 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(['english', 'french', 'pidgin'])
   preferredLanguage?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isBanned?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  trustScore?: number;
 }

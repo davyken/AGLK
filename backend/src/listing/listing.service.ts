@@ -216,4 +216,24 @@ export class ListingService {
   private escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
+
+  // ─── Update listing status ─────────────────────────────────
+  async updateStatus(id: string, status: string): Promise<ListingDocument> {
+    const listing = await this.listingModel
+      .findByIdAndUpdate(id, { $set: { status } }, { returnDocument: 'after' })
+      .exec();
+
+    if (!listing) {
+      throw new NotFoundException(`Listing with ID ${id} not found`);
+    }
+
+    this.eventBus.emitListingUpdated({
+      listingId: id,
+      status: status,
+      product: listing.product,
+      userPhone: listing.userPhone,
+    });
+
+    return listing;
+  }
 }

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 
+const API_BASE = 'https://aglk.onrender.com';
+
 interface Listing {
   _id: string;
   userPhone: string;
@@ -27,23 +29,42 @@ interface Listing {
 
 const hiddenFields = ['userPhone', 'price', 'location'];
 
+function fetchWithTimeout(promise: Promise<Response>, timeout = 10000): Promise<Response> {
+  return Promise.race([
+    promise,
+    new Promise<Response>((_, reject) => 
+      setTimeout(() => reject(new Error('Request timeout')), timeout)
+    )
+  ]);
+}
+
 export default function ListingsPage() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set(['userPhone', 'price']));
+  const [editingListing, setEditingListing] = useState<Listing | null>(null);
+  const [formData, setFormData] = useState({ status: '', price: 0, product: '', quantity: 0, unit: '' });
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetch('https://aglk.onrender.com/listing')
+  const fetchListings = () => {
+    setLoading(true);
+    setError(null);
+    
+    fetchWithTimeout(fetch(`${API_BASE}/listing`))
       .then(res => res.json())
       .then(data => {
         setListings(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch(err => {
-        setError('Failed to fetch listings');
+        setError('Server may be starting up (can take ~30s)');
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchListings();
   }, []);
 
   const toggleColumn = (field: string) => {
@@ -56,6 +77,52 @@ export default function ListingsPage() {
       }
       return next;
     });
+  };
+
+  const openEditModal = (listing: Listing) => {
+    setEditingListing(listing);
+    setFormData({
+      status: listing.status || '',
+      price: listing.price || 0,
+      product: listing.product || '',
+      quantity: listing.quantity || 0,
+      unit: listing.unit || '',
+    });
+  };
+
+  const closeModal = () => {
+    setEditingListing(null);
+    setFormData({ status: '', price: 0, product: '', quantity: 0, unit: '' });
+  };
+
+  const handleSave = async () => {
+    if (!editingListing) return;
+    setSaving(true);
+    try {
+      await fetch(`${API_BASE}/listing/${editingListing._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      fetchListings();
+      closeModal();
+    } catch (err) {
+      alert('Failed to update listing');
+    }
+    setSaving(false);
+  };
+
+  const updateStatus = async (listing: Listing, newStatus: string) => {
+    try {
+      await fetch(`${API_BASE}/listing/${listing._id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      fetchListings();
+    } catch (err) {
+      alert('Failed to update status');
+    }
   };
 
   const formatValue = (value: unknown): string => {
@@ -88,15 +155,21 @@ export default function ListingsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Loading listings...</div>
+        <div className="text-gray-500 animate-pulse">Loading listings...</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
         <div className="text-red-500">{error}</div>
+        <button 
+          onClick={fetchListings}
+          className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -106,6 +179,12 @@ export default function ListingsPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Listings</h1>
         <div className="flex gap-2">
+          <button 
+            onClick={fetchListings}
+            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm"
+          >
+            🔄 Refresh
+          </button>
           {hiddenFields.map(field => (
             <button
               key={field}
@@ -151,10 +230,24 @@ export default function ListingsPage() {
                     {formatValue(listing[col.key])}
                   </td>
                 ))}
-                <td className="px-4 py-3">
-                  <button className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition">
-                    📝
+                <td className="px-4 py-3 flex gap-2">
+                  <button 
+                    onClick={() => openEditModal(listing)} 
+                    className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                    title="Edit listing"
+                  >
+                    ⚙️
                   </button>
+                  <select
+                    value={listing.status}
+                    onChange={e => updateStatus(listing, e.target.value)}
+                    className="text-sm border rounded px-2 py-1 bg-white"
+                  >
+                    <option value="active">Active</option>
+                    <option value="matched">Matched</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
                 </td>
               </tr>
             ))}
@@ -168,6 +261,80 @@ export default function ListingsPage() {
           </tbody>
         </table>
       </div>
+
+      {editingListing && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+            <h2 className="text-xl font-bold mb-4">Edit Listing</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                <input
+                  type="text"
+                  value={formData.product}
+                  onChange={e => setFormData({ ...formData, product: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <input
+                  type="number"
+                  value={formData.quantity}
+                  onChange={e => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+                  className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                <input
+                  type="text"
+                  value={formData.unit}
+                  onChange={e => setFormData({ ...formData, unit: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
+                <input
+                  type="number"
+                  value={formData.price}
+                  onChange={e => setFormData({ ...formData, price: parseInt(e.target.value) || 0 })}
+                  className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={e => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                >
+                  <option value="active">Active</option>
+                  <option value="matched">Matched</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={closeModal}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

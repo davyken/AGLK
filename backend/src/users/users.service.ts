@@ -99,4 +99,24 @@ export class UsersService {
     if (!user) throw new NotFoundException(`User ${phone} not found`);
     return user;
   }
+
+  // ─── Ban/Unban user ───────────────────────────────────────
+  async toggleBan(phone: string, banned: boolean): Promise<UserDocument> {
+    const user = await this.userModel
+      .findOneAndUpdate({ phone }, { $set: { isBanned: banned } }, { new: true })
+      .exec();
+
+    if (!user) throw new NotFoundException(`User ${phone} not found`);
+    return user;
+  }
+
+  // ─── Update trust score ───────────────────────────────────
+  async updateTrustScore(phone: string, score: number): Promise<UserDocument> {
+    const user = await this.userModel
+      .findOneAndUpdate({ phone }, { $set: { trustScore: score } }, { new: true })
+      .exec();
+
+    if (!user) throw new NotFoundException(`User ${phone} not found`);
+    return user;
+  }
 }

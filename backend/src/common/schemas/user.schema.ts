@@ -30,6 +30,9 @@ export class User {
   @Prop({ default: 0 })
   trustScore: number;
 
+  @Prop({ default: false })
+  isBanned: boolean;
+
   // Farmer only
   @Prop({ type: [String], default: [] })
   produces: string[];
