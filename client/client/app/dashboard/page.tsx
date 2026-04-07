@@ -6,7 +6,7 @@ import {
   PieChart, Pie, Cell, LineChart, Line, AreaChart, Area 
 } from 'recharts';
 
-const API_BASE = 'https://aglk.onrender.com';
+const API_BASE = '/api/proxy?path=';
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -52,14 +52,15 @@ export default function DashboardPage() {
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     Promise.all([
-      fetchWithTimeout(fetch(`${API_BASE}/listing`, { signal: controller.signal })),
-      fetchWithTimeout(fetch(`${API_BASE}/users`, { signal: controller.signal })),
+      fetchWithTimeout(fetch(`${API_BASE}listing`, { signal: controller.signal })),
+      fetchWithTimeout(fetch(`${API_BASE}users`, { signal: controller.signal })),
     ])
       .then(([listingsRes, usersRes]) => Promise.all([listingsRes.json(), usersRes.json()]))
       .then(([listingsData, usersData]) => {
         clearTimeout(timeoutId);
-        const listingsArr: Listing[] = Array.isArray(listingsData) ? listingsData : listingsData.data || [];
-        const usersArr: User[] = Array.isArray(usersData) ? usersData : usersData.data || [];
+        // Handle both raw array and { success: true, data: [...] } format
+        const listingsArr: Listing[] = Array.isArray(listingsData) ? listingsData : (listingsData as any).data || [];
+        const usersArr: User[] = Array.isArray(usersData) ? usersData : (usersData as any).data || [];
         
         setListings(listingsArr);
         setUsers(usersArr);
