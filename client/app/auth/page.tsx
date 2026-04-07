@@ -8,6 +8,7 @@ export default function AuthPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [error, setError] = useState('');
 
   const [phone, setPhone] = useState('');
@@ -17,8 +18,22 @@ export default function AuthPage() {
     const user = localStorage.getItem('user');
     if (user) {
       router.push('/dashboard');
+    } else {
+      setCheckingAuth(false);
     }
   }, [router]);
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <img 
+          src="/agrolink_logo_compressed.png" 
+          alt="Agrolink" 
+          className="w-20 h-20 object-contain animate-spin"
+        />
+      </div>
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +41,7 @@ export default function AuthPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
+      const res = await fetch('https://aglk.onrender.com/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, password }),
