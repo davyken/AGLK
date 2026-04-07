@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://aglk.onrender.com/api';
+const API_BASE = 'https://aglk.onrender.com';
 
 interface User {
   _id: string;
@@ -49,83 +49,25 @@ export default function UsersPage() {
     fetchUsers();
   }, []);
 
-  const fetchUsers = () => {
-    fetch(`${API_BASE}users`)
-      .then(res => res.json())
-      .then(data => {
-        const usersArr: User[] = Array.isArray(data) ? data : (data as any).data || [];
-        setUsers(usersArr);
-        setLoading(false);
-      })
-      .catch(err => {
-        setError(err.message || 'Failed to fetch users');
-        setLoading(false);
-      });
-  };
-
-  const filteredUsers = users.filter(u => {
-    if (roleFilter !== 'all' && u.role !== roleFilter) return false;
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        u.name?.toLowerCase().includes(query) ||
-        u.phone.includes(query) ||
-        u.location?.toLowerCase().includes(query)
-      );
-    }
-    return true;
-  });
-
-  const openEdit = (user: User) => {
-    setEditingUser(user);
-    setEditForm({
-      name: user.name || '',
-      role: user.role || '',
-      location: user.location || '',
-      preferredChannel: user.preferredChannel || 'whatsapp',
-      businessName: user.businessName || '',
-      language: (user as any).language || 'english',
-      produces: user.produces?.join(', ') || '',
-      needs: user.needs?.join(', ') || '',
-    });
-    setMenuOpen(null);
-  };
-
-  const saveUser = async () => {
-    if (!editingUser) return;
-    setSaving(true);
-    
-    const updateData = {
-      name: editForm.name,
-      role: editForm.role,
-      location: editForm.location,
-      preferredChannel: editForm.preferredChannel,
-      businessName: editForm.businessName,
-      language: editForm.language,
-      produces: editForm.produces.split(',').map(s => s.trim()).filter(Boolean),
-      needs: editForm.needs.split(',').map(s => s.trim()).filter(Boolean),
-    };
-
+  const fetchUsers = async () => {
     try {
-      const res = await fetch(`${API_BASE}users/${editingUser.phone}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updateData),
-      });
+      setLoading(true);
+      const res = await fetch(`${API_BASE}/users`);
       const data = await res.json();
       if (data.success) {
-        fetchUsers();
-        setEditingUser(null);
+        setUsers(data.data);
       }
     } catch (err) {
       console.error(err);
+      setError('Failed to fetch users');
+    } finally {
+      setLoading(false);
     }
-    setSaving(false);
   };
 
-  const toggleBan = async (user: User) => {
+  const handleBan = async (user: User) => {
     try {
-      const res = await fetch(`${API_BASE}users/${user.phone}/ban`, {
+      const res = await fetch(`${API_BASE}/users/${user.phone}/ban`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ banned: !user.isBanned }),
@@ -150,6 +92,55 @@ export default function UsersPage() {
     if (score >= 80) return 'text-emerald-600';
     if (score >= 50) return 'text-amber-600';
     return 'text-red-600';
+  };
+
+  const filteredUsers = users.filter(user => {
+    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+    const matchesSearch = user.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                         user.phone.includes(searchQuery);
+    return matchesRole && matchesSearch;
+  });
+
+  const openEdit = (user: User) => {
+    setEditingUser(user);
+    setEditForm({
+      name: user.name || '',
+      role: user.role || '',
+      location: user.location || '',
+      preferredChannel: user.preferredChannel || '',
+      businessName: user.businessName || '',
+      language: user.language || '',
+      produces: user.produces?.join(', ') || '',
+      needs: user.needs?.join(', ') || ''
+    });
+  };
+
+  const toggleBan = (user: User) => {
+    handleBan(user);
+  };
+
+  const saveUser = async () => {
+    if (!editingUser) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/users/${editingUser.phone}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...editForm,
+          produces: editForm.produces.split(',').map(p => p.trim()).filter(Boolean),
+          needs: editForm.needs.split(',').map(n => n.trim()).filter(Boolean)
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchUsers();
+        setEditingUser(null);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setSaving(false);
   };
 
   if (loading) {

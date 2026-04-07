@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://aglk.onrender.com/api';
+const API_BASE = 'https://aglk.onrender.com';
 
 interface Listing {
   _id: string;
@@ -26,7 +26,7 @@ export default function ListingsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   useEffect(() => {
-    fetch(`${API_BASE}listing`)
+    fetch(`${API_BASE}/listing`)
       .then(res => res.json())
       .then(data => {
         const listingsArr: Listing[] = Array.isArray(data) ? data : (data as any).data || [];

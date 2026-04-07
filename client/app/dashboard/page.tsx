@@ -6,7 +6,7 @@ import {
   PieChart, Pie, Cell, LineChart, Line, AreaChart, Area 
 } from 'recharts';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://aglk.onrender.com/api';
+const API_BASE = 'https://aglk.onrender.com';
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -52,8 +52,8 @@ export default function DashboardPage() {
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     Promise.all([
-      fetchWithTimeout(fetch(`${API_BASE}listing`, { signal: controller.signal })),
-      fetchWithTimeout(fetch(`${API_BASE}users`, { signal: controller.signal })),
+      fetchWithTimeout(fetch(`${API_BASE}/listing`, { signal: controller.signal })),
+      fetchWithTimeout(fetch(`${API_BASE}/users`, { signal: controller.signal })),
     ])
       .then(([listingsRes, usersRes]) => Promise.all([listingsRes.json(), usersRes.json()]))
       .then(([listingsData, usersData]) => {
