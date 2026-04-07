@@ -9,9 +9,7 @@
   <img src="https://img.shields.io/badge/Redis-v5.10-red" alt="Redis">
   <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License">
 </p>
-
 ---
-
 ## 📋 Overview
  
 Agro-Link is a Minimum Viable Product (MVP) that enables farmers to sell their agricultural products directly to buyers via WhatsApp. The platform leverages the Meta WhatsApp Cloud API to facilitate seamless communication between farmers and customers, eliminating intermediaries and ensuring fair pricing for both parties.

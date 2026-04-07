@@ -43,4 +43,20 @@ export class UsersController {
     const users = await this.usersService.findAll();
     return { success: true, data: users };
   }
+
+  @Put(':phone/ban')
+  async toggleBan(@Param('phone') phone: string, @Body('banned') banned: boolean) {
+    const user = await this.usersService.toggleBan(phone, banned);
+    return { 
+      success: true, 
+      message: banned ? 'User banned successfully' : 'User unbanned successfully',
+      data: user 
+    };
+  }
+
+  @Put(':phone/trust-score')
+  async updateTrustScore(@Param('phone') phone: string, @Body('score') score: number) {
+    const user = await this.usersService.updateTrustScore(phone, score);
+    return { success: true, message: 'Trust score updated', data: user };
+  }
 }

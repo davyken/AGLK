@@ -55,4 +55,13 @@ export class ListingController {
   async remove(@Param('id') id: string) {
     return this.listingService.remove(id);
   }
+
+  @Patch(':id/status')
+  async updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: string,
+  ) {
+    const listing = await this.listingService.updateStatus(id, status);
+    return { success: true, message: 'Listing status updated', data: listing };
+  }
 }
