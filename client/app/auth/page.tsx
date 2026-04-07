@@ -47,21 +47,21 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 sm:p-8">
       <div className="w-full max-w-md">
-        <div className="flex flex-col items-center gap-2 mb-8">
+        <div className="flex flex-col items-center gap-2 mb-6 sm:mb-8">
           <img 
             src="/agrolink_logo_compressed.png" 
             alt="Agrolink" 
-            className="w-32 h-32 object-contain"
+            className="w-24 sm:w-32 h-24 sm:h-32 object-contain"
           />
         </div>
 
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
             Admin Login
           </h1>
-          <p className="text-gray-500 mb-8">
+          <p className="text-gray-500 mb-6 sm:mb-8 text-sm sm:text-base">
             Enter your credentials to access the dashboard
           </p>
         </div>
@@ -89,7 +89,7 @@ export default function AuthPage() {
                 onChange={(e) => setPhone(e.target.value)}
                 required
                 placeholder="15551661836"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all bg-white text-gray-900"
+                className="w-full pl-10 pr-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all bg-white text-gray-900 text-sm sm:text-base"
               />
             </div>
           </div>
@@ -110,7 +110,7 @@ export default function AuthPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all bg-white text-gray-900"
+                className="w-full pl-10 pr-12 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all bg-white text-gray-900 text-sm sm:text-base"
               />
               <button
                 type="button"
@@ -133,7 +133,7 @@ export default function AuthPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-emerald-500 text-white font-medium rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-2.5 sm:py-3 bg-emerald-500 text-white font-medium rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
           >
             {loading ? 'Please wait...' : 'Sign In'}
           </button>
