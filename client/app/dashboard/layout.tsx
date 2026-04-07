@@ -31,47 +31,46 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200">
+    <div className="min-h-screen bg-gray-950">
+      <nav className="bg-gray-900 border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center gap-4">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
               <Link href="/" className="flex items-center gap-2">
                 <img 
                   src="/agrolink_logo_compressed.png" 
                   alt="Agrolink" 
-                  className="w-20 h-20 object-contain"
+                  className="w-12 h-12 object-contain"
                 />
-                <span className="text-lg font-bold text-gray-900 hidden sm:block">Agrolink</span>
               </Link>
-              <div className="hidden md:flex gap-6">
-                <Link 
-                  href="/dashboard" 
-                  className="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium"
-                >
-                  Dashboard
-                </Link>
-                <Link 
-                  href="/dashboard/listings" 
-                  className="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium"
-                >
-                  Listings
-                </Link>
-                <Link 
-                  href="/dashboard/users" 
-                  className="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium"
-                >
-                  Users
-                </Link>
-              </div>
             </div>
-            <div className="flex items-center gap-2 md:gap-4">
+            <div className="flex justify-center gap-8">
+              <Link 
+                href="/dashboard" 
+                className="text-gray-300 hover:text-white px-3 py-2 text-sm font-medium"
+              >
+                Dashboard
+              </Link>
+              <Link 
+                href="/dashboard/listings" 
+                className="text-gray-300 hover:text-white px-3 py-2 text-sm font-medium"
+              >
+                Listings
+              </Link>
+              <Link 
+                href="/dashboard/users" 
+                className="text-gray-300 hover:text-white px-3 py-2 text-sm font-medium"
+              >
+                Users
+              </Link>
+            </div>
+            <div className="flex justify-end items-center gap-2">
               <button 
                 onClick={() => {
                   localStorage.removeItem('user');
                   router.push('/auth');
                 }}
-                className="p-2 text-gray-500 hover:text-gray-700"
+                className="p-2 text-gray-400 hover:text-white"
                 title="Sign Out"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -80,7 +79,7 @@ export default function DashboardLayout({
               </button>
               <Link 
                 href="/" 
-                className="p-2 text-gray-500 hover:text-gray-700"
+                className="p-2 text-gray-400 hover:text-white"
                 title="Back to Home"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -89,7 +88,7 @@ export default function DashboardLayout({
               </Link>
               <button 
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="md:hidden p-2 text-gray-500 hover:text-gray-700"
+                className="md:hidden p-2 text-gray-400 hover:text-white"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -99,24 +98,24 @@ export default function DashboardLayout({
           </div>
         </div>
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-gray-200 px-4 py-3 space-y-2">
+          <div className="md:hidden border-t border-gray-800 px-4 py-3 space-y-2">
             <Link 
               href="/dashboard" 
-              className="block text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium"
+              className="block text-gray-300 hover:text-white px-3 py-2 text-sm font-medium"
               onClick={() => setMobileMenuOpen(false)}
             >
               Dashboard
             </Link>
             <Link 
               href="/dashboard/listings" 
-              className="block text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium"
+              className="block text-gray-300 hover:text-white px-3 py-2 text-sm font-medium"
               onClick={() => setMobileMenuOpen(false)}
             >
               Listings
             </Link>
             <Link 
               href="/dashboard/users" 
-              className="block text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium"
+              className="block text-gray-300 hover:text-white px-3 py-2 text-sm font-medium"
               onClick={() => setMobileMenuOpen(false)}
             >
               Users
