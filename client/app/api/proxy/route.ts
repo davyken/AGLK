@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://aglk.onrender.com/api';
+const API_BASE = 'https://aglk.onrender.com';
 
 export async function GET(request: NextRequest) {
-  const path = request.nextUrl.searchParams.get('path') || 'listing';
+  const path = 'api/' + (request.nextUrl.searchParams.get('path') || 'listing');
   
   try {
     const res = await fetch(`${API_BASE}/${path}`, {
@@ -20,9 +20,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const path = request.nextUrl.searchParams.get('path');
+  const path = 'api/' + request.nextUrl.searchParams.get('path');
   
-  if (!path) {
+  if (!path || path === 'api/') {
     return NextResponse.json({ error: 'Path required', success: false }, { status: 400 });
   }
   
@@ -60,9 +60,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const path = request.nextUrl.searchParams.get('path');
+  const path = 'api/' + request.nextUrl.searchParams.get('path');
   
-  if (!path) {
+  if (!path || path === 'api/') {
     return NextResponse.json({ error: 'Path required', success: false }, { status: 400 });
   }
   
