@@ -6,7 +6,7 @@ import {
   PieChart, Pie, Cell, LineChart, Line, AreaChart, Area 
 } from 'recharts';
 
-const API_BASE = '/api/proxy?path=';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://aglk.onrender.com/api';
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 

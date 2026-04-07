@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 
-const API_BASE = '/api/proxy?path=';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://aglk.onrender.com/api';
 
 interface Listing {
   _id: string;
