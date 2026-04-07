@@ -11,6 +11,7 @@ import { AiModule } from './ai/ai.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { NotificationModule } from './notification/notification.module';
 import { PriceModule } from './price/price.module';
+import { SeedModule } from './seed/seed.module';
 import { EventBusService } from './common/event-bus.service';
 
 @Module({
@@ -39,6 +40,7 @@ import { EventBusService } from './common/event-bus.service';
     PriceModule,
     BotModule,
     NotificationModule,
+    SeedModule,
   ],
   controllers: [AppController],
   providers: [AppService, EventBusService],

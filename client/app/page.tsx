@@ -9,30 +9,31 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-950/80 backdrop-blur-md border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-6 py-2 flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-              <span className="font-bold text-sm">A</span>
-            </div>
-            <span className="text-xl font-semibold tracking-tight">AGLK</span>
+            <img 
+              src="/agrolink_logo_compressed.png" 
+              alt="Agrolink" 
+            className="w-24 h-24 object-contain"
+            />
           </div>
           <div className="flex items-center gap-8">
             <a href="#features" className="text-gray-400 hover:text-white transition text-sm">Features</a>
             <a href="#about" className="text-gray-400 hover:text-white transition text-sm">About</a>
             <Link 
-              href="/dashboard" 
+              href="/auth" 
               className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition"
             >
-              Dashboard
+              Get Started
             </Link>
           </div>
         </div>
       </nav>
 
-      <section className="pt-32 pb-20 px-6">
+      <section className="min-h-screen pt-28 pb-20 px-6 flex items-center">
         <div className="max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
+            <div className="max-w-2xl">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium mb-6">
                 <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
                 Production Ready
@@ -46,15 +47,22 @@ export default function Home() {
                 and grow your agricultural business with AI-powered insights.
               </p>
               <div className="flex flex-wrap gap-4">
-                <Link 
-                  href="/dashboard" 
+                <a 
+                  href="https://wa.me/15551661836" 
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg transition"
                 >
-                  Launch Dashboard
-                </Link>
-                <button className="px-6 py-3 border border-gray-700 hover:border-gray-600 text-gray-300 font-medium rounded-lg transition">
+                  Launch App
+                </a>
+                <a 
+                  href="https://docs.google.com/document/d/1KEBYLReFKUvULvB8uEQCu5NyaEgjDMYduOH7zXOJNNw/edit?tab=t.0#heading=h.quv1v01so6ux" 
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-6 py-3 border border-gray-700 hover:border-gray-600 text-gray-300 font-medium rounded-lg transition"
+                >
                   View Documentation
-                </button>
+                </a>
               </div>
             </div>
             <div className="relative">
@@ -146,17 +154,17 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="py-20 px-6">
+      <section className="pt-40 pb-20 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-4 gap-8">
             <div className="lg:col-span-2">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-                  <span className="font-bold text-sm">A</span>
-                </div>
-                <span className="text-xl font-semibold tracking-tight">AGLK</span>
-              </div>
-              <p className="text-gray-400 max-w-sm">
+              <div className="flex items-center gap-3 mb-4">           
+                 <img 
+                  src="/agrolink_logo_compressed.png" 
+                  alt="Agrolink" 
+                  className="w-32 h-32 object-contain" 
+                />                <span className="text-2xl font-bold tracking-tight"></span>              </div>
+              <p className="text-gray-400 max-w-lg">
                 Empowering African agricultural trade through technology. 
                 Connecting farmers and buyers for a sustainable future.
               </p>

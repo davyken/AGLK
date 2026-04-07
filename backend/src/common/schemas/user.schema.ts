@@ -11,7 +11,13 @@ export class User {
   @Prop({ required: true, trim: true })
   name: string;
 
-  @Prop({ required: true, enum: ['farmer', 'buyer'] })
+  @Prop({ trim: true })
+  username: string;
+
+  @Prop()
+  password: string;
+
+  @Prop({ required: true, enum: ['farmer', 'buyer', 'admin'] })
   role: string;
 
   @Prop({ required: true, trim: true })

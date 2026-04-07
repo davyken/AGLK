@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "AGLK - Agricultural Listing & Knowledge",
   description: "Connect farmers and buyers, manage listings, and track users",
+  icons: {
+    icon: "/agrolink_logo_compressed.png",
+  },
 };
 
 export default function RootLayout({
