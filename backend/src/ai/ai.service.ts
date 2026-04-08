@@ -3,8 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import * as fs from 'fs';
 import * as https from 'https';
+import { LanguageDetectionService } from './language-detection.service';
+import type { Language } from './language-detection.service';
+import { ResponseGenerationService } from './response-generation.service';
 
-export type Language = 'english' | 'french' | 'pidgin';
+// Re-export Language from the canonical source so existing callers keep working
+export type { Language } from './language-detection.service';
 
 export interface ParsedIntent {
   intent:    'register' | 'sell' | 'buy' | 'price' | 'help' | 'yes' | 'no' | 'unknown';
@@ -21,7 +25,11 @@ export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly openai: OpenAI;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config:      ConfigService,
+    private readonly langDetect:  LanguageDetectionService,
+    private readonly responseGen: ResponseGenerationService,
+  ) {
     this.openai = new OpenAI({
       apiKey: this.config.get<string>('OPENAI_API_KEY'),
     });
@@ -81,31 +89,25 @@ JSON format: {"intent":"","language":"","product":null,"quantity":null,"unit":"b
   }
 
   // ─────────────────────────────────────────────────────────
-  // 2. DETECT LANGUAGE ONLY (lightweight — no full parse)
-  // Called on every message to persist language to DB
+  // 2. DETECT LANGUAGE
+  // Async — delegates to LanguageDetectionService (LLM + statistical)
+  // Falls back to 'english' when detection returns 'unknown'
   // ─────────────────────────────────────────────────────────
-  detectLanguage(text: string): Language {
-    const lower = text.toLowerCase().trim();
+  async detectLanguage(text: string): Promise<Language> {
+    const result = await this.langDetect.detect(text);
+    // Treat 'unknown' as English so the bot always has a language to work with
+    return result.language === 'unknown' ? 'english' : result.language;
+  }
 
-    const frenchSignals = [
-      'bonjour', 'salut', 'bonsoir', 'merci', 'oui', 'non',
-      'vendre', 'acheter', 'je ', "j'ai", 'du ', 'de la',
-      'maïs', 'mais', 'tomate', 'tomates', 'manioc', 'sacs',
-      'sac', 'quel', 'prix', 'aide', 'combien', 'langue',
-      'français', 'agriculteur', 'acheteur', "c'est", 'votre',
-      'notre', 'pour', 'avec', 'dans', 'sur', 'des ', 'les ',
-    ];
-
-    const pidginSignals = [
-      'i get', 'i wan', 'i dey', 'na so', 'abeg',
-      'wetin', 'plenty', 'for sell', 'for buy', 'no be',
-      'wey ', 'dem ', 'dis ', 'dat ', 'oga', 'na ',
-      'dey ', 'fit ', 'don ', 'go tell', 'go see',
-    ];
-
-    if (frenchSignals.some((w) => lower.includes(w))) return 'french';
-    if (pidginSignals.some((w) => lower.includes(w))) return 'pidgin';
-    return 'english';
+  /**
+   * Synchronous statistical detector — zero API calls.
+   * Used internally by regexFallback and in performance-critical paths
+   * where awaiting the LLM is not viable.
+   * Note: reliably detects French only; cannot distinguish Pidgin from English.
+   */
+  detectLanguageSync(text: string): Language {
+    const result = this.langDetect.detectStatistical(text);
+    return result.language === 'unknown' ? 'english' : result.language as Language;
   }
 
   // ─────────────────────────────────────────────────────────
@@ -127,7 +129,8 @@ JSON format: {"intent":"","language":"","product":null,"quantity":null,"unit":"b
       });
 
       const text     = transcription.text ?? '';
-      const language = this.detectLanguage(text);
+      // Use sync detector here — we're inside a try/finally and can't await
+      const language = this.detectLanguageSync(text);
 
       this.logger.log(`Whisper transcribed [${language}]: "${text}"`);
       return { text, language };
@@ -147,7 +150,8 @@ JSON format: {"intent":"","language":"","product":null,"quantity":null,"unit":"b
   private regexFallback(message: string): ParsedIntent {
     const raw   = message;
     const lower = message.toLowerCase().trim();
-    const language = this.detectLanguage(lower);
+    // Use sync detector — regexFallback is a sync escape hatch
+    const language = this.detectLanguageSync(lower);
 
     // YES
     if (/^(yes|oui|ok|okay|na so|yep|d'accord|yes na)$/i.test(lower)) {
@@ -314,31 +318,26 @@ JSON format: {"intent":"","language":"","product":null,"quantity":null,"unit":"b
   }
 
   // ─────────────────────────────────────────────────────────
-  // 7. REPLY TEMPLATES — 3 languages
+  // 7. GENERATE REPLY — delegates to ResponseGenerationService
+  // Async: LLM-generated, natural, no hardcoded translation tables.
+  // Falls back to safe minimal templates if LLM is unavailable.
   // ─────────────────────────────────────────────────────────
-  reply(
+  async reply(
     key:  string,
     lang: Language,
     data: Record<string, string | number> = {},
-  ): string {
-    const t        = this.templates();
-    const template = t[key];
-    if (!template) return t['unknown_command'][lang];
-
-    let msg = template[lang] ?? template['english'];
-
-    // Replace ${variable} placeholders
-    Object.entries(data).forEach(([k, v]) => {
-      msg = msg.replace(new RegExp(`\\$\\{${k}\\}`, 'g'), String(v));
-    });
-
-    return msg;
+  ): Promise<string> {
+    return this.responseGen.generate(key, lang, data);
   }
 
   // ─────────────────────────────────────────────────────────
-  // 8. ALL MESSAGE TEMPLATES
+  // REMOVED: hardcoded templates() method
+  // All responses are now dynamically generated by ResponseGenerationService.
+  // Fallback templates live in ResponseGenerationService.fallback().
   // ─────────────────────────────────────────────────────────
-  private templates(): Record<string, Record<Language, string>> {
+
+  // ── Kept for reference during migration — delete when all callers migrated ──
+  private _legacyTemplates(): Record<string, Record<Language, string>> {
     return {
       welcome: {
         english: `👋 Welcome to AgroLink!\n\nAre you a:\n1️⃣ Farmer (I sell produce)\n2️⃣ Buyer (I buy produce)\n\nReply 1 or 2`,

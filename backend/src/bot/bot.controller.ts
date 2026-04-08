@@ -83,7 +83,7 @@ export class BotController {
         // Step 1: Get download URL from Meta
         const mediaUrl = await this.getMediaUrl(mediaId, accessToken);
         if (!mediaUrl) {
-          await this.metaSender.send(phone, this.aiService.reply('voice_failed', lang, {}));
+          await this.metaSender.send(phone, await this.aiService.reply('voice_failed', lang, {}));
           return { status: 'media_url_failed' };
         }
 
@@ -92,7 +92,7 @@ export class BotController {
           await this.aiService.transcribeVoiceNote(mediaUrl, accessToken);
 
         if (!transcribed) {
-          await this.metaSender.send(phone, this.aiService.reply('voice_failed', detectedLang, {}));
+          await this.metaSender.send(phone, await this.aiService.reply('voice_failed', detectedLang, {}));
           return { status: 'transcription_failed' };
         }
 
@@ -101,7 +101,7 @@ export class BotController {
         // Step 3: Tell user what was heard
         await this.metaSender.send(
           phone,
-          this.aiService.reply('voice_received', detectedLang, { text: transcribed }),
+          await this.aiService.reply('voice_received', detectedLang, { text: transcribed }),
         );
 
         // Step 4: Update language if detected from voice
