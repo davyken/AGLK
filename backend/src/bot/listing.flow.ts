@@ -306,6 +306,10 @@ Example: 20000`,
       suggested: this.fmt(priceData.suggested),
     });
   }
+  private cap(text: string): string {
+    if (!text) return '';
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+  }
 
   // ─── Buy Intent ───────────────────────────────────────────
   private async handleBuyIntent(
@@ -1240,7 +1244,5 @@ Example: 20000`,
   private fmt(price: number): string {
     return price?.toLocaleString() + ' FCFA';
   }
-  private cap(str: string): string {
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
 }
+
