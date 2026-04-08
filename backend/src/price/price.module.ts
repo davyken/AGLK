@@ -3,7 +3,10 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { PriceService } from './price.service';
 import { PriceEventListener } from './price-event.listener';
 import { Listing, ListingSchema } from '../common/schemas/listing.schema';
-import { PriceHistory, PriceHistorySchema } from '../common/schemas/price-history.schema';
+import {
+  PriceHistory,
+  PriceHistorySchema,
+} from '../common/schemas/price-history.schema';
 
 @Module({
   imports: [

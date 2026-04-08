@@ -12,7 +12,10 @@ export class PriceEventListener implements OnModuleInit {
   @OnEvent('listing.created')
   async handleListingCreated(event: ListingCreatedEvent) {
     if (event.price) {
-      await this.priceService.recalculatePrice(event.product, event.userLocation);
+      await this.priceService.recalculatePrice(
+        event.product,
+        event.userLocation,
+      );
     }
   }
 

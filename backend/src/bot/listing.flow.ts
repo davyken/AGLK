@@ -13,7 +13,7 @@ import { CropMediaService } from './Crop media.service';
 interface PendingState {
   type: 'sell' | 'sell_waiting_image' | 'buy_select';
   product: string;
-  productDisplay?: string;  // original name user typed e.g. "manioc"
+  productDisplay?: string; // original name user typed e.g. "manioc"
   quantity: number;
   unit: string;
   userPhone: string;
@@ -42,10 +42,10 @@ interface PendingFarmerResponse {
   quantity: number;
   unit: string;
   price: number;
-  language: Language;  // ← added
+  language: Language; // ← added
 }
 
-const pendingStates          = new Map<string, PendingState>();
+const pendingStates = new Map<string, PendingState>();
 const pendingFarmerResponses = new Map<string, PendingFarmerResponse>();
 
 @Injectable()
@@ -58,7 +58,7 @@ export class ListingFlowService {
     private readonly metaSender: MetaSenderService,
     private readonly aiService: AiService,
     private readonly filterParser: FilterParserService,
-    private readonly cropMedia:    CropMediaService,
+    private readonly cropMedia: CropMediaService,
   ) {}
 
   // ─── Main entry point ─────────────────────────────────────
@@ -67,7 +67,6 @@ export class ListingFlowService {
     text: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
-
     // ── Get user language from DB (default english) ────────
     const user = await this.usersService.findByPhone(phone);
     const lang: Language = (user as any)?.language ?? 'english';
@@ -82,9 +81,10 @@ export class ListingFlowService {
 
     // Normalize French/Pidgin commands to structured intent
     if (parsed.intent === 'sell') {
-      const unit = parsed.unit && parsed.unit !== 'bags'
-        ? parsed.unit
-        : this.aiService.defaultUnitForProduct(parsed.product ?? '');
+      const unit =
+        parsed.unit && parsed.unit !== 'bags'
+          ? parsed.unit
+          : this.aiService.defaultUnitForProduct(parsed.product ?? '');
       return this.handleSellIntent(
         phone,
         parsed.product ?? '',
@@ -93,18 +93,34 @@ export class ListingFlowService {
         unit,
         channel,
         lang,
+        parsed.price,
       );
     }
 
     if (parsed.intent === 'buy') {
       if (this.filterParser.hasFilters(text)) {
         const filtered = this.filterParser.parse(text);
-        if (filtered) return this.handleBuyIntentWithFilters(phone, filtered, text, channel, lang);
+        if (filtered)
+          return this.handleBuyIntentWithFilters(
+            phone,
+            filtered,
+            text,
+            channel,
+            lang,
+          );
       }
-      const unit = parsed.unit && parsed.unit !== 'bags'
-        ? parsed.unit
-        : this.aiService.defaultUnitForProduct(parsed.product ?? '');
-      return this.handleBuyIntent(phone, parsed.product ?? '', parsed.quantity ?? 0, unit, channel, lang);
+      const unit =
+        parsed.unit && parsed.unit !== 'bags'
+          ? parsed.unit
+          : this.aiService.defaultUnitForProduct(parsed.product ?? '');
+      return this.handleBuyIntent(
+        phone,
+        parsed.product ?? '',
+        parsed.quantity ?? 0,
+        unit,
+        channel,
+        lang,
+      );
     }
 
     if (parsed.intent === 'price') {
@@ -117,13 +133,23 @@ export class ListingFlowService {
 
     if (upper.startsWith('SELL')) {
       const p = this.parseListingCommand(normalized);
-      if (p) return this.handleSellIntent(phone, p.product, p.product, p.quantity, p.unit, channel, lang);
+      if (p)
+        return this.handleSellIntent(
+          phone,
+          p.product,
+          p.product,
+          p.quantity,
+          p.unit,
+          channel,
+          lang,
+        );
     }
 
     if (upper.startsWith('BUY')) {
       // Use filterParser so @location and #price filters work
       const p = this.filterParser.parse(normalized);
-      if (p) return this.handleBuyIntentWithFilters(phone, p, text, channel, lang);
+      if (p)
+        return this.handleBuyIntentWithFilters(phone, p, text, channel, lang);
     }
 
     if (upper.startsWith('OFFER')) {
@@ -135,41 +161,42 @@ export class ListingFlowService {
   }
 
   // ─── Sell Intent ──────────────────────────────────────────
-  private async handleSellIntent(
+  async handleSellIntent(
     phone: string,
-    product: string,          // normalized English name for DB (e.g. "cassava")
-    productDisplay: string,   // original name user typed (e.g. "manioc")
+    product: string, // normalized English name for DB (e.g. "cassava")
+    productDisplay: string, // original name user typed (e.g. "manioc")
     quantity: number,
     unit: string,
     channel: 'sms' | 'whatsapp',
     lang: Language,
+    price?: number,
   ): Promise<string> {
     // displayName = what user sees (preserves French/Pidgin product names)
     const displayName = productDisplay || product;
-    const smartEmoji  = this.cropMedia.getEmoji(product);
-    const smartUnit   = unit || this.aiService.defaultUnitForProduct(product);
+    const smartEmoji = this.cropMedia.getEmoji(product);
+    const smartUnit = unit || this.aiService.defaultUnitForProduct(product);
 
     // ── Product detected but NO quantity → ask for it ─────
     // Handles: "I have maize to sell" → bot asks "How many bags?"
     if (product && (!quantity || quantity <= 0)) {
       pendingStates.set(phone, {
-        type:           'sell',
+        type: 'sell',
         product,
         productDisplay: displayName,
-        quantity:       0,
-        unit:           smartUnit,
-        userPhone:      phone,
-        userRole:       'farmer',
-        language:       lang,
+        quantity: 0,
+        unit: smartUnit,
+        userPhone: phone,
+        userRole: 'farmer',
+        language: lang,
       });
       const msgs: Record<Language, string> = {
         english: `${smartEmoji} Got it — you want to sell *${this.cap(displayName)}*.
 
 How many ${smartUnit} do you have?`,
-        french:  `${smartEmoji} Compris — vous voulez vendre *${this.cap(displayName)}*.
+        french: `${smartEmoji} Compris — vous voulez vendre *${this.cap(displayName)}*.
 
 Combien de ${smartUnit} avez-vous?`,
-        pidgin:  `${smartEmoji} Okay — you wan sell *${this.cap(displayName)}*.
+        pidgin: `${smartEmoji} Okay — you wan sell *${this.cap(displayName)}*.
 
 How many ${smartUnit} you get?`,
       };
@@ -179,8 +206,8 @@ How many ${smartUnit} you get?`,
     if (!product || quantity <= 0) {
       const errors: Record<Language, string> = {
         english: `❌ Invalid format.\n\nUse: SELL maize 10 bags`,
-        french:  `❌ Format invalide.\n\nUtilisez: VENDRE maïs 10 sacs`,
-        pidgin:  `❌ No correct.\n\nTry: SELL maize 10 bags`,
+        french: `❌ Format invalide.\n\nUtilisez: VENDRE maïs 10 sacs`,
+        pidgin: `❌ No correct.\n\nTry: SELL maize 10 bags`,
       };
       return errors[lang];
     }
@@ -190,8 +217,8 @@ How many ${smartUnit} you get?`,
     if (!user || user.conversationState !== 'REGISTERED') {
       const msgs: Record<Language, string> = {
         english: `❌ Register first. Reply Hi to start.`,
-        french:  `❌ Enregistrez-vous d'abord. Répondez Bonjour pour commencer.`,
-        pidgin:  `❌ You must register first. Reply Hi.`,
+        french: `❌ Enregistrez-vous d'abord. Répondez Bonjour pour commencer.`,
+        pidgin: `❌ You must register first. Reply Hi.`,
       };
       return msgs[lang];
     }
@@ -199,22 +226,38 @@ How many ${smartUnit} you get?`,
     if (user.role !== 'farmer') {
       const msgs: Record<Language, string> = {
         english: `❌ Only farmers can sell.`,
-        french:  `❌ Seuls les agriculteurs peuvent vendre.`,
-        pidgin:  `❌ Only farmer fit sell.`,
+        french: `❌ Seuls les agriculteurs peuvent vendre.`,
+        pidgin: `❌ Only farmer fit sell.`,
       };
       return msgs[lang];
     }
 
+    // If price provided in initial input, skip suggestion and go directly to image
+    if (price && price > 0) {
+      pendingStates.set(phone, {
+        type: 'sell_waiting_image',
+        product,
+        productDisplay: displayName,
+        quantity,
+        unit,
+        price,
+        userPhone: phone,
+        userRole: user.role,
+        language: lang,
+      });
+      return this.askForImage(lang);
+    }
+
     // Store pending state with language and display name
     pendingStates.set(phone, {
-      type:           'sell',
+      type: 'sell',
       product,
-      productDisplay: displayName,  // preserved for messages
+      productDisplay: displayName, // preserved for messages
       quantity,
       unit,
-      userPhone:      phone,
-      userRole:       user.role,
-      language:       lang,
+      userPhone: phone,
+      userRole: user.role,
+      language: lang,
     });
 
     const priceData = await this.priceService.getPrice(product);
@@ -229,7 +272,7 @@ Qty: ${quantity} ${unit}
 Please enter your price.
 
 Example: 20000`,
-        french:  `${smartEmoji} *Annonce: ${this.cap(displayName)}*
+        french: `${smartEmoji} *Annonce: ${this.cap(displayName)}*
 
 Qté: ${quantity} ${unit}
 
@@ -237,7 +280,7 @@ Qté: ${quantity} ${unit}
 Entrez votre prix.
 
 Exemple: 20000`,
-        pidgin:  `${smartEmoji} *Listing: ${this.cap(displayName)}*
+        pidgin: `${smartEmoji} *Listing: ${this.cap(displayName)}*
 
 Qty: ${quantity} ${unit}
 
@@ -250,10 +293,10 @@ Example: 20000`,
     }
 
     return await this.aiService.reply('price_suggestion', lang, {
-      product:   this.cap(displayName), // show "Manioc" not "Cassava" in French
-      min:       this.fmt(priceData.low),
-      avg:       this.fmt(priceData.avg),
-      max:       this.fmt(priceData.high),
+      product: this.cap(displayName), // show "Manioc" not "Cassava" in French
+      min: this.fmt(priceData.low),
+      avg: this.fmt(priceData.avg),
+      max: this.fmt(priceData.high),
       suggested: this.fmt(priceData.suggested),
     });
   }
@@ -270,8 +313,8 @@ Example: 20000`,
     if (!product || quantity <= 0) {
       const errors: Record<Language, string> = {
         english: `❌ Invalid format.\n\nUse: BUY maize 20 bags`,
-        french:  `❌ Format invalide.\n\nUtilisez: ACHETER maïs 20 sacs`,
-        pidgin:  `❌ No correct.\n\nTry: BUY maize 20 bags`,
+        french: `❌ Format invalide.\n\nUtilisez: ACHETER maïs 20 sacs`,
+        pidgin: `❌ No correct.\n\nTry: BUY maize 20 bags`,
       };
       return errors[lang];
     }
@@ -281,8 +324,8 @@ Example: 20000`,
     if (!user || user.conversationState !== 'REGISTERED') {
       const msgs: Record<Language, string> = {
         english: `❌ Register first. Reply Hi to start.`,
-        french:  `❌ Enregistrez-vous d'abord.`,
-        pidgin:  `❌ Register first. Reply Hi.`,
+        french: `❌ Enregistrez-vous d'abord.`,
+        pidgin: `❌ Register first. Reply Hi.`,
       };
       return msgs[lang];
     }
@@ -290,8 +333,8 @@ Example: 20000`,
     if (user.role !== 'buyer') {
       const msgs: Record<Language, string> = {
         english: `❌ Only buyers can buy.`,
-        french:  `❌ Seuls les acheteurs peuvent acheter.`,
-        pidgin:  `❌ Only buyer fit buy.`,
+        french: `❌ Seuls les acheteurs peuvent acheter.`,
+        pidgin: `❌ Only buyer fit buy.`,
       };
       return msgs[lang];
     }
@@ -319,8 +362,8 @@ Example: 20000`,
 
       const msgs: Record<Language, string> = {
         english: `🔍 No listings for ${this.cap(product)} yet.\n\nYour request is saved.\nWe'll notify you when a farmer lists this product.`,
-        french:  `🔍 Aucune annonce pour ${this.cap(product)}.\n\nVotre demande est enregistrée.\nNous vous notifierons quand un agriculteur listera ce produit.`,
-        pidgin:  `🔍 No farmer get ${this.cap(product)} now.\n\nWe don save your request.\nWe go tell you when farmer list am.`,
+        french: `🔍 Aucune annonce pour ${this.cap(product)}.\n\nVotre demande est enregistrée.\nNous vous notifierons quand un agriculteur listera ce produit.`,
+        pidgin: `🔍 No farmer get ${this.cap(product)} now.\n\nWe don save your request.\nWe go tell you when farmer list am.`,
       };
       return msgs[lang];
     }
@@ -337,13 +380,13 @@ Example: 20000`,
       userRole: user.role,
       language: lang,
       listings: top.map((l) => ({
-        id:           l._id.toString(),
-        userPhone:    l.userPhone,
-        farmerName:   l.userName,
-        location:     l.userLocation,
-        quantity:     l.quantity,
-        price:        l.price || 0,
-        imageUrl:     l.imageUrl,
+        id: l._id.toString(),
+        userPhone: l.userPhone,
+        farmerName: l.userName,
+        location: l.userLocation,
+        quantity: l.quantity,
+        price: l.price || 0,
+        imageUrl: l.imageUrl,
         imageMediaId: l.imageMediaId,
       })),
     });
@@ -351,8 +394,8 @@ Example: 20000`,
     // Build listing header
     const headers: Record<Language, string> = {
       english: `🔍 *Found ${sellListings.length} farmer(s) with ${this.cap(product)}*\n\n`,
-      french:  `🔍 *${sellListings.length} agriculteur(s) avec ${this.cap(product)}*\n\n`,
-      pidgin:  `🔍 *${sellListings.length} farmer(s) get ${this.cap(product)}*\n\n`,
+      french: `🔍 *${sellListings.length} agriculteur(s) avec ${this.cap(product)}*\n\n`,
+      pidgin: `🔍 *${sellListings.length} farmer(s) get ${this.cap(product)}*\n\n`,
     };
 
     let message = headers[lang];
@@ -370,8 +413,8 @@ Example: 20000`,
 
     const footers: Record<Language, string> = {
       english: `Reply with number (1-${top.length}) to select.`,
-      french:  `Répondez avec le numéro (1-${top.length}) pour choisir.`,
-      pidgin:  `Send number (1-${top.length}) to pick one.`,
+      french: `Répondez avec le numéro (1-${top.length}) pour choisir.`,
+      pidgin: `Send number (1-${top.length}) to pick one.`,
     };
     message += footers[lang];
 
@@ -380,9 +423,17 @@ Example: 20000`,
     // Send images if any
     for (const listing of top) {
       if (listing.imageMediaId) {
-        await this.metaSender.sendImageByMediaId(phone, listing.imageMediaId, listing.product);
+        await this.metaSender.sendImageByMediaId(
+          phone,
+          listing.imageMediaId,
+          listing.product,
+        );
       } else if (listing.imageUrl) {
-        await this.metaSender.sendImage(phone, listing.imageUrl, listing.product);
+        await this.metaSender.sendImage(
+          phone,
+          listing.imageUrl,
+          listing.product,
+        );
       }
     }
 
@@ -392,7 +443,14 @@ Example: 20000`,
   // ─── Buy with filters (@location #price) ────────────────
   private async handleBuyIntentWithFilters(
     phone: string,
-    parsed: { product: string; quantity: number; unit: string; location?: string; minPrice?: number; maxPrice?: number },
+    parsed: {
+      product: string;
+      quantity: number;
+      unit: string;
+      location?: string;
+      minPrice?: number;
+      maxPrice?: number;
+    },
     originalText: string,
     channel: 'sms' | 'whatsapp',
     lang: Language,
@@ -402,8 +460,8 @@ Example: 20000`,
     if (!user || user.conversationState !== 'REGISTERED') {
       const msgs: Record<Language, string> = {
         english: `❌ Register first. Reply Hi to start.`,
-        french:  `❌ Enregistrez-vous d'abord.`,
-        pidgin:  `❌ Register first. Reply Hi.`,
+        french: `❌ Enregistrez-vous d'abord.`,
+        pidgin: `❌ Register first. Reply Hi.`,
       };
       return msgs[lang];
     }
@@ -411,14 +469,14 @@ Example: 20000`,
     if (user.role !== 'buyer') {
       const msgs: Record<Language, string> = {
         english: `❌ Only buyers can search listings.`,
-        french:  `❌ Seuls les acheteurs peuvent chercher.`,
-        pidgin:  `❌ Only buyer fit search.`,
+        french: `❌ Seuls les acheteurs peuvent chercher.`,
+        pidgin: `❌ Only buyer fit search.`,
       };
       return msgs[lang];
     }
 
     // ── Fetch listings with filters ────────────────────────
-    let allListings = await this.listingService.findByProduct(parsed.product);
+    const allListings = await this.listingService.findByProduct(parsed.product);
     let sellListings = allListings.filter(
       (l) => l.type === 'sell' && l.status === 'active',
     );
@@ -426,17 +484,21 @@ Example: 20000`,
     // Apply location filter
     if (parsed.location) {
       const locLower = parsed.location.toLowerCase();
-      sellListings = sellListings.filter(
-        (l) => l.userLocation?.toLowerCase().includes(locLower),
+      sellListings = sellListings.filter((l) =>
+        l.userLocation?.toLowerCase().includes(locLower),
       );
     }
 
     // Apply price filter
     if (parsed.minPrice) {
-      sellListings = sellListings.filter((l) => (l.price || 0) >= parsed.minPrice!);
+      sellListings = sellListings.filter(
+        (l) => (l.price || 0) >= parsed.minPrice!,
+      );
     }
     if (parsed.maxPrice) {
-      sellListings = sellListings.filter((l) => (l.price || 0) <= parsed.maxPrice!);
+      sellListings = sellListings.filter(
+        (l) => (l.price || 0) <= parsed.maxPrice!,
+      );
     }
 
     // ── Build filter summary to show user ─────────────────
@@ -450,12 +512,12 @@ ${filterSummary}
 
 Try removing filters:
 BUY ${parsed.product} ${parsed.quantity} bags`,
-        french:  `🔍 Aucune annonce pour *${this.cap(parsed.product)}* avec vos filtres:
+        french: `🔍 Aucune annonce pour *${this.cap(parsed.product)}* avec vos filtres:
 ${filterSummary}
 
 Essayez sans filtres:
 ACHETER ${parsed.product} ${parsed.quantity} sacs`,
-        pidgin:  `🔍 No listing for *${this.cap(parsed.product)}* with your filter:
+        pidgin: `🔍 No listing for *${this.cap(parsed.product)}* with your filter:
 ${filterSummary}
 
 Try without filter:
@@ -468,21 +530,21 @@ BUY ${parsed.product} ${parsed.quantity} bags`,
     const top = sellListings.slice(0, 5);
 
     pendingStates.set(phone, {
-      type:     'buy_select',
-      product:  parsed.product,
+      type: 'buy_select',
+      product: parsed.product,
       quantity: parsed.quantity,
-      unit:     parsed.unit,
+      unit: parsed.unit,
       userPhone: phone,
       userRole: user.role,
       language: lang,
       listings: top.map((l) => ({
-        id:           l._id.toString(),
-        userPhone:    l.userPhone,
-        farmerName:   l.userName,
-        location:     l.userLocation,
-        quantity:     l.quantity,
-        price:        l.price || 0,
-        imageUrl:     l.imageUrl,
+        id: l._id.toString(),
+        userPhone: l.userPhone,
+        farmerName: l.userName,
+        location: l.userLocation,
+        quantity: l.quantity,
+        price: l.price || 0,
+        imageUrl: l.imageUrl,
         imageMediaId: l.imageMediaId,
       })),
     });
@@ -492,11 +554,11 @@ BUY ${parsed.product} ${parsed.quantity} bags`,
 ${filterSummary}
 
 `,
-      french:  `🔍 *${sellListings.length} résultat(s) pour ${this.cap(parsed.product)}*
+      french: `🔍 *${sellListings.length} résultat(s) pour ${this.cap(parsed.product)}*
 ${filterSummary}
 
 `,
-      pidgin:  `🔍 *${sellListings.length} result(s) for ${this.cap(parsed.product)}*
+      pidgin: `🔍 *${sellListings.length} result(s) for ${this.cap(parsed.product)}*
 ${filterSummary}
 
 `,
@@ -513,7 +575,8 @@ ${filterSummary}
 `;
       message += `   📍 ${listing.userLocation}
 `;
-      if (listing.imageUrl || listing.imageMediaId) message += `   📷 Photo available
+      if (listing.imageUrl || listing.imageMediaId)
+        message += `   📷 Photo available
 `;
       message += `
 `;
@@ -521,16 +584,26 @@ ${filterSummary}
 
     const footers: Record<Language, string> = {
       english: `Reply with number (1-${top.length}) to select.`,
-      french:  `Répondez avec le numéro (1-${top.length}) pour choisir.`,
-      pidgin:  `Send number (1-${top.length}) to pick one.`,
+      french: `Répondez avec le numéro (1-${top.length}) pour choisir.`,
+      pidgin: `Send number (1-${top.length}) to pick one.`,
     };
     message += footers[lang];
 
     await this.metaSender.send(phone, message);
 
     for (const listing of top) {
-      if (listing.imageMediaId) await this.metaSender.sendImageByMediaId(phone, listing.imageMediaId, listing.product);
-      else if (listing.imageUrl) await this.metaSender.sendImage(phone, listing.imageUrl, listing.product);
+      if (listing.imageMediaId)
+        await this.metaSender.sendImageByMediaId(
+          phone,
+          listing.imageMediaId,
+          listing.product,
+        );
+      else if (listing.imageUrl)
+        await this.metaSender.sendImage(
+          phone,
+          listing.imageUrl,
+          listing.product,
+        );
     }
 
     return '';
@@ -545,8 +618,8 @@ ${filterSummary}
     if (!product) {
       const msgs: Record<Language, string> = {
         english: `❓ Which product price do you want?\nExample: price maize`,
-        french:  `❓ Quel produit vous intéresse?\nExemple: prix maïs`,
-        pidgin:  `❓ Which product price you want?\nExample: price maize`,
+        french: `❓ Quel produit vous intéresse?\nExemple: prix maïs`,
+        pidgin: `❓ Which product price you want?\nExample: price maize`,
       };
       return msgs[lang];
     }
@@ -555,17 +628,17 @@ ${filterSummary}
     if (!priceData) {
       const msgs: Record<Language, string> = {
         english: `❌ No price data for ${this.cap(product)}.`,
-        french:  `❌ Pas de données de prix pour ${this.cap(product)}.`,
-        pidgin:  `❌ No price data for ${this.cap(product)}.`,
+        french: `❌ Pas de données de prix pour ${this.cap(product)}.`,
+        pidgin: `❌ No price data for ${this.cap(product)}.`,
       };
       return msgs[lang];
     }
 
     return await this.aiService.reply('price_suggestion', lang, {
-      product:   this.cap(product),
-      min:       this.fmt(priceData.low),
-      avg:       this.fmt(priceData.avg),
-      max:       this.fmt(priceData.high),
+      product: this.cap(product),
+      min: this.fmt(priceData.low),
+      avg: this.fmt(priceData.avg),
+      max: this.fmt(priceData.high),
       suggested: this.fmt(priceData.suggested),
     });
   }
@@ -578,24 +651,43 @@ ${filterSummary}
     lang: Language,
   ): Promise<string> {
     const pending = pendingStates.get(phone);
-    if (!pending) return await this.aiService.reply('unknown_command', lang, {});
+    if (!pending)
+      return await this.aiService.reply('unknown_command', lang, {});
 
     // Use saved language from pending state
     const savedLang = pending.language ?? lang;
 
-    if (response.toUpperCase() === 'CANCEL' || response.toUpperCase() === 'ANNULER') {
+    if (
+      response.toUpperCase() === 'CANCEL' ||
+      response.toUpperCase() === 'ANNULER'
+    ) {
       pendingStates.delete(phone);
       const msgs: Record<Language, string> = {
         english: `❌ Cancelled. Type HELP for options.`,
-        french:  `❌ Annulé. Tapez AIDE pour les options.`,
-        pidgin:  `❌ Cancelled. Type HELP for options.`,
+        french: `❌ Annulé. Tapez AIDE pour les options.`,
+        pidgin: `❌ Cancelled. Type HELP for options.`,
       };
       return msgs[savedLang];
     }
 
-    if (pending.type === 'sell')              return this.handleSellPending(phone, response, channel, pending, savedLang);
-    if (pending.type === 'sell_waiting_image') return this.handleSellWaitingImage(phone, response, channel, pending, savedLang);
-    if (pending.type === 'buy_select')        return this.handleBuySelect(phone, response, channel, pending, savedLang);
+    if (pending.type === 'sell')
+      return this.handleSellPending(
+        phone,
+        response,
+        channel,
+        pending,
+        savedLang,
+      );
+    if (pending.type === 'sell_waiting_image')
+      return this.handleSellWaitingImage(
+        phone,
+        response,
+        channel,
+        pending,
+        savedLang,
+      );
+    if (pending.type === 'buy_select')
+      return this.handleBuySelect(phone, response, channel, pending, savedLang);
 
     return await this.aiService.reply('unknown_command', savedLang, {});
   }
@@ -619,23 +711,26 @@ ${filterSummary}
       const qty = numberMatch ? parseInt(numberMatch[0], 10) : 0;
 
       // Also detect if user specified a different unit in their reply
-      const unitMatch = response.toLowerCase().match(
-        /\b(bags?|sacs?|kg|kilogrammes?|tonnes?|crates?|cageots?|régimes?|bunches?|litres?|pieces?|pièces?)\b/
-      );
+      const unitMatch = response
+        .toLowerCase()
+        .match(
+          /\b(bags?|sacs?|kg|kilogrammes?|tonnes?|crates?|cageots?|régimes?|bunches?|litres?|pieces?|pièces?)\b/,
+        );
       if (unitMatch) {
         pendingStates.set(phone, { ...pending, unit: unitMatch[0] });
       }
 
       if (!qty || qty <= 0) {
-        const unitLabel = pending.unit || this.aiService.defaultUnitForProduct(pending.product);
+        const unitLabel =
+          pending.unit || this.aiService.defaultUnitForProduct(pending.product);
         const msgs: Record<Language, string> = {
           english: `❌ Please enter a valid number.
 
 How many ${unitLabel} of ${this.cap(pending.product)} do you have?`,
-          french:  `❌ Entrez un nombre valide.
+          french: `❌ Entrez un nombre valide.
 
 Combien de ${unitLabel} de ${this.cap(pending.product)} avez-vous?`,
-          pidgin:  `❌ Send a correct number.
+          pidgin: `❌ Send a correct number.
 
 How many ${unitLabel} of ${this.cap(pending.product)} you get?`,
         };
@@ -655,13 +750,13 @@ How many ${unitLabel} of ${this.cap(pending.product)} you get?`,
 Please enter your price.
 
 Example: 20000`,
-          french:  `📦 ${qty} sacs de ${this.cap(pending.product)} noté.
+          french: `📦 ${qty} sacs de ${this.cap(pending.product)} noté.
 
 💰 Pas de données de prix.
 Entrez votre prix.
 
 Exemple: 20000`,
-          pidgin:  `📦 ${qty} bags ${this.cap(pending.product)} noted.
+          pidgin: `📦 ${qty} bags ${this.cap(pending.product)} noted.
 
 💰 No price data.
 Send your price.
@@ -672,10 +767,10 @@ Example: 20000`,
       }
 
       return await this.aiService.reply('price_suggestion', lang, {
-        product:   this.cap((pending as any).productDisplay ?? pending.product),
-        min:       this.fmt(priceData.low),
-        avg:       this.fmt(priceData.avg),
-        max:       this.fmt(priceData.high),
+        product: this.cap((pending as any).productDisplay ?? pending.product),
+        min: this.fmt(priceData.low),
+        avg: this.fmt(priceData.avg),
+        max: this.fmt(priceData.high),
         suggested: this.fmt(priceData.suggested),
       });
     }
@@ -685,9 +780,15 @@ Example: 20000`,
       const priceData = await this.priceService.getPrice(pending.product);
       if (!priceData) {
         pendingStates.delete(phone);
-        return lang === 'french' ? `❌ Prix indisponible. Réessayez.` : `❌ Price unavailable. Try again.`;
+        return lang === 'french'
+          ? `❌ Prix indisponible. Réessayez.`
+          : `❌ Price unavailable. Try again.`;
       }
-      pendingStates.set(phone, { ...pending, type: 'sell_waiting_image', price: priceData.suggested });
+      pendingStates.set(phone, {
+        ...pending,
+        type: 'sell_waiting_image',
+        price: priceData.suggested,
+      });
       return this.askForImage(lang);
     }
 
@@ -695,8 +796,8 @@ Example: 20000`,
     if (input === '2') {
       const msgs: Record<Language, string> = {
         english: `💰 Enter your custom price.\n\nExample: 20000`,
-        french:  `💰 Entrez votre prix.\n\nExemple: 20000`,
-        pidgin:  `💰 Send your price.\n\nExample: 20000`,
+        french: `💰 Entrez votre prix.\n\nExemple: 20000`,
+        pidgin: `💰 Send your price.\n\nExample: 20000`,
       };
       return msgs[lang];
     }
@@ -704,15 +805,19 @@ Example: 20000`,
     // User typed an actual price number
     const customPrice = this.parsePrice(response);
     if (customPrice !== null) {
-      pendingStates.set(phone, { ...pending, type: 'sell_waiting_image', price: customPrice });
+      pendingStates.set(phone, {
+        ...pending,
+        type: 'sell_waiting_image',
+        price: customPrice,
+      });
       return this.askForImage(lang);
     }
 
     // Invalid
     const msgs: Record<Language, string> = {
       english: `❌ Reply 1 to accept suggested price or 2 to set custom price.`,
-      french:  `❌ Répondez 1 pour accepter le prix suggéré ou 2 pour personnaliser.`,
-      pidgin:  `❌ Send 1 for suggested price or 2 for your own price.`,
+      french: `❌ Répondez 1 pour accepter le prix suggéré ou 2 pour personnaliser.`,
+      pidgin: `❌ Send 1 for suggested price or 2 for your own price.`,
     };
     return msgs[lang];
   }
@@ -721,8 +826,8 @@ Example: 20000`,
   private askForImage(lang: Language): string {
     const msgs: Record<Language, string> = {
       english: `📷 Would you like to add a photo?\n\nSend image now or reply SKIP.`,
-      french:  `📷 Voulez-vous ajouter une photo?\n\nEnvoyez l'image ou tapez SAUTER.`,
-      pidgin:  `📷 You want add photo?\n\nSend image now or reply SKIP.`,
+      french: `📷 Voulez-vous ajouter une photo?\n\nEnvoyez l'image ou tapez SAUTER.`,
+      pidgin: `📷 You want add photo?\n\nSend image now or reply SKIP.`,
     };
     return msgs[lang];
   }
@@ -737,7 +842,14 @@ Example: 20000`,
   ): Promise<string> {
     const input = response.trim().toUpperCase();
     if (input === 'SKIP' || input === 'SAUTER') {
-      return this.createListingWithImage(phone, channel, pending, null, null, lang);
+      return this.createListingWithImage(
+        phone,
+        channel,
+        pending,
+        null,
+        null,
+        lang,
+      );
     }
     return this.askForImage(lang);
   }
@@ -754,34 +866,35 @@ Example: 20000`,
     const savedLang = lang ?? pending.language ?? 'english';
     try {
       const priceData = await this.priceService.getPrice(pending.product);
-      const user      = await this.usersService.findByPhone(phone);
+      const user = await this.usersService.findByPhone(phone);
 
       const dto: CreateListingDto = {
-        type:           'sell',
-        product:        pending.product,
-        quantity:       pending.quantity,
-        unit:           pending.unit,
+        type: 'sell',
+        product: pending.product,
+        quantity: pending.quantity,
+        unit: pending.unit,
         marketAvgPrice: priceData?.avg,
         marketMinPrice: priceData?.low,
         marketMaxPrice: priceData?.high,
-        price:          pending.price,
-        priceType:      pending.price ? 'manual' : 'auto',
-        imageUrl:       imageUrl  || undefined,
-        imageMediaId:   imageMediaId || undefined,
+        price: pending.price,
+        priceType: pending.price ? 'manual' : 'auto',
+        imageUrl: imageUrl || undefined,
+        imageMediaId: imageMediaId || undefined,
       };
 
       const listing = await this.listingService.createEnriched(dto, {
         phone,
-        name:     user?.name    || '',
+        name: user?.name || '',
         location: user?.location || '',
-        channel:  user?.lastChannelUsed || 'whatsapp',
+        channel: user?.lastChannelUsed || 'whatsapp',
       });
 
       pendingStates.delete(phone);
 
       // ── Get correct emoji + real crop image ──────────────
-      const { emoji, imageUrl: cropImageUrl } =
-        await this.cropMedia.getMedia(listing.product);
+      const { emoji, imageUrl: cropImageUrl } = await this.cropMedia.getMedia(
+        listing.product,
+      );
 
       // Build confirmation message with correct emoji
       const productDisplay = (pending as any).productDisplay ?? listing.product;
@@ -796,20 +909,28 @@ Example: 20000`,
       );
 
       // If no farmer image was uploaded AND we got a crop image → send it
-      if (!imageUrl && !imageMediaId && cropImageUrl && channel === 'whatsapp') {
+      if (
+        !imageUrl &&
+        !imageMediaId &&
+        cropImageUrl &&
+        channel === 'whatsapp'
+      ) {
         await this.metaSender.send(phone, confirmMsg);
-        await this.metaSender.sendImage(phone, cropImageUrl, `${emoji} ${productDisplay}`);
+        await this.metaSender.sendImage(
+          phone,
+          cropImageUrl,
+          `${emoji} ${productDisplay}`,
+        );
         return '';
       }
 
       return confirmMsg;
-
     } catch {
       pendingStates.delete(phone);
       const msgs: Record<Language, string> = {
         english: `❌ Failed to create listing. Try again.`,
-        french:  `❌ Échec de la création. Réessayez.`,
-        pidgin:  `❌ Listing no create. Try again.`,
+        french: `❌ Échec de la création. Réessayez.`,
+        pidgin: `❌ Listing no create. Try again.`,
       };
       return msgs[savedLang];
     }
@@ -825,11 +946,15 @@ Example: 20000`,
   ): Promise<string> {
     const selection = parseInt(response.trim(), 10);
 
-    if (isNaN(selection) || selection < 1 || selection > (pending.listings?.length || 0)) {
+    if (
+      isNaN(selection) ||
+      selection < 1 ||
+      selection > (pending.listings?.length || 0)
+    ) {
       const msgs: Record<Language, string> = {
         english: `❌ Invalid. Reply with a number between 1 and ${pending.listings?.length}.`,
-        french:  `❌ Invalide. Répondez avec un numéro entre 1 et ${pending.listings?.length}.`,
-        pidgin:  `❌ No correct. Send number between 1 and ${pending.listings?.length}.`,
+        french: `❌ Invalide. Répondez avec un numéro entre 1 et ${pending.listings?.length}.`,
+        pidgin: `❌ No correct. Send number between 1 and ${pending.listings?.length}.`,
       };
       return msgs[lang];
     }
@@ -839,12 +964,16 @@ Example: 20000`,
     try {
       const buyerUser = await this.usersService.findByPhone(phone);
       const dto: CreateListingDto = {
-        type: 'buy', product: pending.product,
-        quantity: pending.quantity, unit: pending.unit,
-        price: selected.price, priceType: 'manual',
+        type: 'buy',
+        product: pending.product,
+        quantity: pending.quantity,
+        unit: pending.unit,
+        price: selected.price,
+        priceType: 'manual',
       };
       const buyerListing = await this.listingService.createEnriched(dto, {
-        phone, name: buyerUser?.name || '',
+        phone,
+        name: buyerUser?.name || '',
         location: buyerUser?.location || '',
         channel: buyerUser?.lastChannelUsed || 'whatsapp',
       });
@@ -852,34 +981,40 @@ Example: 20000`,
       pendingStates.delete(phone);
 
       // Notify farmer in THEIR language
-      const farmerUser = await this.usersService.findByPhone(selected.userPhone);
+      const farmerUser = await this.usersService.findByPhone(
+        selected.userPhone,
+      );
       const farmerLang: Language = (farmerUser as any)?.language ?? 'english';
 
       if (farmerUser?.phone) {
         pendingFarmerResponses.set(farmerUser.phone, {
-          buyerPhone:      phone,
+          buyerPhone: phone,
           sellerListingId: selected.id,
-          buyerListingId:  buyerListing._id.toString(),
-          product:         pending.product,
-          quantity:        pending.quantity,
-          unit:            pending.unit,
-          price:           selected.price,
-          language:        farmerLang,
+          buyerListingId: buyerListing._id.toString(),
+          product: pending.product,
+          quantity: pending.quantity,
+          unit: pending.unit,
+          price: selected.price,
+          language: farmerLang,
         });
 
-        const matchMsg = await this.aiService.reply('match_found_farmer', farmerLang, {
-          location: buyerUser?.location || '',
-          product:  pending.product,
-          quantity: pending.quantity,
-          unit:     pending.unit,
-        });
+        const matchMsg = await this.aiService.reply(
+          'match_found_farmer',
+          farmerLang,
+          {
+            location: buyerUser?.location || '',
+            product: pending.product,
+            quantity: pending.quantity,
+            unit: pending.unit,
+          },
+        );
         await this.metaSender.send(farmerUser.phone, matchMsg);
       }
 
       const msgs: Record<Language, string> = {
         english: `🤝 Request sent to ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nWe'll notify you when they respond.`,
-        french:  `🤝 Demande envoyée à ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nNous vous notifierons quand ils répondront.`,
-        pidgin:  `🤝 We don send request to ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nWe go tell you when dem reply.`,
+        french: `🤝 Demande envoyée à ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nNous vous notifierons quand ils répondront.`,
+        pidgin: `🤝 We don send request to ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nWe go tell you when dem reply.`,
       };
       return msgs[lang];
     } catch {
@@ -894,20 +1029,20 @@ Example: 20000`,
     response: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
-    const user    = await this.usersService.findByPhone(phone);
+    const user = await this.usersService.findByPhone(phone);
     const lang: Language = (user as any)?.language ?? 'english';
     const pending = pendingFarmerResponses.get(phone);
 
     if (!pending) {
       const msgs: Record<Language, string> = {
         english: `❌ No pending requests. Type HELP for options.`,
-        french:  `❌ Pas de demandes en attente. Tapez AIDE.`,
-        pidgin:  `❌ No pending request. Type HELP.`,
+        french: `❌ Pas de demandes en attente. Tapez AIDE.`,
+        pidgin: `❌ No pending request. Type HELP.`,
       };
       return msgs[lang];
     }
 
-    const buyer     = await this.usersService.findByPhone(pending.buyerPhone);
+    const buyer = await this.usersService.findByPhone(pending.buyerPhone);
     const buyerLang: Language = (buyer as any)?.language ?? 'english';
     pendingFarmerResponses.delete(phone);
 
@@ -915,29 +1050,37 @@ Example: 20000`,
     const parsed = await this.aiService.parseIntent(response);
     const accepted = parsed.intent === 'yes';
 
-    await this.listingService.update(pending.sellerListingId, { status: 'matched' });
-    await this.listingService.update(pending.buyerListingId,  { status: 'matched' });
+    await this.listingService.update(pending.sellerListingId, {
+      status: 'matched',
+    });
+    await this.listingService.update(pending.buyerListingId, {
+      status: 'matched',
+    });
 
     if (accepted) {
       // Notify buyer with wa.me link in THEIR language
       if (buyer?.phone) {
-        const connectedMsgBuyer = await this.aiService.reply('connected', buyerLang, {
-          link:     `https://wa.me/${phone}`,
-          product:  pending.product,
-          quantity: pending.quantity,
-          unit:     pending.unit,
-          price:    this.fmt(pending.price),
-        });
+        const connectedMsgBuyer = await this.aiService.reply(
+          'connected',
+          buyerLang,
+          {
+            link: `https://wa.me/${phone}`,
+            product: pending.product,
+            quantity: pending.quantity,
+            unit: pending.unit,
+            price: this.fmt(pending.price),
+          },
+        );
         await this.metaSender.send(buyer.phone, connectedMsgBuyer);
       }
 
       // Confirm to farmer in THEIR language
       return await this.aiService.reply('connected', lang, {
-        link:     `https://wa.me/${pending.buyerPhone}`,
-        product:  pending.product,
+        link: `https://wa.me/${pending.buyerPhone}`,
+        product: pending.product,
         quantity: pending.quantity,
-        unit:     pending.unit,
-        price:    this.fmt(pending.price),
+        unit: pending.unit,
+        price: this.fmt(pending.price),
       });
     }
 
@@ -945,16 +1088,16 @@ Example: 20000`,
     if (buyer?.phone) {
       const rejMsgs: Record<Language, string> = {
         english: `😔 ${user?.name} declined your request for ${pending.product}.\n\nType BUY to find other farmers.`,
-        french:  `😔 ${user?.name} a refusé votre demande de ${pending.product}.\n\nTapez ACHETER pour trouver d'autres agriculteurs.`,
-        pidgin:  `😔 ${user?.name} no agree for your ${pending.product}.\n\nType BUY find another farmer.`,
+        french: `😔 ${user?.name} a refusé votre demande de ${pending.product}.\n\nTapez ACHETER pour trouver d'autres agriculteurs.`,
+        pidgin: `😔 ${user?.name} no agree for your ${pending.product}.\n\nType BUY find another farmer.`,
       };
       await this.metaSender.send(buyer.phone, rejMsgs[buyerLang]);
     }
 
     const declinedMsgs: Record<Language, string> = {
       english: `❌ Request declined. Buyer has been notified.\n\nType HELP for options.`,
-      french:  `❌ Demande refusée. L'acheteur a été notifié.\n\nTapez AIDE pour les options.`,
-      pidgin:  `❌ You don decline. Buyer don hear. Type HELP.`,
+      french: `❌ Demande refusée. L'acheteur a été notifié.\n\nTapez AIDE pour les options.`,
+      pidgin: `❌ You don decline. Buyer don hear. Type HELP.`,
     };
     return declinedMsgs[lang];
   }
@@ -966,25 +1109,29 @@ Example: 20000`,
     channel: 'sms' | 'whatsapp',
     lang: Language,
   ): Promise<string> {
-    const parts       = command.trim().split(/\s+/);
+    const parts = command.trim().split(/\s+/);
     const offerAmount = this.parsePrice(parts[1]);
-    const listingId   = parts[2];
+    const listingId = parts[2];
 
     if (!offerAmount || !listingId) {
       const msgs: Record<Language, string> = {
         english: `❌ Use: OFFER 20000 LISTING_ID`,
-        french:  `❌ Utilisez: OFFRE 20000 LISTING_ID`,
-        pidgin:  `❌ Try: OFFER 20000 LISTING_ID`,
+        french: `❌ Utilisez: OFFRE 20000 LISTING_ID`,
+        pidgin: `❌ Try: OFFER 20000 LISTING_ID`,
       };
       return msgs[lang];
     }
 
     const targetListing = await this.listingService.findOne(listingId);
-    if (!targetListing || targetListing.type !== 'sell' || targetListing.status !== 'active') {
+    if (
+      !targetListing ||
+      targetListing.type !== 'sell' ||
+      targetListing.status !== 'active'
+    ) {
       const msgs: Record<Language, string> = {
         english: `❌ Listing not found or unavailable.`,
-        french:  `❌ Annonce introuvable ou indisponible.`,
-        pidgin:  `❌ Listing no dey or not available.`,
+        french: `❌ Annonce introuvable ou indisponible.`,
+        pidgin: `❌ Listing no dey or not available.`,
       };
       return msgs[lang];
     }
@@ -993,43 +1140,64 @@ Example: 20000`,
     if (!buyer || buyer.role !== 'buyer') {
       const msgs: Record<Language, string> = {
         english: `❌ Only buyers can make offers.`,
-        french:  `❌ Seuls les acheteurs peuvent faire des offres.`,
-        pidgin:  `❌ Only buyer fit make offer.`,
+        french: `❌ Seuls les acheteurs peuvent faire des offres.`,
+        pidgin: `❌ Only buyer fit make offer.`,
       };
       return msgs[lang];
     }
 
     const msgs: Record<Language, string> = {
       english: `💰 Offer of ${this.fmt(offerAmount)} sent for ${targetListing.product}!\n\nFarmer will respond shortly.`,
-      french:  `💰 Offre de ${this.fmt(offerAmount)} envoyée pour ${targetListing.product}!\n\nL'agriculteur répondra bientôt.`,
-      pidgin:  `💰 Offer of ${this.fmt(offerAmount)} don go for ${targetListing.product}!\n\nFarmer go reply soon.`,
+      french: `💰 Offre de ${this.fmt(offerAmount)} envoyée pour ${targetListing.product}!\n\nL'agriculteur répondra bientôt.`,
+      pidgin: `💰 Offer of ${this.fmt(offerAmount)} don go for ${targetListing.product}!\n\nFarmer go reply soon.`,
     };
     return msgs[lang];
   }
 
   // ─── Helpers ──────────────────────────────────────────────
-  isInPendingState(phone: string): boolean   { return pendingStates.has(phone); }
-  isInPriceState(phone: string): boolean    { return pendingStates.has(phone); } // alias used by BotService
-  isInImageState(phone: string): boolean     { return pendingStates.get(phone)?.type === 'sell_waiting_image'; }
-  hasPendingFarmerResponse(phone: string): boolean { return pendingFarmerResponses.has(phone); }
+  isInPendingState(phone: string): boolean {
+    return pendingStates.has(phone);
+  }
+  isInPriceState(phone: string): boolean {
+    return pendingStates.has(phone);
+  } // alias used by BotService
+  isInImageState(phone: string): boolean {
+    return pendingStates.get(phone)?.type === 'sell_waiting_image';
+  }
+  hasPendingFarmerResponse(phone: string): boolean {
+    return pendingFarmerResponses.has(phone);
+  }
 
-  async handleImage(phone: string, imageUrl: string | null, imageMediaId: string | null): Promise<string> {
-    const pending  = pendingStates.get(phone);
+  async handleImage(
+    phone: string,
+    imageUrl: string | null,
+    imageMediaId: string | null,
+  ): Promise<string> {
+    const pending = pendingStates.get(phone);
     const lang: Language = pending?.language ?? 'english';
     if (!pending || pending.type !== 'sell_waiting_image') {
-      return lang === 'french' ? `❌ Aucune annonce en attente.` : `❌ No pending listing.`;
+      return lang === 'french'
+        ? `❌ Aucune annonce en attente.`
+        : `❌ No pending listing.`;
     }
-    return this.createListingWithImage(phone, 'whatsapp', pending, imageUrl, imageMediaId, lang);
+    return this.createListingWithImage(
+      phone,
+      'whatsapp',
+      pending,
+      imageUrl,
+      imageMediaId,
+      lang,
+    );
   }
 
   private normalizeCommand(text: string): string {
     const upper = text.trim().toUpperCase();
-    if (upper.startsWith('VENDRE'))  return 'SELL'  + text.trim().slice(6);
-    if (upper.startsWith('ACHETER')) return 'BUY'   + text.trim().slice(7);
-    if (upper.startsWith('OFFRE'))   return 'OFFER' + text.trim().slice(5);
-    if (upper === 'OUI')   return 'YES';
-    if (upper === 'NON')   return 'NO';
-    if (upper === 'AIDE')  return 'HELP';
+    if (upper.startsWith('VENDRE')) return 'SELL' + text.trim().slice(6);
+    if (upper.startsWith('ACHETER')) return 'BUY' + text.trim().slice(7);
+    if (upper.startsWith('OFFRE')) return 'OFFER' + text.trim().slice(5);
+    if (upper === 'OUI') return 'YES';
+    if (upper === 'NON') return 'NO';
+    if (upper === 'AIDE') return 'HELP';
     if (upper === 'SAUTER') return 'SKIP';
     return text.trim();
   }
@@ -1042,13 +1210,16 @@ Example: 20000`,
 
     let qtyIndex = -1;
     for (let i = parts.length - 1; i >= 2; i--) {
-      if (/^\d+$/.test(parts[i])) { qtyIndex = i; break; }
+      if (/^\d+$/.test(parts[i])) {
+        qtyIndex = i;
+        break;
+      }
     }
     if (qtyIndex === -1) return null;
 
-    const product  = parts.slice(1, qtyIndex).join(' ');
+    const product = parts.slice(1, qtyIndex).join(' ');
     const quantity = parseInt(parts[qtyIndex], 10);
-    const unit     = parts[qtyIndex + 1] || 'bags';
+    const unit = parts[qtyIndex + 1] || 'bags';
 
     if (!product || quantity <= 0) return null;
     return { type, product, quantity, unit };
@@ -1056,10 +1227,14 @@ Example: 20000`,
 
   private parsePrice(text: string): number | null {
     const cleaned = text?.replace(/[,\s]/g, '') ?? '';
-    const price   = parseInt(cleaned, 10);
+    const price = parseInt(cleaned, 10);
     return isNaN(price) || price <= 0 ? null : price;
   }
 
-  private fmt(price: number): string { return price?.toLocaleString() + ' FCFA'; }
-  private cap(str: string): string   { return str.charAt(0).toUpperCase() + str.slice(1); }
+  private fmt(price: number): string {
+    return price?.toLocaleString() + ' FCFA';
+  }
+  private cap(str: string): string {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
 }

@@ -14,7 +14,10 @@ export class SeedService implements OnModuleInit {
 
   async seedAdmin() {
     const adminPhone = '15551661836';
-    const existingAdmin = await this.userModel.findOne({ phone: adminPhone, role: 'admin' });
+    const existingAdmin = await this.userModel.findOne({
+      phone: adminPhone,
+      role: 'admin',
+    });
 
     if (!existingAdmin) {
       const hashedPassword = await bcrypt.hash('admin123', 10);

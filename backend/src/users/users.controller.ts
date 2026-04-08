@@ -45,17 +45,25 @@ export class UsersController {
   }
 
   @Put(':phone/ban')
-  async toggleBan(@Param('phone') phone: string, @Body('banned') banned: boolean) {
+  async toggleBan(
+    @Param('phone') phone: string,
+    @Body('banned') banned: boolean,
+  ) {
     const user = await this.usersService.toggleBan(phone, banned);
-    return { 
-      success: true, 
-      message: banned ? 'User banned successfully' : 'User unbanned successfully',
-      data: user 
+    return {
+      success: true,
+      message: banned
+        ? 'User banned successfully'
+        : 'User unbanned successfully',
+      data: user,
     };
   }
 
   @Put(':phone/trust-score')
-  async updateTrustScore(@Param('phone') phone: string, @Body('score') score: number) {
+  async updateTrustScore(
+    @Param('phone') phone: string,
+    @Body('score') score: number,
+  ) {
     const user = await this.usersService.updateTrustScore(phone, score);
     return { success: true, message: 'Trust score updated', data: user };
   }

@@ -4,9 +4,9 @@ import { Model } from 'mongoose';
 import { Listing, ListingDocument } from '../common/schemas/listing.schema';
 
 export interface MatchResult {
-  listing:    ListingDocument;
+  listing: ListingDocument;
   matchScore: number;
-  reason:     string;
+  reason: string;
 }
 
 @Injectable()
@@ -24,16 +24,16 @@ export class MatchingService {
 
     const candidates = await this.listingModel
       .find({
-        type:    oppositeType,
-        status:  'active',
-        product: listing.product,       // must be same product
+        type: oppositeType,
+        status: 'active',
+        product: listing.product, // must be same product
       })
       .exec();
 
     const matches: MatchResult[] = candidates.map((candidate) => ({
-      listing:    candidate,
+      listing: candidate,
       matchScore: this.calculateMatchScore(listing, candidate),
-      reason:     this.getMatchReason(listing, candidate),
+      reason: this.getMatchReason(listing, candidate),
     }));
 
     // Sort by score descending, return top N
@@ -48,10 +48,7 @@ export class MatchingService {
   //   Product match:   50 pts (guaranteed — we query by product)
   //   Same location:   30 pts
   //   Quantity match:  20 pts
-  private calculateMatchScore(
-    a: ListingDocument,
-    b: ListingDocument,
-  ): number {
+  private calculateMatchScore(a: ListingDocument, b: ListingDocument): number {
     let score = 50; // product always matches (filtered in query)
 
     // Location match (+30)
@@ -65,7 +62,8 @@ export class MatchingService {
     // Quantity proximity (+20)
     // Full score if within 20% of each other
     if (a.quantity > 0 && b.quantity > 0) {
-      const ratio = Math.min(a.quantity, b.quantity) / Math.max(a.quantity, b.quantity);
+      const ratio =
+        Math.min(a.quantity, b.quantity) / Math.max(a.quantity, b.quantity);
       if (ratio >= 0.8) score += 20;
       else if (ratio >= 0.5) score += 10;
     }
@@ -74,10 +72,7 @@ export class MatchingService {
   }
 
   // ─── Human readable match reason ─────────────────────────
-  private getMatchReason(
-    a: ListingDocument,
-    b: ListingDocument,
-  ): string {
+  private getMatchReason(a: ListingDocument, b: ListingDocument): string {
     const reasons: string[] = ['Same product'];
 
     if (
@@ -88,7 +83,8 @@ export class MatchingService {
     }
 
     if (a.quantity > 0 && b.quantity > 0) {
-      const ratio = Math.min(a.quantity, b.quantity) / Math.max(a.quantity, b.quantity);
+      const ratio =
+        Math.min(a.quantity, b.quantity) / Math.max(a.quantity, b.quantity);
       if (ratio >= 0.8) reasons.push('Similar quantity');
     }
 

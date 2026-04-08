@@ -57,10 +57,7 @@ export class ListingController {
   }
 
   @Patch(':id/status')
-  async updateStatus(
-    @Param('id') id: string,
-    @Body('status') status: string,
-  ) {
+  async updateStatus(@Param('id') id: string, @Body('status') status: string) {
     const listing = await this.listingService.updateStatus(id, status);
     return { success: true, message: 'Listing status updated', data: listing };
   }

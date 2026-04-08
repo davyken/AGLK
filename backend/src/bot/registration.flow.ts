@@ -55,12 +55,18 @@ export class RegistrationFlowService {
     lang: Language,
   ): Promise<string> {
     switch (state) {
-      case 'AWAITING_ROLE':     return this.handleRole(phone, input, lang);
-      case 'AWAITING_NAME':     return this.handleName(phone, input, lang);
-      case 'AWAITING_LOCATION': return this.handleLocation(phone, input, lang);
-      case 'AWAITING_PRODUCES': return this.handleProduces(phone, input, lang);
-      case 'AWAITING_BUSINESS': return this.handleBusiness(phone, input, lang);
-      case 'AWAITING_NEEDS':    return this.handleNeeds(phone, input, lang);
+      case 'AWAITING_ROLE':
+        return this.handleRole(phone, input, lang);
+      case 'AWAITING_NAME':
+        return this.handleName(phone, input, lang);
+      case 'AWAITING_LOCATION':
+        return this.handleLocation(phone, input, lang);
+      case 'AWAITING_PRODUCES':
+        return this.handleProduces(phone, input, lang);
+      case 'AWAITING_BUSINESS':
+        return this.handleBusiness(phone, input, lang);
+      case 'AWAITING_NEEDS':
+        return this.handleNeeds(phone, input, lang);
       default:
         return await this.aiService.reply('unknown_command', lang, {});
     }
@@ -73,12 +79,19 @@ export class RegistrationFlowService {
     lang: Language,
   ): Promise<string> {
     // Accept: 1, 2, farmer, buyer, agriculteur, acheteur, I dey sell, etc.
-    const farmerKeywords = ['1', 'farmer', 'agriculteur', 'sell', 'vend', 'farm'];
-    const buyerKeywords  = ['2', 'buyer', 'acheteur', 'buy', 'achet', 'buy'];
+    const farmerKeywords = [
+      '1',
+      'farmer',
+      'agriculteur',
+      'sell',
+      'vend',
+      'farm',
+    ];
+    const buyerKeywords = ['2', 'buyer', 'acheteur', 'buy', 'achet', 'buy'];
 
     const lower = input.toLowerCase();
     const isFarmer = farmerKeywords.some((k) => lower.includes(k));
-    const isBuyer  = buyerKeywords.some((k) => lower.includes(k));
+    const isBuyer = buyerKeywords.some((k) => lower.includes(k));
 
     if (!isFarmer && !isBuyer) {
       // Use AI to detect intent
@@ -86,8 +99,8 @@ export class RegistrationFlowService {
       if (parsed.intent !== 'register') {
         const errorMsgs: Record<Language, string> = {
           english: '❌ Please reply 1 for Farmer or 2 for Buyer.',
-          french:  '❌ Veuillez répondre 1 pour Agriculteur ou 2 pour Acheteur.',
-          pidgin:  '❌ Send 1 if you be Farmer, 2 if you be Buyer.',
+          french: '❌ Veuillez répondre 1 pour Agriculteur ou 2 pour Acheteur.',
+          pidgin: '❌ Send 1 if you be Farmer, 2 if you be Buyer.',
         };
         return errorMsgs[lang];
       }
@@ -112,8 +125,8 @@ export class RegistrationFlowService {
     if (input.length < 2) {
       const errorMsgs: Record<Language, string> = {
         english: '❌ Please enter a valid name.',
-        french:  '❌ Veuillez entrer un nom valide.',
-        pidgin:  '❌ Put your real name abeg.',
+        french: '❌ Veuillez entrer un nom valide.',
+        pidgin: '❌ Put your real name abeg.',
       };
       return errorMsgs[lang];
     }
@@ -135,8 +148,8 @@ export class RegistrationFlowService {
     if (input.length < 2) {
       const errorMsgs: Record<Language, string> = {
         english: '❌ Please enter a valid location.',
-        french:  '❌ Veuillez entrer une localité valide.',
-        pidgin:  '❌ Tell us which side you dey.',
+        french: '❌ Veuillez entrer une localité valide.',
+        pidgin: '❌ Tell us which side you dey.',
       };
       return errorMsgs[lang];
     }
@@ -168,8 +181,8 @@ export class RegistrationFlowService {
     if (produces.length === 0) {
       const errorMsgs: Record<Language, string> = {
         english: '❌ Please list at least one product.',
-        french:  '❌ Veuillez lister au moins un produit.',
-        pidgin:  '❌ List at least one thing wey you dey farm.',
+        french: '❌ Veuillez lister au moins un produit.',
+        pidgin: '❌ List at least one thing wey you dey farm.',
       };
       return errorMsgs[lang];
     }
@@ -179,7 +192,9 @@ export class RegistrationFlowService {
       conversationState: 'REGISTERED',
     });
 
-    return await this.aiService.reply('registered_farmer', lang, { name: user.name });
+    return await this.aiService.reply('registered_farmer', lang, {
+      name: user.name,
+    });
   }
 
   // ─── Step 4b: BUYER — Business ────────────────────────────
@@ -191,8 +206,8 @@ export class RegistrationFlowService {
     if (input.length < 2) {
       const errorMsgs: Record<Language, string> = {
         english: '❌ Please enter a valid business name.',
-        french:  '❌ Veuillez entrer un nom d\'entreprise valide.',
-        pidgin:  '❌ Put your business name abeg.',
+        french: "❌ Veuillez entrer un nom d'entreprise valide.",
+        pidgin: '❌ Put your business name abeg.',
       };
       return errorMsgs[lang];
     }
@@ -219,8 +234,8 @@ export class RegistrationFlowService {
     if (needs.length === 0) {
       const errorMsgs: Record<Language, string> = {
         english: '❌ Please list at least one product.',
-        french:  '❌ Veuillez lister au moins un produit.',
-        pidgin:  '❌ List at least one thing wey you need.',
+        french: '❌ Veuillez lister au moins un produit.',
+        pidgin: '❌ List at least one thing wey you need.',
       };
       return errorMsgs[lang];
     }
@@ -230,6 +245,8 @@ export class RegistrationFlowService {
       conversationState: 'REGISTERED',
     });
 
-    return await this.aiService.reply('registered_buyer', lang, { name: user.name });
+    return await this.aiService.reply('registered_buyer', lang, {
+      name: user.name,
+    });
   }
 }
