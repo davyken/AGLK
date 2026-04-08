@@ -25,13 +25,13 @@ export class RegistrationFlowService {
       return null;
     }
 
-    // Detect language from first message — no API needed
-    const lang: Language = this.aiService.detectLanguage(text);
+    // Detect language via LLM + statistical analysis
+    const lang: Language = await this.aiService.detectLanguage(text);
 
     // Brand new user
     if (!user) {
       await this.usersService.createStub(phone, channel, lang);
-      return this.aiService.reply('welcome', lang, {});
+      return await this.aiService.reply('welcome', lang, {});
     }
 
     // ── If language changed mid-registration, update it ────
@@ -62,7 +62,7 @@ export class RegistrationFlowService {
       case 'AWAITING_BUSINESS': return this.handleBusiness(phone, input, lang);
       case 'AWAITING_NEEDS':    return this.handleNeeds(phone, input, lang);
       default:
-        return this.aiService.reply('unknown_command', lang, {});
+        return await this.aiService.reply('unknown_command', lang, {});
     }
   }
 
@@ -100,7 +100,7 @@ export class RegistrationFlowService {
       conversationState: 'AWAITING_NAME',
     });
 
-    return this.aiService.reply('ask_name', lang, {});
+    return await this.aiService.reply('ask_name', lang, {});
   }
 
   // ─── Step 2: Name ─────────────────────────────────────────
@@ -123,7 +123,7 @@ export class RegistrationFlowService {
       conversationState: 'AWAITING_LOCATION',
     });
 
-    return this.aiService.reply('ask_location', lang, {});
+    return await this.aiService.reply('ask_location', lang, {});
   }
 
   // ─── Step 3: Location ─────────────────────────────────────
@@ -150,8 +150,8 @@ export class RegistrationFlowService {
     });
 
     return user?.role === 'farmer'
-      ? this.aiService.reply('ask_produces', lang, {})
-      : this.aiService.reply('ask_business', lang, {});
+      ? await this.aiService.reply('ask_produces', lang, {})
+      : await this.aiService.reply('ask_business', lang, {});
   }
 
   // ─── Step 4a: FARMER — Produces ──────────────────────────
@@ -179,7 +179,7 @@ export class RegistrationFlowService {
       conversationState: 'REGISTERED',
     });
 
-    return this.aiService.reply('registered_farmer', lang, { name: user.name });
+    return await this.aiService.reply('registered_farmer', lang, { name: user.name });
   }
 
   // ─── Step 4b: BUYER — Business ────────────────────────────
@@ -202,7 +202,7 @@ export class RegistrationFlowService {
       conversationState: 'AWAITING_NEEDS',
     });
 
-    return this.aiService.reply('ask_needs', lang, {});
+    return await this.aiService.reply('ask_needs', lang, {});
   }
 
   // ─── Step 5b: BUYER — Needs ───────────────────────────────
@@ -230,6 +230,6 @@ export class RegistrationFlowService {
       conversationState: 'REGISTERED',
     });
 
-    return this.aiService.reply('registered_buyer', lang, { name: user.name });
+    return await this.aiService.reply('registered_buyer', lang, { name: user.name });
   }
 }

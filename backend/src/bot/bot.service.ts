@@ -32,11 +32,11 @@ export class BotService {
     const user = await this.usersService.findByPhone(phone);
 
     // ── Language Resolution ──────────────────────────────
-    // 1. Detect from current message (no API — pure keyword matching)
-    // 2. If clear signal found → use it and save to DB
-    // 3. If no signal (e.g. user typed "1" or "20") → use saved language
+    // 1. Detect from current message via LLM + statistical analysis
+    // 2. If high-confidence signal found → use it and save to DB
+    // 3. If low-confidence (e.g. user typed "1" or "20") → use saved language
     // This means once a user speaks French, ALL replies stay French
-    const detectedLang: Language = this.aiService.detectLanguage(trimmed);
+    const detectedLang: Language = await this.aiService.detectLanguage(trimmed);
     const savedLang:    Language = (user as any)?.language ?? 'english';
 
     // Only override saved language if we found a clear non-English signal
@@ -172,7 +172,7 @@ export class BotService {
     // ─────────────────────────────────────────────────────
     // FALLBACK: unknown command
     // ─────────────────────────────────────────────────────
-    return this.aiService.reply('unknown_command', lang, {});
+    return await this.aiService.reply('unknown_command', lang, {});
   }
 
   // ─── Language switch ──────────────────────────────────────

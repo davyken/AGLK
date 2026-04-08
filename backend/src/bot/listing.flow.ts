@@ -131,7 +131,7 @@ export class ListingFlowService {
     }
 
     // ── Unknown command ────────────────────────────────────
-    return this.aiService.reply('unknown_command', lang, {});
+    return await this.aiService.reply('unknown_command', lang, {});
   }
 
   // ─── Sell Intent ──────────────────────────────────────────
@@ -249,7 +249,7 @@ Example: 20000`,
       return msgs[lang];
     }
 
-    return this.aiService.reply('price_suggestion', lang, {
+    return await this.aiService.reply('price_suggestion', lang, {
       product:   this.cap(displayName), // show "Manioc" not "Cassava" in French
       min:       this.fmt(priceData.low),
       avg:       this.fmt(priceData.avg),
@@ -561,7 +561,7 @@ ${filterSummary}
       return msgs[lang];
     }
 
-    return this.aiService.reply('price_suggestion', lang, {
+    return await this.aiService.reply('price_suggestion', lang, {
       product:   this.cap(product),
       min:       this.fmt(priceData.low),
       avg:       this.fmt(priceData.avg),
@@ -578,7 +578,7 @@ ${filterSummary}
     lang: Language,
   ): Promise<string> {
     const pending = pendingStates.get(phone);
-    if (!pending) return this.aiService.reply('unknown_command', lang, {});
+    if (!pending) return await this.aiService.reply('unknown_command', lang, {});
 
     // Use saved language from pending state
     const savedLang = pending.language ?? lang;
@@ -597,7 +597,7 @@ ${filterSummary}
     if (pending.type === 'sell_waiting_image') return this.handleSellWaitingImage(phone, response, channel, pending, savedLang);
     if (pending.type === 'buy_select')        return this.handleBuySelect(phone, response, channel, pending, savedLang);
 
-    return this.aiService.reply('unknown_command', savedLang, {});
+    return await this.aiService.reply('unknown_command', savedLang, {});
   }
 
   // ─── Sell pending: waiting for quantity OR price ────────────
@@ -671,7 +671,7 @@ Example: 20000`,
         return msgs[lang];
       }
 
-      return this.aiService.reply('price_suggestion', lang, {
+      return await this.aiService.reply('price_suggestion', lang, {
         product:   this.cap((pending as any).productDisplay ?? pending.product),
         min:       this.fmt(priceData.low),
         avg:       this.fmt(priceData.avg),
@@ -867,15 +867,13 @@ Example: 20000`,
           language:        farmerLang,
         });
 
-        await this.metaSender.send(
-          farmerUser.phone,
-          this.aiService.reply('match_found_farmer', farmerLang, {
-            location: buyerUser?.location || '',
-            product:  pending.product,
-            quantity: pending.quantity,
-            unit:     pending.unit,
-          }),
-        );
+        const matchMsg = await this.aiService.reply('match_found_farmer', farmerLang, {
+          location: buyerUser?.location || '',
+          product:  pending.product,
+          quantity: pending.quantity,
+          unit:     pending.unit,
+        });
+        await this.metaSender.send(farmerUser.phone, matchMsg);
       }
 
       const msgs: Record<Language, string> = {
@@ -886,7 +884,7 @@ Example: 20000`,
       return msgs[lang];
     } catch {
       pendingStates.delete(phone);
-      return this.aiService.reply('unknown_command', lang, {});
+      return await this.aiService.reply('unknown_command', lang, {});
     }
   }
 
@@ -923,20 +921,18 @@ Example: 20000`,
     if (accepted) {
       // Notify buyer with wa.me link in THEIR language
       if (buyer?.phone) {
-        await this.metaSender.send(
-          buyer.phone,
-          this.aiService.reply('connected', buyerLang, {
-            link:     `https://wa.me/${phone}`,
-            product:  pending.product,
-            quantity: pending.quantity,
-            unit:     pending.unit,
-            price:    this.fmt(pending.price),
-          }),
-        );
+        const connectedMsgBuyer = await this.aiService.reply('connected', buyerLang, {
+          link:     `https://wa.me/${phone}`,
+          product:  pending.product,
+          quantity: pending.quantity,
+          unit:     pending.unit,
+          price:    this.fmt(pending.price),
+        });
+        await this.metaSender.send(buyer.phone, connectedMsgBuyer);
       }
 
       // Confirm to farmer in THEIR language
-      return this.aiService.reply('connected', lang, {
+      return await this.aiService.reply('connected', lang, {
         link:     `https://wa.me/${pending.buyerPhone}`,
         product:  pending.product,
         quantity: pending.quantity,
