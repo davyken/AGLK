@@ -94,6 +94,7 @@ export class ListingFlowService {
         channel,
         lang,
         parsed.price,
+        text,
       );
     }
 
@@ -142,6 +143,8 @@ export class ListingFlowService {
           p.unit,
           channel,
           lang,
+          undefined,
+          text,
         );
     }
 
@@ -170,6 +173,7 @@ export class ListingFlowService {
     channel: 'sms' | 'whatsapp',
     lang: Language,
     price?: number,
+    text?: string,
   ): Promise<string> {
     // displayName = what user sees (preserves French/Pidgin product names)
     const displayName = productDisplay || product;
@@ -233,14 +237,16 @@ How many ${smartUnit} you get?`,
     }
 
     // If price provided in initial input, skip suggestion and go directly to image
-    if (price && price > 0) {
+    const effectivePrice = price ?? this.parsePrice(text || '');
+
+    if (effectivePrice && effectivePrice > 0) {
       pendingStates.set(phone, {
         type: 'sell_waiting_image',
         product,
         productDisplay: displayName,
         quantity,
         unit,
-        price,
+        price: effectivePrice,
         userPhone: phone,
         userRole: user.role,
         language: lang,

@@ -1,6 +1,7 @@
 # AGLK Bot Flow Update: Skip Price Suggestion for Complete Inputs
 
 
-- [ ] 3. Verify no linter errors
-- [ ] 4. Test the change
-
+- [ ] 2. Add text param + local parsePrice fallback
+- [ ] 3. Linting
+- [ ] 4. Test
+- [ ] 5. Complete
