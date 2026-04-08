@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Listing, ListingDocument } from '../common/schemas/listing.schema';
-import { PriceHistory, PriceHistoryDocument } from '../common/schemas/price-history.schema';
+import {
+  PriceHistory,
+  PriceHistoryDocument,
+} from '../common/schemas/price-history.schema';
 
 export interface MarketPrice {
   product: string;
@@ -17,15 +20,18 @@ export interface MarketPrice {
 export class PriceService {
   constructor(
     @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
-    @InjectModel(PriceHistory.name) private priceHistoryModel: Model<PriceHistoryDocument>,
+    @InjectModel(PriceHistory.name)
+    private priceHistoryModel: Model<PriceHistoryDocument>,
   ) {}
 
   async getPrice(product: string): Promise<MarketPrice | null> {
     const normalizedProduct = product.toLowerCase().trim();
-    
-    const priceDoc = await this.priceHistoryModel.findOne({
-      product: normalizedProduct,
-    }).exec();
+
+    const priceDoc = await this.priceHistoryModel
+      .findOne({
+        product: normalizedProduct,
+      })
+      .exec();
 
     if (!priceDoc) {
       return null;
@@ -43,8 +49,8 @@ export class PriceService {
 
   async getAllPrices(): Promise<MarketPrice[]> {
     const prices = await this.priceHistoryModel.find().exec();
-    
-    return prices.map(priceDoc => ({
+
+    return prices.map((priceDoc) => ({
       product: priceDoc.product,
       low: priceDoc.minPrice,
       avg: priceDoc.avgPrice,
@@ -54,10 +60,13 @@ export class PriceService {
     }));
   }
 
-  async recalculatePrice(product: string, location?: string): Promise<MarketPrice | null> {
+  async recalculatePrice(
+    product: string,
+    location?: string,
+  ): Promise<MarketPrice | null> {
     const normalizedProduct = product.toLowerCase().trim();
     const normalizedLocation = location?.toLowerCase().trim();
-    
+
     const query: any = {
       product: normalizedProduct,
       status: 'active',
@@ -75,21 +84,25 @@ export class PriceService {
 
     if (listings.length === 0) {
       if (normalizedLocation) {
-        await this.priceHistoryModel.findOneAndDelete({
-          product: normalizedProduct,
-          location: normalizedLocation,
-        }).exec();
+        await this.priceHistoryModel
+          .findOneAndDelete({
+            product: normalizedProduct,
+            location: normalizedLocation,
+          })
+          .exec();
       } else {
-        await this.priceHistoryModel.findOneAndDelete({
-          product: normalizedProduct,
-        }).exec();
+        await this.priceHistoryModel
+          .findOneAndDelete({
+            product: normalizedProduct,
+          })
+          .exec();
       }
       return null;
     }
 
     const prices = listings
-      .map(l => l.price)
-      .filter(p => typeof p === 'number' && p > 0);
+      .map((l) => l.price)
+      .filter((p) => typeof p === 'number' && p > 0);
 
     if (prices.length === 0) {
       return null;
@@ -118,13 +131,15 @@ export class PriceService {
       ? { upsert: true, new: true, setDefaultsOnInsert: true }
       : { upsert: true, new: true, setDefaultsOnInsert: true };
 
-    const priceDoc = await this.priceHistoryModel.findOneAndUpdate(
-      normalizedLocation
-        ? { product: normalizedProduct, location: normalizedLocation }
-        : { product: normalizedProduct },
-      { $set: update },
-      options,
-    ).exec();
+    const priceDoc = await this.priceHistoryModel
+      .findOneAndUpdate(
+        normalizedLocation
+          ? { product: normalizedProduct, location: normalizedLocation }
+          : { product: normalizedProduct },
+        { $set: update },
+        options,
+      )
+      .exec();
 
     return {
       product: priceDoc!.product,
@@ -138,15 +153,17 @@ export class PriceService {
 
   async hasPrice(product: string): Promise<boolean> {
     const normalizedProduct = product.toLowerCase().trim();
-    const priceDoc = await this.priceHistoryModel.findOne({
-      product: normalizedProduct,
-    }).exec();
+    const priceDoc = await this.priceHistoryModel
+      .findOne({
+        product: normalizedProduct,
+      })
+      .exec();
     return !!priceDoc;
   }
 
   async getAvailableProducts(): Promise<string[]> {
     const products = await this.priceHistoryModel.distinct('product').exec();
-    return products.map(p => p.toString());
+    return products.map((p) => p.toString());
   }
 
   async deletePrice(product: string, location?: string): Promise<void> {

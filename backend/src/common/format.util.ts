@@ -20,10 +20,7 @@ export function normalizeCommand(text: string): string {
 
 export function formatSmsMessage(message: string): string {
   return message
-    .replace(
-      /[\u{1F300}-\u{1FFFF}|\u{2600}-\u{26FF}|\u{2700}-\u{27BF}]/gu,
-      '',
-    )
+    .replace(/[\u{1F300}-\u{1FFFF}|\u{2600}-\u{26FF}|\u{2700}-\u{27BF}]/gu, '')
     .replace(/\*/g, '')
     .trim();
 }

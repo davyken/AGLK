@@ -46,11 +46,11 @@ export class LanguageDetectionService {
   private readonly CONFIDENCE_THRESHOLD = 0.55;
 
   // Fast-path: skip LLM when statistical is already certain
-  private readonly STATISTICAL_CERTAINTY = 0.80;
+  private readonly STATISTICAL_CERTAINTY = 0.8;
 
   constructor(private readonly config: ConfigService) {
     this.openai = new OpenAI({
-      apiKey:  this.config.get<string>('OPENAI_API_KEY'),
+      apiKey: this.config.get<string>('OPENAI_API_KEY'),
       timeout: this.LLM_TIMEOUT_MS,
     });
   }
@@ -69,7 +69,10 @@ export class LanguageDetectionService {
 
     // Fast path: high-confidence French via diacritics — no LLM needed
     const statistical = this.detectStatistical(trimmed);
-    if (statistical.language === 'french' && statistical.confidence >= this.STATISTICAL_CERTAINTY) {
+    if (
+      statistical.language === 'french' &&
+      statistical.confidence >= this.STATISTICAL_CERTAINTY
+    ) {
       return statistical;
     }
 
@@ -102,30 +105,44 @@ export class LanguageDetectionService {
     // ── French signal 1: Unicode diacritics ──────────────────
     // These characters are essentially absent from standard English/Pidgin
     const diacriticPattern = /[éèêëàâäçùûüôîïœæ]/g;
-    const diacriticCount   = (lower.match(diacriticPattern) ?? []).length;
-    const diacriticRatio   = diacriticCount / chars.length;
+    const diacriticCount = (lower.match(diacriticPattern) ?? []).length;
+    const diacriticRatio = diacriticCount / chars.length;
 
     // ── French signal 2: Character bigrams ───────────────────
     // French has statistically higher frequency of these vowel clusters
-    const frenchBigrams  = ['ou', 'au', 'an', 'en', 'on', 'ai', 'eu', 'ui', 'oi', 'ie'];
-    const totalBigrams   = Math.max(chars.length - 1, 1);
+    const frenchBigrams = [
+      'ou',
+      'au',
+      'an',
+      'en',
+      'on',
+      'ai',
+      'eu',
+      'ui',
+      'oi',
+      'ie',
+    ];
+    const totalBigrams = Math.max(chars.length - 1, 1);
     let bigramHits = 0;
     for (const bg of frenchBigrams) {
       let pos = 0;
-      while ((pos = lower.indexOf(bg, pos)) !== -1) { bigramHits++; pos++; }
+      while ((pos = lower.indexOf(bg, pos)) !== -1) {
+        bigramHits++;
+        pos++;
+      }
     }
     const bigramRatio = bigramHits / totalBigrams;
 
     // Combined French score (diacritics weighted heavier — more discriminative)
-    const frenchScore = diacriticRatio * 0.70 + bigramRatio * 0.30;
+    const frenchScore = diacriticRatio * 0.7 + bigramRatio * 0.3;
 
     if (frenchScore > 0.06) {
-      const confidence = Math.min(0.50 + frenchScore * 4, 0.95);
+      const confidence = Math.min(0.5 + frenchScore * 4, 0.95);
       return { language: 'french', confidence, method: 'statistical' };
     }
 
     // Cannot tell English from Pidgin without LLM context
-    return { language: 'english', confidence: 0.50, method: 'statistical' };
+    return { language: 'english', confidence: 0.5, method: 'statistical' };
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -134,12 +151,12 @@ export class LanguageDetectionService {
 
   private async detectWithLLM(text: string): Promise<DetectionResult> {
     const completion = await this.openai.chat.completions.create({
-      model:           'gpt-4o-mini',
-      max_tokens:      60,
+      model: 'gpt-4o-mini',
+      max_tokens: 60,
       response_format: { type: 'json_object' },
       messages: [
         {
-          role:    'system',
+          role: 'system',
           content: `You are a language classifier for WhatsApp messages sent to an agricultural marketplace in Cameroon.
 
 Classify the language into exactly one of:
@@ -155,17 +172,21 @@ confidence = your certainty that this classification is correct.`,
       ],
     });
 
-    const raw    = completion.choices[0]?.message?.content ?? '{}';
-    const parsed = JSON.parse(raw.trim()) as { language?: string; confidence?: number };
+    const raw = completion.choices[0]?.message?.content ?? '{}';
+    const parsed = JSON.parse(raw.trim()) as {
+      language?: string;
+      confidence?: number;
+    };
 
     const validLanguages = ['english', 'french', 'pidgin', 'unknown'];
     const language = validLanguages.includes(parsed.language ?? '')
       ? (parsed.language as Language | 'unknown')
       : 'unknown';
 
-    const confidence = typeof parsed.confidence === 'number'
-      ? Math.max(0, Math.min(1, parsed.confidence))
-      : 0.5;
+    const confidence =
+      typeof parsed.confidence === 'number'
+        ? Math.max(0, Math.min(1, parsed.confidence))
+        : 0.5;
 
     // Treat low-confidence as 'unknown' so bot asks for clarification
     if (confidence < this.CONFIDENCE_THRESHOLD) {

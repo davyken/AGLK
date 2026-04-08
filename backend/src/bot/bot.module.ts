@@ -12,13 +12,7 @@ import { FilterParserService } from './filter-parser.service';
 import { CropMediaService } from './Crop media.service';
 
 @Module({
-  imports: [
-    UsersModule,
-    AiModule,
-    ListingModule,
-    PriceModule,
-    WhatsappModule,
-  ],
+  imports: [UsersModule, AiModule, ListingModule, PriceModule, WhatsappModule],
   controllers: [BotController],
   providers: [
     BotService,

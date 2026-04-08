@@ -40,7 +40,12 @@ export class ListingService {
 
   async createEnriched(
     dto: CreateListingDto,
-    userData: { phone: string; name: string; location: string; channel: string },
+    userData: {
+      phone: string;
+      name: string;
+      location: string;
+      channel: string;
+    },
   ): Promise<ListingDocument> {
     const listing = new this.listingModel({
       ...dto,

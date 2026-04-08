@@ -33,10 +33,13 @@ export class ConversationService {
 
   // In-memory cache for language per phone number
   // Keyed by phone → { language, cachedAt }
-  private readonly sessionCache = new Map<string, { language: Language; cachedAt: number }>();
+  private readonly sessionCache = new Map<
+    string,
+    { language: Language; cachedAt: number }
+  >();
 
-  private readonly CACHE_TTL             = 30 * 60 * 1_000; // 30 minutes
-  private readonly SWITCH_THRESHOLD      = 0.70; // min confidence to switch language
+  private readonly CACHE_TTL = 30 * 60 * 1_000; // 30 minutes
+  private readonly SWITCH_THRESHOLD = 0.7; // min confidence to switch language
   private readonly CLARIFICATION_MINIMUM = 0.55; // below this on new user → ask
 
   constructor(
@@ -56,10 +59,10 @@ export class ConversationService {
    */
   async resolveLanguage(
     phone: string,
-    text:  string,
+    text: string,
   ): Promise<{ language: Language; needsClarification: boolean }> {
     const detection = await this.langDetect.detect(text);
-    const saved     = await this.getLanguage(phone);
+    const saved = await this.getLanguage(phone);
 
     this.logger.debug(
       `[${phone}] Detected: ${detection.language} (${(detection.confidence * 100).toFixed(0)}% via ${detection.method}), saved: ${saved}`,
@@ -70,7 +73,7 @@ export class ConversationService {
       detection.language !== 'unknown' &&
       detection.confidence >= this.SWITCH_THRESHOLD
     ) {
-      const detected = detection.language as Language;
+      const detected = detection.language;
       if (detected !== saved) {
         await this.setLanguage(phone, detected);
         this.logger.log(`[${phone}] Language switched: ${saved} → ${detected}`);

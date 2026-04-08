@@ -1,26 +1,22 @@
 import { Injectable } from '@nestjs/common';
 
 export interface ParsedBuyCommand {
-  product:  string;
+  product: string;
   quantity: number;
-  unit:     string;
-  location?: string;   
-  minPrice?: number;   
+  unit: string;
+  location?: string;
+  minPrice?: number;
   maxPrice?: number;
 }
 
 @Injectable()
 export class FilterParserService {
-
-  
-  
   parse(command: string): ParsedBuyCommand | null {
     const normalized = this.normalizeCommand(command.trim());
-    const parts      = normalized.toLowerCase().split(/\s+/);
+    const parts = normalized.toLowerCase().split(/\s+/);
 
     if (parts.length < 3) return null;
 
-    
     const keyword = parts[0];
     if (keyword !== 'buy' && keyword !== 'sell') return null;
 
@@ -28,7 +24,6 @@ export class FilterParserService {
     let minPrice: number | undefined;
     let maxPrice: number | undefined;
 
-    
     const cleanParts: string[] = [];
 
     for (const part of parts.slice(1)) {
@@ -67,9 +62,9 @@ export class FilterParserService {
 
     // ── Extract product (everything between keyword and qty)
     const productParts = cleanParts.slice(0, quantityIndex);
-    const product      = this.normalizeProduct(productParts.join(' '));
-    const quantity     = parseInt(cleanParts[quantityIndex], 10);
-    const unit         = cleanParts[quantityIndex + 1] || 'bags';
+    const product = this.normalizeProduct(productParts.join(' '));
+    const quantity = parseInt(cleanParts[quantityIndex], 10);
+    const unit = cleanParts[quantityIndex + 1] || 'bags';
 
     if (!product || quantity <= 0) return null;
 
@@ -89,22 +84,26 @@ export class FilterParserService {
     const filters: string[] = [];
 
     if (parsed.location) {
-      const labels = { english: `📍 Location: ${parsed.location}`, french: `📍 Localité: ${parsed.location}`, pidgin: `📍 Side: ${parsed.location}` };
+      const labels = {
+        english: `📍 Location: ${parsed.location}`,
+        french: `📍 Localité: ${parsed.location}`,
+        pidgin: `📍 Side: ${parsed.location}`,
+      };
       filters.push(labels[lang]);
     }
 
     if (parsed.minPrice && parsed.maxPrice) {
       const labels = {
         english: `💰 Price: ${parsed.minPrice.toLocaleString()} – ${parsed.maxPrice.toLocaleString()} FCFA`,
-        french:  `💰 Prix: ${parsed.minPrice.toLocaleString()} – ${parsed.maxPrice.toLocaleString()} FCFA`,
-        pidgin:  `💰 Price: ${parsed.minPrice.toLocaleString()} – ${parsed.maxPrice.toLocaleString()} FCFA`,
+        french: `💰 Prix: ${parsed.minPrice.toLocaleString()} – ${parsed.maxPrice.toLocaleString()} FCFA`,
+        pidgin: `💰 Price: ${parsed.minPrice.toLocaleString()} – ${parsed.maxPrice.toLocaleString()} FCFA`,
       };
       filters.push(labels[lang]);
     } else if (parsed.maxPrice) {
       const labels = {
         english: `💰 Max price: ${parsed.maxPrice.toLocaleString()} FCFA`,
-        french:  `💰 Prix max: ${parsed.maxPrice.toLocaleString()} FCFA`,
-        pidgin:  `💰 Max price: ${parsed.maxPrice.toLocaleString()} FCFA`,
+        french: `💰 Prix max: ${parsed.maxPrice.toLocaleString()} FCFA`,
+        pidgin: `💰 Max price: ${parsed.maxPrice.toLocaleString()} FCFA`,
       };
       filters.push(labels[lang]);
     }
@@ -112,23 +111,21 @@ export class FilterParserService {
     return filters.join('\n');
   }
 
-  
-
   private normalizeLocation(loc: string): string {
     const locationMap: Record<string, string> = {
-      'yaounde':    'Yaoundé',
-      'yaoundé':    'Yaoundé',
-      'douala':     'Douala',
-      'bafoussam':  'Bafoussam',
-      'bamenda':    'Bamenda',
-      'garoua':     'Garoua',
-      'maroua':     'Maroua',
-      'ngaoundere': 'Ngaoundéré',
-      'bertoua':    'Bertoua',
-      'ebolowa':    'Ebolowa',
-      'buea':       'Buea',
-      'limbe':      'Limbe',
-      'kumba':      'Kumba',
+      yaounde: 'Yaoundé',
+      yaoundé: 'Yaoundé',
+      douala: 'Douala',
+      bafoussam: 'Bafoussam',
+      bamenda: 'Bamenda',
+      garoua: 'Garoua',
+      maroua: 'Maroua',
+      ngaoundere: 'Ngaoundéré',
+      bertoua: 'Bertoua',
+      ebolowa: 'Ebolowa',
+      buea: 'Buea',
+      limbe: 'Limbe',
+      kumba: 'Kumba',
     };
     const key = loc.toLowerCase().replace(/[éèê]/g, 'e');
     return locationMap[key] ?? loc.charAt(0).toUpperCase() + loc.slice(1);
@@ -137,22 +134,22 @@ export class FilterParserService {
   // ─── Normalize product name to English ───────────────────
   private normalizeProduct(product: string): string {
     const productMap: Record<string, string> = {
-      'maïs':     'maize',
-      'mais':     'maize',
-      'manioc':   'cassava',
-      'tomate':   'tomatoes',
-      'tomates':  'tomatoes',
-      'plantain': 'plantain',
-      'igname':   'yam',
-      'ignames':  'yam',
-      'macabo':   'macabo',
-      'gombo':    'okra',
-      'haricot':  'beans',
-      'haricots': 'beans',
-      'arachide': 'groundnuts',
-      'arachides':'groundnuts',
-      'poulet':   'chicken',
-      'poisson':  'fish',
+      maïs: 'maize',
+      mais: 'maize',
+      manioc: 'cassava',
+      tomate: 'tomatoes',
+      tomates: 'tomatoes',
+      plantain: 'plantain',
+      igname: 'yam',
+      ignames: 'yam',
+      macabo: 'macabo',
+      gombo: 'okra',
+      haricot: 'beans',
+      haricots: 'beans',
+      arachide: 'groundnuts',
+      arachides: 'groundnuts',
+      poulet: 'chicken',
+      poisson: 'fish',
     };
     const lower = product.toLowerCase().trim();
     return productMap[lower] ?? lower;
@@ -162,7 +159,7 @@ export class FilterParserService {
   private normalizeCommand(command: string): string {
     const upper = command.toUpperCase();
     if (upper.startsWith('ACHETER')) return 'buy' + command.slice(7);
-    if (upper.startsWith('VENDRE'))  return 'sell' + command.slice(6);
+    if (upper.startsWith('VENDRE')) return 'sell' + command.slice(6);
     return command.toLowerCase();
   }
 }

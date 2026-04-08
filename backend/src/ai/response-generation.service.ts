@@ -33,14 +33,17 @@ export class ResponseGenerationService {
   private readonly openai: OpenAI;
 
   private readonly LLM_TIMEOUT_MS = 5_000;
-  private readonly CACHE_TTL      = 5 * 60 * 1_000; // 5 minutes
+  private readonly CACHE_TTL = 5 * 60 * 1_000; // 5 minutes
 
   // Key → language → data-hash → { text, expiresAt }
-  private readonly cache = new Map<string, { text: string; expiresAt: number }>();
+  private readonly cache = new Map<
+    string,
+    { text: string; expiresAt: number }
+  >();
 
   constructor(private readonly config: ConfigService) {
     this.openai = new OpenAI({
-      apiKey:  this.config.get<string>('OPENAI_API_KEY'),
+      apiKey: this.config.get<string>('OPENAI_API_KEY'),
       timeout: this.LLM_TIMEOUT_MS,
     });
   }
@@ -58,19 +61,22 @@ export class ResponseGenerationService {
    * @param data  Dynamic values referenced in the brief (product, name, etc.)
    */
   async generate(
-    key:  string,
+    key: string,
     lang: Language,
     data: Record<string, string | number> = {},
   ): Promise<string> {
     const cacheKey = this.buildCacheKey(key, lang, data);
-    const cached   = this.cache.get(cacheKey);
+    const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.text;
     }
 
     try {
       const text = await this.generateWithLLM(key, lang, data);
-      this.cache.set(cacheKey, { text, expiresAt: Date.now() + this.CACHE_TTL });
+      this.cache.set(cacheKey, {
+        text,
+        expiresAt: Date.now() + this.CACHE_TTL,
+      });
       return text;
     } catch (err: any) {
       this.logger.warn(
@@ -85,7 +91,7 @@ export class ResponseGenerationService {
   // ─────────────────────────────────────────────────────────────
 
   private async generateWithLLM(
-    key:  string,
+    key: string,
     lang: Language,
     data: Record<string, string | number>,
   ): Promise<string> {
@@ -97,12 +103,12 @@ export class ResponseGenerationService {
     const systemPrompt = this.buildSystemPrompt(lang);
 
     const completion = await this.openai.chat.completions.create({
-      model:      'gpt-4o-mini',
+      model: 'gpt-4o-mini',
       max_tokens: 350,
       messages: [
         { role: 'system', content: systemPrompt },
         {
-          role:    'user',
+          role: 'user',
           content: `Generate a WhatsApp bot reply for this situation:\n${brief}`,
         },
       ],
@@ -171,7 +177,10 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
   // Content briefs — what needs to be communicated per key
   // ─────────────────────────────────────────────────────────────
 
-  private buildBrief(key: string, data: Record<string, string | number>): string | null {
+  private buildBrief(
+    key: string,
+    data: Record<string, string | number>,
+  ): string | null {
     const d = data;
     const briefs: Record<string, string> = {
       // ── Registration ──────────────────────────────────────
@@ -289,7 +298,7 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
   // ─────────────────────────────────────────────────────────────
 
   private fallback(
-    key:  string,
+    key: string,
     lang: Language,
     data: Record<string, string | number>,
   ): string {
@@ -297,83 +306,83 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
     const fallbacks: Record<string, Record<Language, string>> = {
       welcome: {
         english: `👋 Welcome to AgroLink!\n\n1️⃣ Farmer (I sell)\n2️⃣ Buyer (I buy)\n\nReply 1 or 2`,
-        french:  `👋 Bienvenue sur AgroLink!\n\n1️⃣ Agriculteur\n2️⃣ Acheteur\n\nRépondez 1 ou 2`,
-        pidgin:  `👋 Welcome for AgroLink!\n\n1️⃣ Farmer\n2️⃣ Buyer\n\nSend 1 or 2`,
+        french: `👋 Bienvenue sur AgroLink!\n\n1️⃣ Agriculteur\n2️⃣ Acheteur\n\nRépondez 1 ou 2`,
+        pidgin: `👋 Welcome for AgroLink!\n\n1️⃣ Farmer\n2️⃣ Buyer\n\nSend 1 or 2`,
       },
       ask_name: {
         english: `👤 What is your full name?`,
-        french:  `👤 Quel est votre nom complet?`,
-        pidgin:  `👤 Wetin be your full name?`,
+        french: `👤 Quel est votre nom complet?`,
+        pidgin: `👤 Wetin be your full name?`,
       },
       ask_location: {
         english: `📍 What is your location? (e.g. Yaoundé, Douala)`,
-        french:  `📍 Quelle est votre localité?`,
-        pidgin:  `📍 For which side you dey?`,
+        french: `📍 Quelle est votre localité?`,
+        pidgin: `📍 For which side you dey?`,
       },
       ask_produces: {
         english: `🌱 What do you grow? Separate by commas.\nExample: maize, cassava, tomatoes`,
-        french:  `🌱 Que cultivez-vous? Séparez par virgules.\nExemple: maïs, manioc, tomates`,
-        pidgin:  `🌱 Wetin you dey farm? Separate with comma.\nExample: maize, cassava`,
+        french: `🌱 Que cultivez-vous? Séparez par virgules.\nExemple: maïs, manioc, tomates`,
+        pidgin: `🌱 Wetin you dey farm? Separate with comma.\nExample: maize, cassava`,
       },
       ask_business: {
         english: `🏪 What is your business name?`,
-        french:  `🏪 Quel est le nom de votre entreprise?`,
-        pidgin:  `🏪 Wetin be your business name?`,
+        french: `🏪 Quel est le nom de votre entreprise?`,
+        pidgin: `🏪 Wetin be your business name?`,
       },
       ask_needs: {
         english: `🛒 What products do you need? Separate by commas.`,
-        french:  `🛒 Quels produits cherchez-vous? Séparez par virgules.`,
-        pidgin:  `🛒 Wetin you dey find? Separate with comma.`,
+        french: `🛒 Quels produits cherchez-vous? Séparez par virgules.`,
+        pidgin: `🛒 Wetin you dey find? Separate with comma.`,
       },
       registered_farmer: {
         english: `✅ *Registered as Farmer!*\n\nWelcome ${data.name} 👨‍🌾\nType: SELL maize 10 bags\n\nType HELP for options.`,
-        french:  `✅ *Inscrit comme Agriculteur!*\n\nBienvenue ${data.name} 👨‍🌾\nTapez: VENDRE maïs 10 sacs`,
-        pidgin:  `✅ *You don register as Farmer!*\n\nWelcome ${data.name} 👨‍🌾\nType: SELL maize 10 bags`,
+        french: `✅ *Inscrit comme Agriculteur!*\n\nBienvenue ${data.name} 👨‍🌾\nTapez: VENDRE maïs 10 sacs`,
+        pidgin: `✅ *You don register as Farmer!*\n\nWelcome ${data.name} 👨‍🌾\nType: SELL maize 10 bags`,
       },
       registered_buyer: {
         english: `✅ *Registered as Buyer!*\n\nWelcome ${data.name} 🏪\nType: BUY maize 20 bags\n\nType HELP for options.`,
-        french:  `✅ *Inscrit comme Acheteur!*\n\nBienvenue ${data.name} 🏪\nTapez: ACHETER maïs 20 sacs`,
-        pidgin:  `✅ *You don register as Buyer!*\n\nWelcome ${data.name} 🏪\nType: BUY maize 20 bags`,
+        french: `✅ *Inscrit comme Acheteur!*\n\nBienvenue ${data.name} 🏪\nTapez: ACHETER maïs 20 sacs`,
+        pidgin: `✅ *You don register as Buyer!*\n\nWelcome ${data.name} 🏪\nType: BUY maize 20 bags`,
       },
       voice_received: {
         english: `🎤 Heard: *"${data.text}"*\n\nProcessing...`,
-        french:  `🎤 Entendu: *"${data.text}"*\n\nTraitement en cours...`,
-        pidgin:  `🎤 I hear: *"${data.text}"*\n\nI dey process am...`,
+        french: `🎤 Entendu: *"${data.text}"*\n\nTraitement en cours...`,
+        pidgin: `🎤 I hear: *"${data.text}"*\n\nI dey process am...`,
       },
       voice_failed: {
         english: `❌ Couldn't process voice note.\nPlease type your message.`,
-        french:  `❌ Message vocal non compris.\nVeuillez taper votre message.`,
-        pidgin:  `❌ I no hear the voice.\nAbeg type your message.`,
+        french: `❌ Message vocal non compris.\nVeuillez taper votre message.`,
+        pidgin: `❌ I no hear the voice.\nAbeg type your message.`,
       },
       price_suggestion: {
         english: `📊 *${data.product} Prices*\n\nMin: ${data.min}\nAvg: ${data.avg}\nMax: ${data.max}\n✨ Suggested: *${data.suggested}*\n\n1️⃣ Accept  2️⃣ Custom\n\nReply 1 or 2`,
-        french:  `📊 *Prix ${data.product}*\n\nMin: ${data.min}\nMoy: ${data.avg}\nMax: ${data.max}\n✨ Suggéré: *${data.suggested}*\n\n1️⃣ Accepter  2️⃣ Personnaliser\n\nRépondez 1 ou 2`,
-        pidgin:  `📊 *${data.product} Price*\n\nSmall: ${data.min}\nNormal: ${data.avg}\nBig: ${data.max}\n✨ Suggest: *${data.suggested}*\n\n1️⃣ Accept  2️⃣ Own price\n\nSend 1 or 2`,
+        french: `📊 *Prix ${data.product}*\n\nMin: ${data.min}\nMoy: ${data.avg}\nMax: ${data.max}\n✨ Suggéré: *${data.suggested}*\n\n1️⃣ Accepter  2️⃣ Personnaliser\n\nRépondez 1 ou 2`,
+        pidgin: `📊 *${data.product} Price*\n\nSmall: ${data.min}\nNormal: ${data.avg}\nBig: ${data.max}\n✨ Suggest: *${data.suggested}*\n\n1️⃣ Accept  2️⃣ Own price\n\nSend 1 or 2`,
       },
       listing_confirmed: {
         english: `✅ *Listing Created!*\n\n🌽 ${data.product}\n📦 ${data.quantity} ${data.unit}\n💰 ${data.price}\n\nBuyers will be notified.`,
-        french:  `✅ *Annonce créée!*\n\n🌽 ${data.product}\n📦 ${data.quantity} ${data.unit}\n💰 ${data.price}\n\nLes acheteurs seront notifiés.`,
-        pidgin:  `✅ *Listing don create!*\n\n🌽 ${data.product}\n📦 ${data.quantity} ${data.unit}\n💰 ${data.price}\n\nBuyers go see am.`,
+        french: `✅ *Annonce créée!*\n\n🌽 ${data.product}\n📦 ${data.quantity} ${data.unit}\n💰 ${data.price}\n\nLes acheteurs seront notifiés.`,
+        pidgin: `✅ *Listing don create!*\n\n🌽 ${data.product}\n📦 ${data.quantity} ${data.unit}\n💰 ${data.price}\n\nBuyers go see am.`,
       },
       match_found_farmer: {
         english: `🔔 *New Buyer!*\n\nBuyer in *${data.location}* wants:\n🌽 ${data.product} — ${data.quantity} ${data.unit}\n\nInterested? Reply *YES* or *NO*`,
-        french:  `🔔 *Nouvel Acheteur!*\n\nAcheteur à *${data.location}* cherche:\n🌽 ${data.product} — ${data.quantity} ${data.unit}\n\nRépondez *OUI* ou *NON*`,
-        pidgin:  `🔔 *Buyer Dey!*\n\nBuyer for *${data.location}* wan:\n🌽 ${data.product} — ${data.quantity} ${data.unit}\n\nYou agree? Reply *YES* or *NO*`,
+        french: `🔔 *Nouvel Acheteur!*\n\nAcheteur à *${data.location}* cherche:\n🌽 ${data.product} — ${data.quantity} ${data.unit}\n\nRépondez *OUI* ou *NON*`,
+        pidgin: `🔔 *Buyer Dey!*\n\nBuyer for *${data.location}* wan:\n🌽 ${data.product} — ${data.quantity} ${data.unit}\n\nYou agree? Reply *YES* or *NO*`,
       },
       connected: {
         english: `✅ *Deal Confirmed!*\n\nContact: ${data.link}\n\n📋 ${data.product} — ${data.quantity} ${data.unit} @ ${data.price}`,
-        french:  `✅ *Accord Confirmé!*\n\nContact: ${data.link}\n\n📋 ${data.product} — ${data.quantity} ${data.unit} @ ${data.price}`,
-        pidgin:  `✅ *Deal Don Set!*\n\nChat: ${data.link}\n\n📋 ${data.product} — ${data.quantity} ${data.unit} @ ${data.price}`,
+        french: `✅ *Accord Confirmé!*\n\nContact: ${data.link}\n\n📋 ${data.product} — ${data.quantity} ${data.unit} @ ${data.price}`,
+        pidgin: `✅ *Deal Don Set!*\n\nChat: ${data.link}\n\n📋 ${data.product} — ${data.quantity} ${data.unit} @ ${data.price}`,
       },
       unknown_command: {
         english: `❓ Didn't understand that.\n\nTry:\n• SELL maize 10 bags\n• BUY maize 20 bags\n• HELP`,
-        french:  `❓ Je n'ai pas compris.\n\nEssayez:\n• VENDRE maïs 10 sacs\n• ACHETER maïs 20 sacs\n• AIDE`,
-        pidgin:  `❓ I no understand.\n\nTry:\n• SELL maize 10 bags\n• BUY maize 20 bags\n• HELP`,
+        french: `❓ Je n'ai pas compris.\n\nEssayez:\n• VENDRE maïs 10 sacs\n• ACHETER maïs 20 sacs\n• AIDE`,
+        pidgin: `❓ I no understand.\n\nTry:\n• SELL maize 10 bags\n• BUY maize 20 bags\n• HELP`,
       },
       clarification_needed: {
         english: `🌐 Choose language / Choisissez la langue:\n\n1️⃣ English\n2️⃣ Français\n3️⃣ Pidgin`,
-        french:  `🌐 Choose language / Choisissez la langue:\n\n1️⃣ English\n2️⃣ Français\n3️⃣ Pidgin`,
-        pidgin:  `🌐 Choose language / Choisissez la langue:\n\n1️⃣ English\n2️⃣ Français\n3️⃣ Pidgin`,
+        french: `🌐 Choose language / Choisissez la langue:\n\n1️⃣ English\n2️⃣ Français\n3️⃣ Pidgin`,
+        pidgin: `🌐 Choose language / Choisissez la langue:\n\n1️⃣ English\n2️⃣ Français\n3️⃣ Pidgin`,
       },
     };
 
@@ -389,7 +398,7 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
   // ─────────────────────────────────────────────────────────────
 
   private buildCacheKey(
-    key:  string,
+    key: string,
     lang: Language,
     data: Record<string, string | number>,
   ): string {

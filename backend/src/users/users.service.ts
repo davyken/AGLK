@@ -6,9 +6,7 @@ import { CreateUserDto, UpdateUserDto } from '../users/dto';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
-  ) {}
+  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
   // ─── Find by phone (main lookup throughout the app) ──────
   async findByPhone(phone: string): Promise<UserDocument | null> {
@@ -31,12 +29,12 @@ export class UsersService {
   ): Promise<UserDocument> {
     const user = new this.userModel({
       phone,
-      name: 'unknown',         // overwritten in step 2
-      role: 'farmer',          // overwritten in step 1
-      location: 'unknown',     // overwritten in step 3
+      name: 'unknown', // overwritten in step 2
+      role: 'farmer', // overwritten in step 1
+      location: 'unknown', // overwritten in step 3
       preferredChannel: channel,
       lastChannelUsed: channel,
-      language,                // saved from first message detection
+      language, // saved from first message detection
       conversationState: 'AWAITING_ROLE',
     });
     return user.save();
@@ -103,7 +101,11 @@ export class UsersService {
   // ─── Ban/Unban user ───────────────────────────────────────
   async toggleBan(phone: string, banned: boolean): Promise<UserDocument> {
     const user = await this.userModel
-      .findOneAndUpdate({ phone }, { $set: { isBanned: banned } }, { new: true })
+      .findOneAndUpdate(
+        { phone },
+        { $set: { isBanned: banned } },
+        { new: true },
+      )
       .exec();
 
     if (!user) throw new NotFoundException(`User ${phone} not found`);
@@ -113,7 +115,11 @@ export class UsersService {
   // ─── Update trust score ───────────────────────────────────
   async updateTrustScore(phone: string, score: number): Promise<UserDocument> {
     const user = await this.userModel
-      .findOneAndUpdate({ phone }, { $set: { trustScore: score } }, { new: true })
+      .findOneAndUpdate(
+        { phone },
+        { $set: { trustScore: score } },
+        { new: true },
+      )
       .exec();
 
     if (!user) throw new NotFoundException(`User ${phone} not found`);
