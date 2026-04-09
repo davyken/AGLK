@@ -564,7 +564,7 @@ Example: 20000`,
       return msgs[lang];
     }
 
-    if (user.role !== 'buyer') {
+    if (user.role !== 'buyer' && user.role !== 'both') {
       const msgs: Record<Language, string> = {
         english: `❌ Only buyers can search listings.`,
         french: `❌ Seuls les acheteurs peuvent chercher.`,
@@ -576,7 +576,7 @@ Example: 20000`,
     // ── Fetch listings with filters ────────────────────────
     const allListings = await this.listingService.findByProduct(parsed.product);
     let sellListings = allListings.filter(
-      (l) => l.type === 'sell' && l.status === 'active',
+      (l) => l.type === 'sell' && l.status === 'active' && l.userPhone !== phone,
     );
 
     // Apply location filter
@@ -1455,7 +1455,7 @@ Example: 20000`,
     }
 
     const buyer = await this.usersService.findByPhone(phone);
-    if (!buyer || buyer.role !== 'buyer') {
+    if (!buyer || (buyer.role !== 'buyer' && buyer.role !== 'both')) {
       const msgs: Record<Language, string> = {
         english: `❌ Only buyers can make offers.`,
         french: `❌ Seuls les acheteurs peuvent faire des offres.`,

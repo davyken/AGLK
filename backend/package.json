@@ -63,6 +63,7 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/supertest": "^6.0.2",
+    "@types/twilio": "^3.19.2",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
