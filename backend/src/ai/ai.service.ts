@@ -29,7 +29,7 @@ export interface ParsedIntent {
   // user profile fields — extracted from free-form text
   name?: string;     // "I'm Paul Biya" → "Paul Biya"
   location?: string; // "in Douala" or "à Bafoussam"
-  role?: 'farmer' | 'buyer'; // "I sell" → farmer
+  role?: 'farmer' | 'buyer' | 'both'; // "I sell" → farmer
   raw: string;
 }
 

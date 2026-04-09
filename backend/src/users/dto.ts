@@ -18,7 +18,7 @@ export class CreateUserDto {
   @IsNotEmpty()
   name: string;
 
-  @IsEnum(['farmer', 'buyer'])
+  @IsEnum(['farmer', 'buyer', 'both'])
   role: string;
 
   @IsString()
@@ -46,7 +46,7 @@ export class CreateUserDto {
 
 export class UpdateUserDto {
   @IsOptional()
-  @IsEnum(['farmer', 'buyer'])
+  @IsEnum(['farmer', 'buyer', 'both'])
   role?: string;
 
   @IsOptional()

@@ -17,7 +17,7 @@ export class User {
   @Prop()
   password: string;
 
-  @Prop({ required: true, enum: ['farmer', 'buyer', 'admin'] })
+  @Prop({ required: true, enum: ['farmer', 'buyer', 'admin', 'both'] })
   role: string;
 
   @Prop({ required: true, trim: true })
