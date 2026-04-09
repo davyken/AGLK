@@ -245,26 +245,43 @@ export class BotService {
   ): string {
     const name = user?.name && user.name !== 'unknown' ? user.name : null;
     const role: string = user?.role ?? 'farmer';
+    const isFarmer = role === 'farmer' || role === 'both';
+    // const isBuyer = role === 'buyer' || role === 'both';
 
     if (lang === 'french') {
       const greeting = name ? `Bonjour *${name}* ! 👋` : `Bonjour ! 👋`;
-      return role === 'farmer'
-        ? `${greeting}\n\nTapez *VENDRE [produit] [quantité]* pour créer une annonce.\nExemple: VENDRE maïs 10 sacs\n\n_AIDE pour plus d'options._`
-        : `${greeting}\n\nTapez *ACHETER [produit] [quantité]* pour trouver des vendeurs.\nExemple: ACHETER maïs 20 sacs\n\n_AIDE pour plus d'options._`;
+      const sellText = `Tapez *VENDRE [produit] [quantité]* pour créer une annonce.\nExemple: VENDRE maïs 10 sacs`;
+      const buyText = `Tapez *ACHETER [produit] [quantité]* pour trouver des vendeurs.\nExemple: ACHETER maïs 20 sacs`;
+      if (role === 'both') {
+        return `${greeting}\n\n${sellText}\n\n${buyText}\n\n_AIDE pour plus d'options._`;
+      }
+      return isFarmer
+        ? `${greeting}\n\n${sellText}\n\n_AIDE pour plus d'options._`
+        : `${greeting}\n\n${buyText}\n\n_AIDE pour plus d'options._`;
     }
 
     if (lang === 'pidgin') {
       const greeting = name ? `How you dey, *${name}*! 👋` : `How you dey! 👋`;
-      return role === 'farmer'
-        ? `${greeting}\n\nType *SELL [product] [qty]* to list your produce.\nExample: SELL maize 10 bags\n\n_Type HELP for more options._`
-        : `${greeting}\n\nType *BUY [product] [qty]* to find sellers.\nExample: BUY maize 20 bags\n\n_Type HELP for more options._`;
+      const sellText = `Type *SELL [product] [qty]* to list your produce.\nExample: SELL maize 10 bags`;
+      const buyText = `Type *BUY [product] [qty]* to find sellers.\nExample: BUY maize 20 bags`;
+      if (role === 'both') {
+        return `${greeting}\n\n${sellText}\n\n${buyText}\n\n_Type HELP for more options._`;
+      }
+      return isFarmer
+        ? `${greeting}\n\n${sellText}\n\n_Type HELP for more options._`
+        : `${greeting}\n\n${buyText}\n\n_Type HELP for more options._`;
     }
 
     // English
     const greeting = name ? `Hey *${name}*! 👋` : `Hey! 👋`;
-    return role === 'farmer'
-      ? `${greeting}\n\nType *SELL [product] [qty]* to list your produce.\nExample: SELL maize 10 bags\n\n_Type HELP for more options._`
-      : `${greeting}\n\nType *BUY [product] [qty]* to find sellers.\nExample: BUY maize 20 bags\n\n_Type HELP for more options._`;
+    const sellText = `Type *SELL [product] [qty]* to list your produce.\nExample: SELL maize 10 bags`;
+    const buyText = `Type *BUY [product] [qty]* to find sellers.\nExample: BUY maize 20 bags`;
+    if (role === 'both') {
+      return `${greeting}\n\n${sellText}\n\n${buyText}\n\n_Type HELP for more options._`;
+    }
+    return isFarmer
+      ? `${greeting}\n\n${sellText}\n\n_Type HELP for more options._`
+      : `${greeting}\n\n${buyText}\n\n_Type HELP for more options._`;
   }
 
   // ─── Language switch ──────────────────────────────────────────

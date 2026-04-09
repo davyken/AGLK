@@ -582,8 +582,8 @@ export class RegistrationFlowService {
     if (needs.length === 0) {
       const errors: Record<Language, string> = {
         english: `List at least one product you need.\nExample: maize, tomatoes`,
-        french: `Listez au moins un produit recherché.\nExemple: maíz, tomates`,
-        pidgin: `List at least one thing wey you need.\nExample: maize, tomatoes`,
+        french: `Listez au moins un produit recherché.\nExemple: maís, tomates`,
+        pidgin: `List at least one thing wey you need.\nExample: corn, tomatoes`,
       };
       return errors[lang];
     }

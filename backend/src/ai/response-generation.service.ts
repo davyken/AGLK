@@ -351,13 +351,13 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
       },
       registered_buyer: {
         english: `✅ *Registered as Buyer!*\n\nWelcome ${data.name} 🏪\nType: BUY maize 20 bags\n\nType HELP for options.`,
-        french: `✅ *Inscrit comme Acheteur!*\n\nBienvenue ${data.name} 🏪\nTapez: ACHETER maíz 20 sacs`,
-        pidgin: `✅ *You don register as Buyer!*\n\nWelcome ${data.name} 🏪\nType: BUY maize 20 bags`,
+        french: `✅ *Inscrit comme Acheteur!*\n\nBienvenue ${data.name} 🏪\nTapez: ACHETER maís 20 sacs`,
+        pidgin: `✅ *You don register as Buyer!*\n\nWelcome ${data.name} 🏪\nType: BUY corn 20 bags`,
       },
       registered_both: {
         english: `✅ *Registered as Farmer & Buyer!*\n\nWelcome ${data.name} 👨‍🌾🏪\nList produce: SELL maize 10 bags\nBuy produce: BUY maize 20 bags\nYour listings won't be suggested to you.\nType HELP for options.`,
-        french: `✅ *Inscrit comme Agriculteur & Acheteur!*\n\nBienvenue ${data.name} 👨‍🌾🏪\nVendre: VENDRE maíz 10 sacs\nAcheter: ACHETER maíz 20 sacs\nVos annonces ne vous seront pas suggérées.`,
-        pidgin: `✅ *You don register as Farmer & Buyer!*\n\nWelcome ${data.name} 👨‍🌾🏪\nSell: SELL maize 10 bags\nBuy: BUY maize 20 bags\nYour listings no go show for you.`,
+        french: `✅ *Inscrit comme Agriculteur & Acheteur!*\n\nBienvenue ${data.name} 👨‍🌾🏪\nVendre: VENDRE maís 10 sacs\nAcheter: ACHETER maís 20 sacs\nVos annonces ne vous seront pas suggérées.`,
+        pidgin: `✅ *You don register as Farmer & Buyer!*\n\nWelcome ${data.name} 👨‍🌾🏪\nSell: SELL corn 10 bags\nBuy: BUY corn 20 bags\nYour listings no go show for you.`,
       },
       voice_received: {
         english: `🎤 Heard: *"${data.text}"*\n\nProcessing...`,
