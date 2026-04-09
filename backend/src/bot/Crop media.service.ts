@@ -125,7 +125,7 @@ export class CropMediaService {
     if (emojiMap[lower]) return emojiMap[lower];
 
     // Partial match
-    for (const [key, emoji] of Object.entries(emojiMap)) {
+  for (const [key, emoji] of Object.entries(emojiMap)) {
       if (lower.includes(key) || key.includes(lower)) return emoji;
     }
 

@@ -118,4 +118,53 @@ export class UsersService {
     if (!user) throw new NotFoundException(`User ${phone} not found`);
     return user;
   }
+
+  // ── Pending state persistence ─────────────────────────────────
+  // Keeps the in-memory Map restart-safe by mirroring to MongoDB.
+
+  async savePendingState(
+    phone: string,
+    state: Record<string, any>,
+  ): Promise<void> {
+    await this.userModel
+      .findOneAndUpdate({ phone }, { $set: { pendingState: state } })
+      .exec();
+  }
+
+  async clearPendingState(phone: string): Promise<void> {
+    await this.userModel
+      .findOneAndUpdate({ phone }, { $set: { pendingState: null } })
+      .exec();
+  }
+
+  async savePendingFarmerResponse(
+    phone: string,
+    response: Record<string, any>,
+  ): Promise<void> {
+    await this.userModel
+      .findOneAndUpdate({ phone }, { $set: { pendingFarmerResponse: response } })
+      .exec();
+  }
+
+  async clearPendingFarmerResponse(phone: string): Promise<void> {
+    await this.userModel
+      .findOneAndUpdate(
+        { phone },
+        { $set: { pendingFarmerResponse: null } },
+      )
+      .exec();
+  }
+
+  /** Load all users that have non-null pendingState or pendingFarmerResponse.
+   *  Used by ListingFlowService.onModuleInit() to restore in-memory Maps. */
+  async findUsersWithPendingData(): Promise<UserDocument[]> {
+    return this.userModel
+      .find({
+        $or: [
+          { pendingState: { $ne: null } },
+          { pendingFarmerResponse: { $ne: null } },
+        ],
+      })
+      .exec();
+  }
 }

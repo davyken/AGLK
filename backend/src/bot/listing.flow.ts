@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ListingService } from '../listing/listing.service';
 import { UsersService } from '../users/users.service';
 import { CreateListingDto } from '../listing/dto';
@@ -9,8 +9,11 @@ import { AiService, Language } from '../ai/ai.service';
 import { FilterParserService } from './filter-parser.service';
 import { CropMediaService } from './Crop media.service';
 
+/** Pending states expire after this many milliseconds (4 hours). */
+const PENDING_TTL_MS = 4 * 60 * 60 * 1_000;
+
 interface PendingState {
-  type: 'sell' | 'sell_waiting_image' | 'buy_select';
+  type: 'sell' | 'sell_waiting_image' | 'buy_select' | 'awaiting_counter_response';
   product: string;
   productDisplay?: string; // original name user typed e.g. "manioc"
   quantity: number;
@@ -21,6 +24,7 @@ interface PendingState {
   price?: number;
   imageUrl?: string;
   imageMediaId?: string;
+  expiresAt?: number; // epoch ms — discard state after this time
   listings?: Array<{
     id: string;
     userPhone: string;
@@ -31,6 +35,11 @@ interface PendingState {
     imageUrl?: string;
     imageMediaId?: string;
   }>;
+  // counter-offer fields (buyer awaiting farmer counter)
+  farmerPhone?: string;
+  counterPrice?: number;
+  sellerListingId?: string;
+  buyerListingId?: string;
 }
 
 interface PendingFarmerResponse {
@@ -41,14 +50,16 @@ interface PendingFarmerResponse {
   quantity: number;
   unit: string;
   price: number;
-  language: Language; // ← added
+  language: Language;
+  awaitingCounterPrice?: boolean; // true while farmer is entering counter-offer price
+  expiresAt?: number;
 }
 
 const pendingStates = new Map<string, PendingState>();
 const pendingFarmerResponses = new Map<string, PendingFarmerResponse>();
 
 @Injectable()
-export class ListingFlowService {
+export class ListingFlowService implements OnModuleInit {
   constructor(
     private readonly listingService: ListingService,
     private readonly usersService: UsersService,
@@ -59,6 +70,60 @@ export class ListingFlowService {
     private readonly filterParser: FilterParserService,
     private readonly cropMedia: CropMediaService,
   ) {}
+
+  // ─── Restore in-memory Maps from DB on startup ─────────────
+  // This makes the bot resilient to server restarts — pending states
+  // that were saved to MongoDB are loaded back into the process Maps.
+  async onModuleInit(): Promise<void> {
+    const now = Date.now();
+    try {
+      const users = await this.usersService.findUsersWithPendingData();
+      for (const user of users) {
+        const ps = (user as any).pendingState;
+        if (ps) {
+          // Discard expired states
+          if (ps.expiresAt && ps.expiresAt < now) {
+            await this.usersService.clearPendingState(user.phone);
+          } else {
+            pendingStates.set(user.phone, ps as PendingState);
+          }
+        }
+        const pfr = (user as any).pendingFarmerResponse;
+        if (pfr) {
+          if (pfr.expiresAt && pfr.expiresAt < now) {
+            await this.usersService.clearPendingFarmerResponse(user.phone);
+          } else {
+            pendingFarmerResponses.set(user.phone, pfr as PendingFarmerResponse);
+          }
+        }
+      }
+    } catch {
+      // Non-fatal: in-memory Maps start empty — users will re-initiate flows
+    }
+  }
+
+  // ─── Pending state helpers (in-memory + DB) ─────────────────
+  private async setPendingState(phone: string, state: PendingState): Promise<void> {
+    const withTtl: PendingState = { ...state, expiresAt: Date.now() + PENDING_TTL_MS };
+    pendingStates.set(phone, withTtl);
+    await this.usersService.savePendingState(phone, withTtl as any).catch(() => {});
+  }
+
+  private async deletePendingState(phone: string): Promise<void> {
+    pendingStates.delete(phone);
+    await this.usersService.clearPendingState(phone).catch(() => {});
+  }
+
+  private async setFarmerResponse(phone: string, resp: PendingFarmerResponse): Promise<void> {
+    const withTtl: PendingFarmerResponse = { ...resp, expiresAt: Date.now() + PENDING_TTL_MS };
+    pendingFarmerResponses.set(phone, withTtl);
+    await this.usersService.savePendingFarmerResponse(phone, withTtl as any).catch(() => {});
+  }
+
+  private async deleteFarmerResponse(phone: string): Promise<void> {
+    pendingFarmerResponses.delete(phone);
+    await this.usersService.clearPendingFarmerResponse(phone).catch(() => {});
+  }
 
   // ─── Main entry point ─────────────────────────────────────
   async handle(
@@ -182,7 +247,7 @@ export class ListingFlowService {
     // ── Product detected but NO quantity → ask for it ─────
     // Handles: "I have maize to sell" → bot asks "How many bags?"
     if (product && (!quantity || quantity <= 0)) {
-      pendingStates.set(phone, {
+      await this.setPendingState(phone, {
         type: 'sell',
         product,
         productDisplay: displayName,
@@ -239,7 +304,7 @@ How many ${smartUnit} you get?`,
     const effectivePrice = price ?? this.parsePrice(text || '');
 
     if (effectivePrice && effectivePrice > 0) {
-      pendingStates.set(phone, {
+      await this.setPendingState(phone, {
         type: 'sell_waiting_image',
         product,
         productDisplay: displayName,
@@ -254,7 +319,7 @@ How many ${smartUnit} you get?`,
     }
 
     // Store pending state with language and display name
-    pendingStates.set(phone, {
+    await this.setPendingState(phone, {
       type: 'sell',
       product,
       productDisplay: displayName, // preserved for messages
@@ -380,7 +445,7 @@ Example: 20000`,
     // Listings found → show top 5
     const top = sellListings.slice(0, 5);
 
-    pendingStates.set(phone, {
+    await this.setPendingState(phone, {
       type: 'buy_select',
       product,
       quantity,
@@ -538,7 +603,7 @@ BUY ${parsed.product} ${parsed.quantity} bags`,
     // ── Show filtered results ─────────────────────────────
     const top = sellListings.slice(0, 5);
 
-    pendingStates.set(phone, {
+    await this.setPendingState(phone, {
       type: 'buy_select',
       product: parsed.product,
       quantity: parsed.quantity,
@@ -663,6 +728,17 @@ ${filterSummary}
     if (!pending)
       return await this.aiService.reply('unknown_command', lang, {});
 
+    // ── TTL check — discard expired state ───────────────────
+    if (pending.expiresAt && pending.expiresAt < Date.now()) {
+      await this.deletePendingState(phone);
+      const expired: Record<Language, string> = {
+        english: `Your previous listing session expired. Type SELL or BUY to start again.`,
+        french: `Votre session précédente a expiré. Tapez VENDRE ou ACHETER pour recommencer.`,
+        pidgin: `Your last session don expire. Type SELL or BUY to start again.`,
+      };
+      return expired[lang];
+    }
+
     // Use saved language from pending state
     const savedLang = pending.language ?? lang;
 
@@ -670,7 +746,7 @@ ${filterSummary}
       response.toUpperCase() === 'CANCEL' ||
       response.toUpperCase() === 'ANNULER'
     ) {
-      pendingStates.delete(phone);
+      await this.deletePendingState(phone);
       const msgs: Record<Language, string> = {
         english: `❌ Cancelled. Type HELP for options.`,
         french: `❌ Annulé. Tapez AIDE pour les options.`,
@@ -697,6 +773,8 @@ ${filterSummary}
       );
     if (pending.type === 'buy_select')
       return this.handleBuySelect(phone, response, channel, pending, savedLang);
+    if (pending.type === 'awaiting_counter_response')
+      return this.handleBuyerCounterResponse(phone, response, pending, savedLang);
 
     return await this.aiService.reply('unknown_command', savedLang, {});
   }
@@ -726,7 +804,7 @@ ${filterSummary}
           /\b(bags?|sacs?|kg|kilogrammes?|tonnes?|crates?|cageots?|régimes?|bunches?|litres?|pieces?|pièces?)\b/,
         );
       if (unitMatch) {
-        pendingStates.set(phone, { ...pending, unit: unitMatch[0] });
+        await this.setPendingState(phone, { ...pending, unit: unitMatch[0] });
       }
 
       if (!qty || qty <= 0) {
@@ -747,7 +825,7 @@ How many ${unitLabel} of ${this.cap(pending.product)} you get?`,
       }
 
       // Update pending state with the quantity
-      pendingStates.set(phone, { ...pending, quantity: qty });
+      await this.setPendingState(phone, { ...pending, quantity: qty });
 
       // Now fetch price data
       const priceData = await this.priceService.getPrice(pending.product);
@@ -788,12 +866,12 @@ Example: 20000`,
     if (input === '1') {
       const priceData = await this.priceService.getPrice(pending.product);
       if (!priceData) {
-        pendingStates.delete(phone);
+        await this.deletePendingState(phone);
         return lang === 'french'
           ? `❌ Prix indisponible. Réessayez.`
           : `❌ Price unavailable. Try again.`;
       }
-      pendingStates.set(phone, {
+      await this.setPendingState(phone, {
         ...pending,
         type: 'sell_waiting_image',
         price: priceData.suggested,
@@ -814,7 +892,7 @@ Example: 20000`,
     // User typed an actual price number
     const customPrice = this.parsePrice(response);
     if (customPrice !== null) {
-      pendingStates.set(phone, {
+      await this.setPendingState(phone, {
         ...pending,
         type: 'sell_waiting_image',
         price: customPrice,
@@ -898,7 +976,7 @@ Example: 20000`,
         channel: user?.lastChannelUsed || 'whatsapp',
       });
 
-      pendingStates.delete(phone);
+      await this.deletePendingState(phone);
 
       // ── Get correct emoji + real crop image ──────────────
       const { emoji, imageUrl: cropImageUrl } = await this.cropMedia.getMedia(
@@ -935,7 +1013,7 @@ Example: 20000`,
 
       return confirmMsg;
     } catch {
-      pendingStates.delete(phone);
+      await this.deletePendingState(phone);
       const msgs: Record<Language, string> = {
         english: `❌ Failed to create listing. Try again.`,
         french: `❌ Échec de la création. Réessayez.`,
@@ -987,7 +1065,7 @@ Example: 20000`,
         channel: buyerUser?.lastChannelUsed || 'whatsapp',
       });
 
-      pendingStates.delete(phone);
+      await this.deletePendingState(phone);
 
       // Notify farmer in THEIR language
       const farmerUser = await this.usersService.findByPhone(
@@ -996,7 +1074,7 @@ Example: 20000`,
       const farmerLang: Language = (farmerUser as any)?.language ?? 'english';
 
       if (farmerUser?.phone) {
-        pendingFarmerResponses.set(farmerUser.phone, {
+        await this.setFarmerResponse(farmerUser.phone, {
           buyerPhone: phone,
           sellerListingId: selected.id,
           buyerListingId: buyerListing._id.toString(),
@@ -1007,14 +1085,17 @@ Example: 20000`,
           language: farmerLang,
         });
 
+        // Notify farmer with counter-offer option
         const matchMsg = await this.aiService.reply(
-          'match_found_farmer',
+          'match_found_farmer_counter',
           farmerLang,
           {
+            buyerName: buyerUser?.name || '',
             location: buyerUser?.location || '',
             product: pending.product,
             quantity: pending.quantity,
             unit: pending.unit,
+            price: this.fmt(selected.price),
           },
         );
         await this.metaSender.send(farmerUser.phone, matchMsg);
@@ -1027,12 +1108,12 @@ Example: 20000`,
       };
       return msgs[lang];
     } catch {
-      pendingStates.delete(phone);
+      await this.deletePendingState(phone);
       return await this.aiService.reply('unknown_command', lang, {});
     }
   }
 
-  // ─── Farmer YES/NO response ───────────────────────────────
+  // ─── Farmer YES/NO/Counter response ──────────────────────
   async handleFarmerResponse(
     phone: string,
     response: string,
@@ -1051,22 +1132,52 @@ Example: 20000`,
       return msgs[lang];
     }
 
+    // ── TTL check ────────────────────────────────────────────
+    if (pending.expiresAt && pending.expiresAt < Date.now()) {
+      await this.deleteFarmerResponse(phone);
+      const expired: Record<Language, string> = {
+        english: `This buyer request has expired. Type HELP for options.`,
+        french: `Cette demande a expiré. Tapez AIDE pour les options.`,
+        pidgin: `Dis buyer request don expire. Type HELP.`,
+      };
+      return expired[lang];
+    }
+
+    // ── Farmer is typing their counter-offer price ────────────
+    if (pending.awaitingCounterPrice) {
+      return this.handleFarmerCounterPrice(phone, response, pending, lang);
+    }
+
+    const input = response.trim().toUpperCase();
+
+    // ── Farmer chose option 2 → counter-offer ─────────────────
+    if (input === '2') {
+      await this.setFarmerResponse(phone, { ...pending, awaitingCounterPrice: true });
+      const ask: Record<Language, string> = {
+        english: `💰 What price do you want to offer? (Enter a number)\n\nExample: 17000`,
+        french: `💰 Quel prix voulez-vous proposer? (Entrez un nombre)\n\nExemple: 17000`,
+        pidgin: `💰 Wetin price you wan offer? (Send number)\n\nExample: 17000`,
+      };
+      return ask[lang];
+    }
+
+    // ── Farmer chose option 3 → decline ───────────────────────
+    if (input === '3' || input === 'NO' || input === 'NON' || input === 'NO BE DAT') {
+      return this.processFarmerDecline(phone, pending, user, lang);
+    }
+
+    // ── Farmer chose option 1 or YES → accept ────────────────
     const buyer = await this.usersService.findByPhone(pending.buyerPhone);
     const buyerLang: Language = (buyer as any)?.language ?? 'english';
-    pendingFarmerResponses.delete(phone);
+    await this.deleteFarmerResponse(phone);
 
-    // Use AI to detect YES/NO regardless of language
+    // Use AI to detect YES regardless of language (for natural "yes" replies)
     const parsed = await this.aiService.parseIntent(response);
-    const accepted = parsed.intent === 'yes';
-
-    await this.listingService.update(pending.sellerListingId, {
-      status: 'matched',
-    });
-    await this.listingService.update(pending.buyerListingId, {
-      status: 'matched',
-    });
+    const accepted = input === '1' || parsed.intent === 'yes';
 
     if (accepted) {
+      await this.listingService.update(pending.sellerListingId, { status: 'matched' });
+      await this.listingService.update(pending.buyerListingId, { status: 'matched' });
       // Notify buyer with wa.me link in THEIR language
       if (buyer?.phone) {
         const connectedMsgBuyer = await this.aiService.reply(
@@ -1083,7 +1194,6 @@ Example: 20000`,
         await this.metaSender.send(buyer.phone, connectedMsgBuyer);
       }
 
-      // Confirm to farmer in THEIR language
       return await this.aiService.reply('connected', lang, {
         link: `https://wa.me/${pending.buyerPhone}`,
         product: pending.product,
@@ -1093,20 +1203,172 @@ Example: 20000`,
       });
     }
 
-    // Farmer said NO — notify buyer
+    // Farmer said NO (fallback for natural language rejections)
+    return this.processFarmerDecline(phone, pending, user, lang);
+  }
+
+  // ─── Farmer enters their counter-offer price ──────────────
+  private async handleFarmerCounterPrice(
+    phone: string,
+    response: string,
+    pending: PendingFarmerResponse,
+    lang: Language,
+  ): Promise<string> {
+    const counterPrice = this.parsePrice(response);
+
+    if (!counterPrice || counterPrice <= 0) {
+      const ask: Record<Language, string> = {
+        english: `Please enter a valid price (number only).\n\nExample: 17000`,
+        french: `Entrez un prix valide (chiffres seulement).\n\nExemple: 17000`,
+        pidgin: `Send correct price (number only).\n\nExample: 17000`,
+      };
+      return ask[lang];
+    }
+
+    // Clear farmer's pending response — counter sent
+    await this.deleteFarmerResponse(phone);
+
+    const buyer = await this.usersService.findByPhone(pending.buyerPhone);
+    const buyerLang: Language = (buyer as any)?.language ?? 'english';
+    const farmerUser = await this.usersService.findByPhone(phone);
+
+    // Store counter-offer state on buyer side
+    if (buyer?.phone) {
+      await this.setPendingState(buyer.phone, {
+        type: 'awaiting_counter_response',
+        product: pending.product,
+        productDisplay: pending.product,
+        quantity: pending.quantity,
+        unit: pending.unit,
+        price: pending.price,
+        counterPrice,
+        farmerPhone: phone,
+        sellerListingId: pending.sellerListingId,
+        buyerListingId: pending.buyerListingId,
+        userPhone: buyer.phone,
+        userRole: 'buyer',
+        language: buyerLang,
+      });
+
+      const counterMsg = await this.aiService.reply(
+        'counter_offer_received_buyer',
+        buyerLang,
+        {
+          farmerName: farmerUser?.name || '',
+          product: pending.product,
+          quantity: pending.quantity,
+          unit: pending.unit,
+          originalPrice: this.fmt(pending.price),
+          counterPrice: this.fmt(counterPrice),
+        },
+      );
+      await this.metaSender.send(buyer.phone, counterMsg);
+    }
+
+    const sent: Record<Language, string> = {
+      english: `✅ Counter-offer of ${this.fmt(counterPrice)} sent to the buyer.\n\nWaiting for their response...`,
+      french: `✅ Contre-offre de ${this.fmt(counterPrice)} envoyée à l'acheteur.\n\nEn attente de sa réponse...`,
+      pidgin: `✅ Counter-offer of ${this.fmt(counterPrice)} don go to buyer.\n\nWe dey wait dem reply...`,
+    };
+    return sent[lang];
+  }
+
+  // ─── Buyer responds to counter-offer (YES/NO) ─────────────
+  // Called from handlePendingState when type === 'awaiting_counter_response'
+  private async handleBuyerCounterResponse(
+    phone: string,
+    response: string,
+    pending: PendingState,
+    lang: Language,
+  ): Promise<string> {
+    const parsed = await this.aiService.parseIntent(response);
+    const upper = response.trim().toUpperCase();
+    const accepted =
+      parsed.intent === 'yes' || upper === '1' || upper === 'YES' || upper === 'OUI';
+    const declined =
+      parsed.intent === 'no' || upper === '2' || upper === 'NO' || upper === 'NON';
+
+    if (!accepted && !declined) {
+      const ask: Record<Language, string> = {
+        english: `Do you accept the counter-offer of ${this.fmt(pending.counterPrice!)}?\n\n1️⃣ Accept  2️⃣ Decline`,
+        french: `Acceptez-vous la contre-offre de ${this.fmt(pending.counterPrice!)} ?\n\n1️⃣ Accepter  2️⃣ Refuser`,
+        pidgin: `You go accept counter-offer of ${this.fmt(pending.counterPrice!)}?\n\n1️⃣ Accept  2️⃣ No`,
+      };
+      return ask[lang];
+    }
+
+    await this.deletePendingState(phone);
+
+    const farmer = await this.usersService.findByPhone(pending.farmerPhone!);
+    const farmerLang: Language = (farmer as any)?.language ?? 'english';
+    const buyerUser = await this.usersService.findByPhone(phone);
+
+    if (accepted) {
+      const agreedPrice = pending.counterPrice!;
+
+      // Notify farmer — deal done
+      if (farmer?.phone) {
+        const farmerMsg = await this.aiService.reply('connected', farmerLang, {
+          link: `https://wa.me/${phone}`,
+          product: pending.product,
+          quantity: pending.quantity,
+          unit: pending.unit,
+          price: this.fmt(agreedPrice),
+        });
+        await this.metaSender.send(farmer.phone, farmerMsg);
+      }
+
+      return await this.aiService.reply('connected', lang, {
+        link: `https://wa.me/${pending.farmerPhone!}`,
+        product: pending.product,
+        quantity: pending.quantity,
+        unit: pending.unit,
+        price: this.fmt(agreedPrice),
+      });
+    }
+
+    // Buyer declined counter-offer
+    if (farmer?.phone) {
+      const declinedMsgs: Record<Language, string> = {
+        english: `😔 The buyer declined your counter-offer for ${pending.product}.\n\nType HELP for options.`,
+        french: `😔 L'acheteur a refusé votre contre-offre pour ${pending.product}.\n\nTapez AIDE.`,
+        pidgin: `😔 Buyer no accept your counter for ${pending.product}.\n\nType HELP.`,
+      };
+      await this.metaSender.send(farmer.phone, declinedMsgs[farmerLang]);
+    }
+
+    const declined_msgs: Record<Language, string> = {
+      english: `You declined the counter-offer. The farmer has been notified.\n\nType BUY to find other farmers.`,
+      french: `Vous avez refusé la contre-offre. L'agriculteur a été notifié.\n\nTapez ACHETER.`,
+      pidgin: `You don decline counter-offer. Farmer don hear.\n\nType BUY find another farmer.`,
+    };
+    return declined_msgs[lang];
+  }
+
+  // ─── Helper: process farmer declining a buy request ───────
+  private async processFarmerDecline(
+    phone: string,
+    pending: PendingFarmerResponse,
+    user: any,
+    lang: Language,
+  ): Promise<string> {
+    await this.deleteFarmerResponse(phone);
+    const buyer = await this.usersService.findByPhone(pending.buyerPhone);
+    const buyerLang: Language = (buyer as any)?.language ?? 'english';
+
     if (buyer?.phone) {
       const rejMsgs: Record<Language, string> = {
-        english: `😔 ${user?.name} declined your request for ${pending.product}.\n\nType BUY to find other farmers.`,
-        french: `😔 ${user?.name} a refusé votre demande de ${pending.product}.\n\nTapez ACHETER pour trouver d'autres agriculteurs.`,
-        pidgin: `😔 ${user?.name} no agree for your ${pending.product}.\n\nType BUY find another farmer.`,
+        english: `😔 ${user?.name || 'The farmer'} declined your request for ${pending.product}.\n\nType BUY to find other farmers.`,
+        french: `😔 ${user?.name || "L'agriculteur"} a refusé votre demande de ${pending.product}.\n\nTapez ACHETER pour trouver d'autres agriculteurs.`,
+        pidgin: `😔 ${user?.name || 'Farmer'} no agree for your ${pending.product}.\n\nType BUY find another farmer.`,
       };
       await this.metaSender.send(buyer.phone, rejMsgs[buyerLang]);
     }
 
     const declinedMsgs: Record<Language, string> = {
-      english: `❌ Request declined. Buyer has been notified.\n\nType HELP for options.`,
-      french: `❌ Demande refusée. L'acheteur a été notifié.\n\nTapez AIDE pour les options.`,
-      pidgin: `❌ You don decline. Buyer don hear. Type HELP.`,
+      english: `Declined. Buyer has been notified.\n\nType HELP for options.`,
+      french: `Refusé. L'acheteur a été notifié.\n\nTapez AIDE pour les options.`,
+      pidgin: `You don decline. Buyer don hear. Type HELP.`,
     };
     return declinedMsgs[lang];
   }

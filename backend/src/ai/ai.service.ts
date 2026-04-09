@@ -20,10 +20,16 @@ export interface ParsedIntent {
     | 'no'
     | 'unknown';
   language: Language;
+  // listing fields
   product?: string;
+  productOriginal?: string; // user's original spelling (e.g. "manioc")
   quantity?: number;
   unit?: string;
   price?: number;
+  // user profile fields — extracted from free-form text
+  name?: string;     // "I'm Paul Biya" → "Paul Biya"
+  location?: string; // "in Douala" or "à Bafoussam"
+  role?: 'farmer' | 'buyer'; // "I sell" → farmer
   raw: string;
 }
 
@@ -54,28 +60,36 @@ export class AiService {
             content: `You are a message parser for an agricultural marketplace in Cameroon.
 Return ONLY valid JSON. No explanation.
 
-Fields:
+Fields to extract:
 - intent: register | sell | buy | price | help | yes | no | unknown
 - language: english | french | pidgin
-- product: crop name in english lowercase (maïs→maize, tomate→tomatoes, manioc→cassava)
+- product: crop name in english lowercase (maïs→maize, tomate→tomatoes, manioc→cassava, igname→yam, arachide→groundnuts, piment→pepper, gombo→okra)
+- productOriginal: the exact word the user typed for the crop (null if none)
 - quantity: number or null
-- unit: bags/kg/tonnes/sacs, default "bags"
-- price: number or null
+- unit: bags/kg/tonnes/crates/bunches/litres/sacs — default "bags" if unclear
+- price: XAF number or null (e.g. "15000 XAF" → 15000, "15 mille" → 15000)
+- name: user's full name if they introduced themselves (e.g. "I'm Paul Biya" → "Paul Biya", "je suis Marie" → "Marie", null if not present)
+- location: city or region if mentioned (e.g. "in Douala", "à Bafoussam", "for Yaounde" → the city only, null if not present)
+- role: "farmer" if they sell/grow, "buyer" if they buy/need, null if not clear
+  - farmer signals: "I sell", "I grow", "I have", "je vends", "je cultive", "I get", "I dey sell", "na farmer"
+  - buyer signals: "I buy", "I need", "I want to buy", "j'achète", "je cherche", "I wan buy", "I dey find"
 
 Language rules:
-- french: bonjour, salut, oui, non, je, j'ai, vendre, acheter, maíz, sacs, combien, prix
+- french: bonjour, salut, oui, non, je, j'ai, vendre, acheter, sacs, combien, prix
 - pidgin: i get, i wan, i dey, na so, abeg, wetin, plenty, for sell, for buy, wey
 
 Intent rules:
-- register: hi, hello, bonjour, salut, start, hey
-- yes: yes, oui, ok, okay, na so, d'accord, yep
-- no: no, non, nope, no be dat
+- register: hi, hello, bonjour, salut, start, hey (AND no sell/buy signal)
+- yes: yes, oui, ok, okay, na so, d'accord, yep, correct
+- no: no, non, nope, no be dat, pas du tout
 - sell: any message about having/selling produce
 - buy: any message about wanting/needing produce
 - price: asking about price/cost
 - help: help, aide, options
 
-JSON format: {"intent":"","language":"","product":null,"quantity":null,"unit":"bags","price":null}`,
+IMPORTANT: If a message contains BOTH identity info AND a sell/buy intent (e.g. "Hi I'm Paul in Douala I want to sell maize"), set intent to "sell" or "buy" — NOT "register".
+
+JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"quantity":null,"unit":"bags","price":null,"name":null,"location":null,"role":null}`,
           },
           { role: 'user', content: message },
         ],
@@ -134,33 +148,84 @@ JSON format: {"intent":"","language":"","product":null,"quantity":null,"unit":"b
     const lower = message.toLowerCase().trim();
     const language = this.detectLanguageSync(lower);
 
-    if (/^(yes|oui|ok|okay|na so|yep|d'accord|yes na)$/i.test(lower)) {
+    // ── Extract name (I'm X / je suis X / na me X) ────────────
+    const nameMatch = lower.match(
+      /(?:i[''']?m|my name is|je suis|je m'appelle|na me)\s+([a-záàâäéèêëíîïóôùûüç][a-záàâäéèêëíîïóôùûüç\s]{1,40}?)(?:\s+(?:in|from|at|à|de|for|and|,|$))/i,
+    );
+    const name = nameMatch
+      ? nameMatch[1].trim().replace(/\b\w/g, (c) => c.toUpperCase())
+      : undefined;
+
+    // ── Extract location (in X / à X / for X / from X) ────────
+    const locationMatch = lower.match(
+      /(?:\bin\b|\bfrom\b|\bat\b|\bà\b|\bde\b|\bfor\b)\s+([a-záàâäéèêëíîïóôùûüç][a-záàâäéèêëíîïóôùûüç\s]{1,30}?)(?:\s+(?:and|,|$|\.|i |je ))/i,
+    );
+    const location = locationMatch
+      ? locationMatch[1].trim().replace(/\b\w/g, (c) => c.toUpperCase())
+      : undefined;
+
+    // ── Extract role from intent signals ──────────────────────
+    const isFarmerSignal =
+      /\b(sell|vend|i get|i have|i dey sell|wan sell|for sell|je cultive|je vends|agriculteur|farmer)\b/i.test(
+        lower,
+      );
+    const isBuyerSignal =
+      /\b(buy|achet|i wan buy|i dey find|je cherche|je veux|looking for|need|buyer|acheteur)\b/i.test(
+        lower,
+      );
+    const role: 'farmer' | 'buyer' | undefined = isFarmerSignal
+      ? 'farmer'
+      : isBuyerSignal
+        ? 'buyer'
+        : undefined;
+
+    if (/^(yes|oui|ok|okay|na so|yep|d'accord|yes na|correct|sure)$/i.test(lower)) {
       return { intent: 'yes', language, raw };
     }
-    if (/^(no|non|nope|no be dat|non merci)$/i.test(lower)) {
+    if (/^(no|non|nope|no be dat|non merci|pas du tout)$/i.test(lower)) {
       return { intent: 'no', language, raw };
     }
     if (/^(help|aide|aidez|options)$/i.test(lower)) {
       return { intent: 'help', language, raw };
     }
-    if (/^(hi|hello|bonjour|salut|bonsoir|hey|start|begin)$/i.test(lower)) {
-      return { intent: 'register', language, raw };
-    }
     if (
-      /\b(sell|vendre|vend|for sell|wan sell|dey sell|i get.+sell|i have.+sell)\b/i.test(
-        lower,
-      )
+      /^(hi|hello|bonjour|salut|bonsoir|hey|start|begin)$/i.test(lower) &&
+      !isFarmerSignal &&
+      !isBuyerSignal
     ) {
-      const { product, quantity, unit } = this.extractProductQty(lower);
-      return { intent: 'sell', language, product, quantity, unit, raw };
+      return { intent: 'register', language, name, location, role, raw };
     }
-    if (
-      /\b(buy|acheter|achet|for buy|wan buy|dey find|je cherche|je veux|looking for|need)\b/i.test(
-        lower,
-      )
-    ) {
-      const { product, quantity, unit } = this.extractProductQty(lower);
-      return { intent: 'buy', language, product, quantity, unit, raw };
+    if (isFarmerSignal) {
+      const { product, productOriginal, quantity, unit } =
+        this.extractProductQty(lower);
+      return {
+        intent: 'sell',
+        language,
+        product,
+        productOriginal,
+        quantity,
+        unit,
+        name,
+        location,
+        role: 'farmer',
+        raw,
+      };
+    }
+    if (isBuyerSignal) {
+      const { product, productOriginal, quantity, unit } =
+        this.extractProductQty(lower);
+      return {
+        intent: 'buy',
+        language,
+        product,
+        productOriginal,
+        quantity,
+        unit,
+        name,
+        location,
+        role: 'buyer',
+        raw,
+      };
     }
     if (
       /\b(price|prix|how much|combien|quel est le prix|cost)\b/i.test(lower)
@@ -177,7 +242,7 @@ JSON format: {"intent":"","language":"","product":null,"quantity":null,"unit":"b
       };
     }
 
-    return { intent: 'unknown', language, raw };
+    return { intent: 'unknown', language, name, location, role, raw };
   }
 
   private extractProductQty(text: string): {
