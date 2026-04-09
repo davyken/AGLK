@@ -23,23 +23,14 @@ export class BotService {
 
   async handleMessage(msg: IncomingMessage): Promise<string> {
     const { phone, text, channel } = msg;
-
     const trimmed = text.trim();
     const upper = trimmed.toUpperCase();
     const normalized = this.normalizeCommand(upper);
 
-    // ── Load user ─────────────────────────────────────────
     const user = await this.usersService.findByPhone(phone);
 
-    // ── Language Resolution ──────────────────────────────
-    // 1. Detect from current message via LLM + statistical analysis
-    // 2. If high-confidence signal found → use it and save to DB
-    // 3. If low-confidence (e.g. user typed "1" or "20") → use saved language
-    // This means once a user speaks French, ALL replies stay French
     const detectedLang: Language = await this.aiService.detectLanguage(trimmed);
     const savedLang: Language = (user as any)?.language ?? 'english';
-
-    // Only override saved language if we found a clear non-English signal
     const lang: Language =
       detectedLang !== 'english' ? detectedLang : savedLang;
 
@@ -47,23 +38,29 @@ export class BotService {
       await this.usersService.updateLanguage(phone, lang);
     }
 
-    // ── Handle interactive button clicks (WhatsApp) ─────────
     if (normalized.startsWith('ROLE_FARMER') || normalized === '1') {
       if (user?.conversationState !== 'REGISTERED') {
-        const reply = await this.registrationFlow.handle(phone, 'farmer', channel);
+        const reply = await this.registrationFlow.handle(
+          phone,
+          'farmer',
+          channel,
+        );
         if (reply) return reply;
       }
       return this.helpMessage(channel, lang);
     }
     if (normalized.startsWith('ROLE_BUYER') || normalized === '2') {
       if (user?.conversationState !== 'REGISTERED') {
-        const reply = await this.registrationFlow.handle(phone, 'buyer', channel);
+        const reply = await this.registrationFlow.handle(
+          phone,
+          'buyer',
+          channel,
+        );
         if (reply) return reply;
       }
       return this.helpMessage(channel, lang);
     }
 
-    // Price suggestion buttons
     if (normalized.startsWith('PRICE_ACCEPT') || normalized === '1') {
       return this.listingFlow.handle(phone, '1', channel);
     }
@@ -71,7 +68,6 @@ export class BotService {
       return this.listingFlow.handle(phone, '2', channel);
     }
 
-    // Match found buttons
     if (normalized.startsWith('MATCH_YES') || normalized === 'YES') {
       return this.listingFlow.handleFarmerResponse(phone, 'YES', channel);
     }
@@ -79,8 +75,10 @@ export class BotService {
       return this.listingFlow.handleFarmerResponse(phone, 'NO', channel);
     }
 
-    // Language buttons
-    if (normalized.startsWith('LANG_ENGLISH') || normalized.includes('ENGLISH')) {
+    if (
+      normalized.startsWith('LANG_ENGLISH') ||
+      normalized.includes('ENGLISH')
+    ) {
       return this.handleLanguageSwitch(phone, 'english', channel, lang);
     }
     if (normalized.startsWith('LANG_FRENCH') || normalized.includes('FRENCH')) {
@@ -90,17 +88,10 @@ export class BotService {
       return this.handleLanguageSwitch(phone, 'pidgin', channel, lang);
     }
 
-    // ─────────────────────────────────────────────────────
-    // PRIORITY 1: Direct string checks — NO AI needed
-    // These must ALWAYS work regardless of Groq status
-    // ─────────────────────────────────────────────────────
-
-    // HELP
     if (normalized === 'HELP' || normalized === 'AIDE') {
       return this.helpMessage(channel, lang);
     }
 
-    // LANGUAGE switch
     if (
       normalized.startsWith('LANGUAGE') ||
       normalized.startsWith('LANG') ||
@@ -109,7 +100,6 @@ export class BotService {
       return this.handleLanguageSwitch(phone, trimmed, channel, lang);
     }
 
-    // CANCEL
     if (normalized === 'CANCEL' || normalized === 'ANNULER') {
       if (this.listingFlow.isInPriceState(phone)) {
         return this.listingFlow.handle(phone, 'CANCEL', channel);
@@ -122,15 +112,11 @@ export class BotService {
       return msgs[lang];
     }
 
-    // ─────────────────────────────────────────────────────
-    // PRIORITY 2: Pending state — takes over everything
-    // ─────────────────────────────────────────────────────
     if (this.listingFlow.isInPriceState(phone)) {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
     if (this.listingFlow.hasPendingFarmerResponse(phone)) {
-      // YES / NO check directly — no AI needed
       if (
         ['YES', 'OUI', 'YES NA', 'NA SO'].includes(upper) ||
         ['NO', 'NON', 'NO BE DAT'].includes(upper)
@@ -139,24 +125,15 @@ export class BotService {
       }
     }
 
-    // ─────────────────────────────────────────────────────
-    // PRIORITY 3: Registration check
-    // ─────────────────────────────────────────────────────
     const isRegistered = user?.conversationState === 'REGISTERED';
 
     if (!user || !isRegistered) {
       const reply = await this.registrationFlow.handle(phone, trimmed, channel);
       if (reply) return reply;
-      // null = just finished registering → fall through
     }
 
     await this.usersService.updateChannel(phone, channel);
 
-    // ─────────────────────────────────────────────────────
-    // PRIORITY 4: Direct command matching — NO AI needed
-    // ─────────────────────────────────────────────────────
-
-    // SELL (English + French + Pidgin variants)
     if (
       normalized.startsWith('SELL') ||
       upper.startsWith('VENDRE') ||
@@ -167,7 +144,6 @@ export class BotService {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
-    // BUY (English + French + Pidgin variants)
     if (
       normalized.startsWith('BUY') ||
       upper.startsWith('ACHETER') ||
@@ -178,12 +154,10 @@ export class BotService {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
-    // OFFER
     if (normalized.startsWith('OFFER') || upper.startsWith('OFFRE')) {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
-    // YES / NO (farmer response)
     if (['YES', 'OUI', 'YES NA', 'NA SO', 'OK', 'OKAY'].includes(upper)) {
       return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
     }
@@ -191,7 +165,6 @@ export class BotService {
       return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
     }
 
-    // GREETINGS → re-registration or menu
     if (['HI', 'HELLO', 'BONJOUR', 'SALUT', 'HEY', 'START'].includes(upper)) {
       if (!isRegistered) {
         const reply = await this.registrationFlow.handle(
@@ -204,10 +177,6 @@ export class BotService {
       return this.helpMessage(channel, lang);
     }
 
-    // ─────────────────────────────────────────────────────
-    // PRIORITY 5: AI enhancement — only for ambiguous input
-    // "I get maize plenty" / "j'ai 10 sacs de maïs"
-    // ─────────────────────────────────────────────────────
     try {
       const parsed = await this.aiService.parseIntent(trimmed);
 
@@ -231,17 +200,13 @@ export class BotService {
         if (reply) return reply;
         return this.helpMessage(channel, lang);
       }
-    } catch (err) {
+    } catch {
       this.logger.warn('AI unavailable, using direct matching only');
     }
 
-    // ─────────────────────────────────────────────────────
-    // FALLBACK: unknown command
-    // ─────────────────────────────────────────────────────
     return await this.aiService.reply('unknown_command', lang, {});
   }
 
-  // ─── Language switch ──────────────────────────────────────
   private async handleLanguageSwitch(
     phone: string,
     text: string,
@@ -277,7 +242,6 @@ export class BotService {
     return confirms[newLang];
   }
 
-  // ─── Help message ─────────────────────────────────────────
   private helpMessage(channel: 'sms' | 'whatsapp', lang: Language): string {
     if (channel === 'sms') {
       const sms: Record<Language, string> = {
@@ -329,7 +293,6 @@ export class BotService {
     return help[lang];
   }
 
-  // ─── Normalize French/Pidgin → English ───────────────────
   private normalizeCommand(input: string): string {
     if (input.startsWith('VENDRE')) return 'SELL' + input.slice(6);
     if (input.startsWith('ACHETER')) return 'BUY' + input.slice(7);

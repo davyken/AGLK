@@ -1245,4 +1245,3 @@ Example: 20000`,
     return price?.toLocaleString() + ' FCFA';
   }
 }
-

@@ -72,10 +72,10 @@ export class UsersController {
   @Delete(':phone')
   async delete(@Param('phone') phone: string) {
     const user = await this.usersService.delete(phone);
-    return { 
-      success: true, 
+    return {
+      success: true,
       message: 'User deleted successfully',
-      data: user
+      data: user,
     };
   }
 }
