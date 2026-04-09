@@ -119,4 +119,10 @@ export class UsersService {
     if (!user) throw new NotFoundException(`User ${phone} not found`);
     return user;
   }
+
+  async delete(phone: string): Promise<UserDocument> {
+    const user = await this.userModel.findOneAndDelete({ phone }).exec();
+    if (!user) throw new NotFoundException(`User ${phone} not found`);
+    return user;
+  }
 }

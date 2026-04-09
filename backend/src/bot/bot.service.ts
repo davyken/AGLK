@@ -32,19 +32,55 @@ export class BotService {
     const user = await this.usersService.findByPhone(phone);
 
     // ── Language Resolution ──────────────────────────────
-    // 1. Detect from current message (no API — pure keyword matching)
-    // 2. If clear signal found → use it and save to DB
-    // 3. If no signal (e.g. user typed "1" or "20") → use saved language
-    // This means once a user speaks French, ALL replies stay French
     const detectedLang: Language = this.aiService.detectLanguage(trimmed);
     const savedLang:    Language = (user as any)?.language ?? 'english';
-
-    // Only override saved language if we found a clear non-English signal
     const lang: Language = detectedLang !== 'english' ? detectedLang : savedLang;
 
-    // Save language to DB if it changed
     if (user && lang !== savedLang) {
       await this.usersService.updateLanguage(phone, lang);
+    }
+
+    // ── Handle interactive button clicks (WhatsApp) ─────────
+    if (normalized.startsWith('ROLE_FARMER') || normalized === '1') {
+      if (user?.conversationState !== 'REGISTERED') {
+        const reply = await this.registrationFlow.handle(phone, 'farmer', channel);
+        if (reply) return reply;
+      }
+      return this.helpMessage(channel, lang);
+    }
+    if (normalized.startsWith('ROLE_BUYER') || normalized === '2') {
+      if (user?.conversationState !== 'REGISTERED') {
+        const reply = await this.registrationFlow.handle(phone, 'buyer', channel);
+        if (reply) return reply;
+      }
+      return this.helpMessage(channel, lang);
+    }
+
+    // Price suggestion buttons
+    if (normalized.startsWith('PRICE_ACCEPT') || normalized === '1') {
+      return this.listingFlow.handle(phone, '1', channel);
+    }
+    if (normalized.startsWith('PRICE_CUSTOM') || normalized === '2') {
+      return this.listingFlow.handle(phone, '2', channel);
+    }
+
+    // Match found buttons
+    if (normalized.startsWith('MATCH_YES') || normalized === 'YES') {
+      return this.listingFlow.handleFarmerResponse(phone, 'YES', channel);
+    }
+    if (normalized.startsWith('MATCH_NO') || normalized === 'NO') {
+      return this.listingFlow.handleFarmerResponse(phone, 'NO', channel);
+    }
+
+    // Language buttons
+    if (normalized.startsWith('LANG_ENGLISH') || normalized.includes('ENGLISH')) {
+      return this.handleLanguageSwitch(phone, 'english', channel, lang);
+    }
+    if (normalized.startsWith('LANG_FRENCH') || normalized.includes('FRENCH')) {
+      return this.handleLanguageSwitch(phone, 'french', channel, lang);
+    }
+    if (normalized.startsWith('LANG_PIDGIN') || normalized.includes('PIDGIN')) {
+      return this.handleLanguageSwitch(phone, 'pidgin', channel, lang);
     }
 
     // ─────────────────────────────────────────────────────

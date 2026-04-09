@@ -336,19 +336,119 @@ JSON format: {"intent":"","language":"","product":null,"quantity":null,"unit":"b
   }
 
   // ─────────────────────────────────────────────────────────
-  // 8. ALL MESSAGE TEMPLATES
+  // 7b. BUTTON CONFIGURATIONS — for WhatsApp interactive
+  // ─────────────────────────────────────────────────────────
+  getButtons(key: string, lang: Language): { id: string; title: string }[] | null {
+    const buttons = this.buttonConfigs();
+    const config = buttons[key];
+    if (!config) return null;
+    return config[lang] ?? config['english'] ?? null;
+  }
+
+  private buttonConfigs(): Record<string, Record<Language, { id: string; title: string }[]>> {
+    return {
+      welcome: {
+        english: [
+          { id: 'role_farmer', title: '👨‍🌾 Farmer' },
+          { id: 'role_buyer', title: '🏪 Buyer' },
+        ],
+        french: [
+          { id: 'role_farmer', title: '👨‍🌾 Agriculteur' },
+          { id: 'role_buyer', title: '🏪 Acheteur' },
+        ],
+        pidgin: [
+          { id: 'role_farmer', title: '👨‍🌾 Farmer' },
+          { id: 'role_buyer', title: '🏪 Buyer' },
+        ],
+      },
+      price_suggestion: {
+        english: [
+          { id: 'price_accept', title: '✅ Accept Price' },
+          { id: 'price_custom', title: '✏️ Set Custom' },
+        ],
+        french: [
+          { id: 'price_accept', title: '✅ Accepter' },
+          { id: 'price_custom', title: '✏️ Prix personnalisé' },
+        ],
+        pidgin: [
+          { id: 'price_accept', title: '✅ Accept am' },
+          { id: 'price_custom', title: '✏️ Set your price' },
+        ],
+      },
+      match_found_farmer: {
+        english: [
+          { id: 'match_yes', title: '✅ Yes, I\'m interested!' },
+          { id: 'match_no', title: '❌ No, thanks' },
+        ],
+        french: [
+          { id: 'match_yes', title: '✅ Oui, je suis intéressé!' },
+          { id: 'match_no', title: '❌ Non, merci' },
+        ],
+        pidgin: [
+          { id: 'match_yes', title: '✅ Yes, I wan sell' },
+          { id: 'match_no', title: '❌ No, thanks' },
+        ],
+      },
+      ask_language: {
+        english: [
+          { id: 'lang_english', title: '🇬🇧 English' },
+          { id: 'lang_french', title: '🇫🇷 Français' },
+          { id: 'lang_pidgin', title: '🇳🇬 Pidgin' },
+        ],
+        french: [
+          { id: 'lang_english', title: '🇬🇧 English' },
+          { id: 'lang_french', title: '🇫🇷 Français' },
+          { id: 'lang_pidgin', title: '🇳🇬 Pidgin' },
+        ],
+        pidgin: [
+          { id: 'lang_english', title: '🇬🇧 English' },
+          { id: 'lang_french', title: '🇫🇷 Français' },
+          { id: 'lang_pidgin', title: '🇳🇬 Pidgin' },
+        ],
+      },
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // 7c. CHECK IF MESSAGE SHOULD USE BUTTONS
+  // ─────────────────────────────────────────────────────────
+  shouldUseButtons(key: string): boolean {
+    const buttonKeys = ['welcome', 'price_suggestion', 'match_found_farmer', 'ask_language'];
+    return buttonKeys.includes(key);
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // 7d. ENHANCED REPLY — returns text + optional buttons
+  // ─────────────────────────────────────────────────────────
+  buildReply(
+    key: string,
+    lang: Language,
+    data: Record<string, string | number> = {},
+  ): { text: string; buttons?: { id: string; title: string }[] } {
+    const text = this.reply(key, lang, data);
+    const buttons = this.shouldUseButtons(key) ? this.getButtons(key, lang) ?? undefined : undefined;
+    return { text, buttons };
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // 8. ALL MESSAGE TEMPLATES — Enhanced with emojis & human tone
   // ─────────────────────────────────────────────────────────
   private templates(): Record<string, Record<Language, string>> {
     return {
       welcome: {
-        english: `👋 Welcome to AgroLink!\n\nAre you a:\n1️⃣ Farmer (I sell produce)\n2️⃣ Buyer (I buy produce)\n\nReply 1 or 2`,
-        french:  `👋 Bienvenue sur AgroLink!\n\nÊtes-vous:\n1️⃣ Agriculteur (je vends)\n2️⃣ Acheteur (j'achète)\n\nRépondez 1 ou 2`,
-        pidgin:  `👋 Welcome for AgroLink!\n\nYou be:\n1️⃣ Farmer (I dey sell)\n2️⃣ Buyer (I dey buy)\n\nSend 1 or 2`,
+        english: `🌟 *Welcome to AgroLink!*\n\nHi there! 👋 I'm here to help you buy or sell fresh produce directly!\n\nAre you a:\n👨‍🌾 Farmer (I grow produce and want to sell)\n🏪 Buyer (I want to buy produce)\n\n_Just tap your choice below or reply with 1 or 2_`,
+        french:  `🌟 *Bienvenue sur AgroLink!*\n\nSalut! 👋 Je suis là pour vous aider à acheter ou vendre des produits frais!\n\nÊtes-vous:\n👨‍🌾 Agriculteur (je cultive et veux vendre)\n🏪 Acheteur (je veux acheter)\n\n_Tapez 1 ou 2, ou utilisez les boutons_`,
+        pidgin:  `🌟 *Welcome for AgroLink!*\n\nHi there! 👋 I dey here to help you buy or sell fresh things!\n\nYou be:\n👨‍🌾 Farmer (I get things wey I want sell)\n🏪 Buyer (I want buy thing)\n\n_Send 1 or 2, or tap the buttons_`,
       },
       ask_name: {
-        english: `👤 What is your full name?`,
-        french:  `👤 Quel est votre nom complet?`,
-        pidgin:  `👤 Wetin be your full name?`,
+        english: `👤 Sure! What should I call you?\n\n_Just send me your name_ 👇`,
+        french:  `👤 Bien! Comment vous appelez-vous?\n\n_Envoyez-moi votre nom_ 👇`,
+        pidgin:  `👤 Ok! Wetin name you go like?\n\n_Send me your name_ 👇`,
+      },
+      ask_language: {
+        english: `🌐 Please select your language:`,
+        french:  `🌐 Veuillez choisir votre langue:`,
+        pidgin:  `🌐 Choose your language:`,
       },
       ask_location: {
         english: `📍 What is your location?\n(e.g. Yaoundé, Douala, Bafoussam)`,

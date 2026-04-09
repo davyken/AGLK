@@ -12,6 +12,7 @@ import {
 import type { Response } from 'express';
 import { BotService } from './bot.service';
 import { MetaSenderService } from '../whatsapp/meta-sender.service';
+import { TwilioSmsService } from '../whatsapp/twilio-sms.service';
 import { AiService, Language } from '../ai/ai.service';
 import { ListingFlowService } from '../bot/listing.flow';
 import { UsersService } from '../users/users.service';
@@ -24,11 +25,35 @@ export class BotController {
   constructor(
     private readonly botService:     BotService,
     private readonly metaSender:     MetaSenderService,
+    private readonly twilioSms:      TwilioSmsService,
     private readonly aiService:      AiService,
     private readonly listingFlow:    ListingFlowService,
     private readonly usersService:   UsersService,
     private readonly config:         ConfigService,
   ) {}
+
+  private async sendReply(phone: string, message: string, channel: 'sms' | 'whatsapp'): Promise<void> {
+    if (channel === 'sms') {
+      await this.twilioSms.send(phone, message);
+    } else {
+      await this.metaSender.send(phone, message);
+    }
+  }
+
+  private async sendInteractiveReply(
+    phone: string,
+    bodyText: string,
+    buttons: { id: string; title: string }[],
+    channel: 'sms' | 'whatsapp',
+    headerText?: string,
+  ): Promise<void> {
+    if (channel === 'sms') {
+      const buttonText = buttons.map(b => `🔘 ${b.title}`).join('\n');
+      await this.twilioSms.send(phone, `${bodyText}\n\n${buttonText}`);
+    } else {
+      await this.metaSender.sendWithButtons(phone, bodyText, buttons, headerText);
+    }
+  }
 
   // ─── GET /bot/webhook — Meta verification ─────────────────
   @Get('webhook')
@@ -69,7 +94,15 @@ export class BotController {
         if (!text) return { status: 'empty_text' };
 
         const reply = await this.botService.handleMessage({ phone, text, channel: 'whatsapp' });
-        if (reply) await this.metaSender.send(phone, reply);
+        if (reply) {
+          // Try to get buttons and send interactive message for WhatsApp
+          const buttons = this.aiService.getButtons('welcome', lang);
+          if (buttons && text.toLowerCase().match(/^(hi|hello|bonjour|salut|hey|start|1)$/)) {
+            await this.sendInteractiveReply(phone, reply, buttons, 'whatsapp', '🌟 Welcome to AgroLink!');
+          } else {
+            await this.sendReply(phone, reply, 'whatsapp');
+          }
+        }
         return { status: 'ok' };
       }
 
@@ -83,7 +116,7 @@ export class BotController {
         // Step 1: Get download URL from Meta
         const mediaUrl = await this.getMediaUrl(mediaId, accessToken);
         if (!mediaUrl) {
-          await this.metaSender.send(phone, this.aiService.reply('voice_failed', lang, {}));
+          await this.sendReply(phone, this.aiService.reply('voice_failed', lang, {}), 'whatsapp');
           return { status: 'media_url_failed' };
         }
 
@@ -92,16 +125,17 @@ export class BotController {
           await this.aiService.transcribeVoiceNote(mediaUrl, accessToken);
 
         if (!transcribed) {
-          await this.metaSender.send(phone, this.aiService.reply('voice_failed', detectedLang, {}));
+          await this.sendReply(phone, this.aiService.reply('voice_failed', detectedLang, {}), 'whatsapp');
           return { status: 'transcription_failed' };
         }
 
         this.logger.log(`Voice transcribed [${phone}]: "${transcribed}"`);
 
         // Step 3: Tell user what was heard
-        await this.metaSender.send(
+        await this.sendReply(
           phone,
           this.aiService.reply('voice_received', detectedLang, { text: transcribed }),
+          'whatsapp',
         );
 
         // Step 4: Update language if detected from voice
@@ -115,7 +149,7 @@ export class BotController {
           text:    transcribed,
           channel: 'whatsapp',
         });
-        if (reply) await this.metaSender.send(phone, reply);
+        if (reply) await this.sendReply(phone, reply, 'whatsapp');
         return { status: 'ok' };
       }
 
@@ -137,21 +171,21 @@ export class BotController {
               text:    caption,
               channel: 'whatsapp',
             });
-            if (reply) await this.metaSender.send(phone, reply);
+            if (reply) await this.sendReply(phone, reply, 'whatsapp');
           } else {
             const msgs: Record<Language, string> = {
               english: `📷 Photo received!\n\nTo list produce with a photo:\nSELL maize 10 bags\n(then send your photo)`,
               french:  `📷 Photo reçue!\n\nPour lister avec une photo:\nVENDRE maïs 10 sacs\n(puis envoyez la photo)`,
               pidgin:  `📷 Photo don reach!\n\nFor list with photo:\nSELL maize 10 bags\n(then send the photo)`,
             };
-            await this.metaSender.send(phone, msgs[lang]);
+            await this.sendReply(phone, msgs[lang], 'whatsapp');
           }
           return { status: 'image_not_expected' };
         }
 
         // Farmer is in sell_waiting_image state → attach image to listing
         const reply = await this.listingFlow.handleImage(phone, null, mediaId);
-        if (reply) await this.metaSender.send(phone, reply);
+        if (reply) await this.sendReply(phone, reply, 'whatsapp');
         return { status: 'ok' };
       }
 
@@ -163,7 +197,7 @@ export class BotController {
         french:  `❌ Je traite seulement les textes, messages vocaux et images.\n\nTapez AIDE pour les options.`,
         pidgin:  `❌ I only understand text, voice and photo.\n\nType HELP for options.`,
       };
-      await this.metaSender.send(phone, unsupported[lang]);
+      await this.sendReply(phone, unsupported[lang], 'whatsapp');
       return { status: 'unsupported_type' };
 
     } catch (err) {
@@ -182,6 +216,7 @@ export class BotController {
       if (!phone || !text) return { status: 'invalid_payload' };
 
       const reply = await this.botService.handleMessage({ phone, text, channel: 'sms' });
+      if (reply) await this.sendReply(phone, reply, 'sms');
       return { message: reply };
     } catch {
       return { status: 'error_handled' };
