@@ -13,7 +13,11 @@ import { CropMediaService } from './Crop media.service';
 const PENDING_TTL_MS = 4 * 60 * 60 * 1_000;
 
 interface PendingState {
-  type: 'sell' | 'sell_waiting_image' | 'buy_select' | 'awaiting_counter_response';
+  type:
+    | 'sell'
+    | 'sell_waiting_image'
+    | 'buy_select'
+    | 'awaiting_counter_response';
   product: string;
   productDisplay?: string; // original name user typed e.g. "manioc"
   quantity: number;
@@ -93,7 +97,10 @@ export class ListingFlowService implements OnModuleInit {
           if (pfr.expiresAt && pfr.expiresAt < now) {
             await this.usersService.clearPendingFarmerResponse(user.phone);
           } else {
-            pendingFarmerResponses.set(user.phone, pfr as PendingFarmerResponse);
+            pendingFarmerResponses.set(
+              user.phone,
+              pfr as PendingFarmerResponse,
+            );
           }
         }
       }
@@ -103,10 +110,18 @@ export class ListingFlowService implements OnModuleInit {
   }
 
   // ─── Pending state helpers (in-memory + DB) ─────────────────
-  private async setPendingState(phone: string, state: PendingState): Promise<void> {
-    const withTtl: PendingState = { ...state, expiresAt: Date.now() + PENDING_TTL_MS };
+  private async setPendingState(
+    phone: string,
+    state: PendingState,
+  ): Promise<void> {
+    const withTtl: PendingState = {
+      ...state,
+      expiresAt: Date.now() + PENDING_TTL_MS,
+    };
     pendingStates.set(phone, withTtl);
-    await this.usersService.savePendingState(phone, withTtl as any).catch(() => {});
+    await this.usersService
+      .savePendingState(phone, withTtl as any)
+      .catch(() => {});
   }
 
   private async deletePendingState(phone: string): Promise<void> {
@@ -114,10 +129,18 @@ export class ListingFlowService implements OnModuleInit {
     await this.usersService.clearPendingState(phone).catch(() => {});
   }
 
-  private async setFarmerResponse(phone: string, resp: PendingFarmerResponse): Promise<void> {
-    const withTtl: PendingFarmerResponse = { ...resp, expiresAt: Date.now() + PENDING_TTL_MS };
+  private async setFarmerResponse(
+    phone: string,
+    resp: PendingFarmerResponse,
+  ): Promise<void> {
+    const withTtl: PendingFarmerResponse = {
+      ...resp,
+      expiresAt: Date.now() + PENDING_TTL_MS,
+    };
     pendingFarmerResponses.set(phone, withTtl);
-    await this.usersService.savePendingFarmerResponse(phone, withTtl as any).catch(() => {});
+    await this.usersService
+      .savePendingFarmerResponse(phone, withTtl as any)
+      .catch(() => {});
   }
 
   private async deleteFarmerResponse(phone: string): Promise<void> {
@@ -291,7 +314,7 @@ How many ${smartUnit} you get?`,
       return msgs[lang];
     }
 
-    if (user.role !== 'farmer') {
+    if (user.role !== 'farmer' && user.role !== 'both') {
       const msgs: Record<Language, string> = {
         english: `❌ Only farmers can sell.`,
         french: `❌ Seuls les agriculteurs peuvent vendre.`,
@@ -404,7 +427,7 @@ Example: 20000`,
       return msgs[lang];
     }
 
-    if (user.role !== 'buyer') {
+    if (user.role !== 'buyer' && user.role !== 'both') {
       const msgs: Record<Language, string> = {
         english: `❌ Only buyers can buy.`,
         french: `❌ Seuls les acheteurs peuvent acheter.`,
@@ -415,7 +438,8 @@ Example: 20000`,
 
     const matchingListings = await this.listingService.findByProduct(product);
     const sellListings = matchingListings.filter(
-      (l) => l.type === 'sell' && l.status === 'active',
+      (l) =>
+        l.type === 'sell' && l.status === 'active' && l.userPhone !== phone,
     );
 
     // No listings found → save buy request
@@ -774,7 +798,12 @@ ${filterSummary}
     if (pending.type === 'buy_select')
       return this.handleBuySelect(phone, response, channel, pending, savedLang);
     if (pending.type === 'awaiting_counter_response')
-      return this.handleBuyerCounterResponse(phone, response, pending, savedLang);
+      return this.handleBuyerCounterResponse(
+        phone,
+        response,
+        pending,
+        savedLang,
+      );
 
     return await this.aiService.reply('unknown_command', savedLang, {});
   }
@@ -1152,7 +1181,10 @@ Example: 20000`,
 
     // ── Farmer chose option 2 → counter-offer ─────────────────
     if (input === '2') {
-      await this.setFarmerResponse(phone, { ...pending, awaitingCounterPrice: true });
+      await this.setFarmerResponse(phone, {
+        ...pending,
+        awaitingCounterPrice: true,
+      });
       const ask: Record<Language, string> = {
         english: `💰 What price do you want to offer? (Enter a number)\n\nExample: 17000`,
         french: `💰 Quel prix voulez-vous proposer? (Entrez un nombre)\n\nExemple: 17000`,
@@ -1162,7 +1194,12 @@ Example: 20000`,
     }
 
     // ── Farmer chose option 3 → decline ───────────────────────
-    if (input === '3' || input === 'NO' || input === 'NON' || input === 'NO BE DAT') {
+    if (
+      input === '3' ||
+      input === 'NO' ||
+      input === 'NON' ||
+      input === 'NO BE DAT'
+    ) {
       return this.processFarmerDecline(phone, pending, user, lang);
     }
 
@@ -1176,8 +1213,12 @@ Example: 20000`,
     const accepted = input === '1' || parsed.intent === 'yes';
 
     if (accepted) {
-      await this.listingService.update(pending.sellerListingId, { status: 'matched' });
-      await this.listingService.update(pending.buyerListingId, { status: 'matched' });
+      await this.listingService.update(pending.sellerListingId, {
+        status: 'matched',
+      });
+      await this.listingService.update(pending.buyerListingId, {
+        status: 'matched',
+      });
       // Notify buyer with wa.me link in THEIR language
       if (buyer?.phone) {
         const connectedMsgBuyer = await this.aiService.reply(
@@ -1284,9 +1325,15 @@ Example: 20000`,
     const parsed = await this.aiService.parseIntent(response);
     const upper = response.trim().toUpperCase();
     const accepted =
-      parsed.intent === 'yes' || upper === '1' || upper === 'YES' || upper === 'OUI';
+      parsed.intent === 'yes' ||
+      upper === '1' ||
+      upper === 'YES' ||
+      upper === 'OUI';
     const declined =
-      parsed.intent === 'no' || upper === '2' || upper === 'NO' || upper === 'NON';
+      parsed.intent === 'no' ||
+      upper === '2' ||
+      upper === 'NO' ||
+      upper === 'NON';
 
     if (!accepted && !declined) {
       const ask: Record<Language, string> = {

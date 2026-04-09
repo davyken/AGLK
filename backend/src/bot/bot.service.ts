@@ -35,20 +35,30 @@ export class BotService {
     const savedLang: Language = (user as any)?.language ?? 'english';
     // Only override saved language if detection is confident (not plain English
     // which is often a false positive for short messages).
-    const lang: Language = detectedLang !== 'english' ? detectedLang : savedLang;
+    const lang: Language =
+      detectedLang !== 'english' ? detectedLang : savedLang;
 
     if (user && lang !== savedLang) {
       await this.usersService.updateLanguage(phone, lang);
     }
 
     // ── Explicit language-switch commands ─────────────────────
-    if (normalized.includes('LANG_ENGLISH') || (normalized.includes('ENGLISH') && normalized.includes('LANG'))) {
+    if (
+      normalized.includes('LANG_ENGLISH') ||
+      (normalized.includes('ENGLISH') && normalized.includes('LANG'))
+    ) {
       return this.handleLanguageSwitch(phone, 'english', lang);
     }
-    if (normalized.includes('LANG_FRENCH') || (normalized.includes('FRENCH') && normalized.includes('LANG'))) {
+    if (
+      normalized.includes('LANG_FRENCH') ||
+      (normalized.includes('FRENCH') && normalized.includes('LANG'))
+    ) {
       return this.handleLanguageSwitch(phone, 'french', lang);
     }
-    if (normalized.includes('LANG_PIDGIN') || (normalized.includes('PIDGIN') && normalized.includes('LANG'))) {
+    if (
+      normalized.includes('LANG_PIDGIN') ||
+      (normalized.includes('PIDGIN') && normalized.includes('LANG'))
+    ) {
       return this.handleLanguageSwitch(phone, 'pidgin', lang);
     }
     if (
@@ -99,7 +109,15 @@ export class BotService {
     }
 
     // ── Greeting from a registered user ───────────────────────
-    const isGreeting = ['HI', 'HELLO', 'BONJOUR', 'SALUT', 'HEY', 'START', 'BONSOIR'].includes(upper);
+    const isGreeting = [
+      'HI',
+      'HELLO',
+      'BONJOUR',
+      'SALUT',
+      'HEY',
+      'START',
+      'BONSOIR',
+    ].includes(upper);
     if (isGreeting) {
       return this.handleRegisteredGreeting(user, lang, channel);
     }
@@ -140,18 +158,40 @@ export class BotService {
     // ── Role selection (during registration only) ─────────────
     if (normalized === '1' || normalized === '2') {
       if (!isRegistered) {
-        const reply = await this.registrationFlow.handle(phone, trimmed, channel);
+        const reply = await this.registrationFlow.handle(
+          phone,
+          trimmed,
+          channel,
+        );
         if (reply) return reply;
       }
     }
 
     // ── YES / NO (context-sensitive) ──────────────────────────
-    const isYes = ['YES', 'OUI', 'YES NA', 'NA SO', 'OK', 'OKAY', 'D\'ACCORD'].includes(upper);
-    const isNo = ['NO', 'NON', 'NO BE DAT', 'NON MERCI', 'PAS DU TOUT', 'NOPE'].includes(upper);
+    const isYes = [
+      'YES',
+      'OUI',
+      'YES NA',
+      'NA SO',
+      'OK',
+      'OKAY',
+      "D'ACCORD",
+    ].includes(upper);
+    const isNo = [
+      'NO',
+      'NON',
+      'NO BE DAT',
+      'NON MERCI',
+      'PAS DU TOUT',
+      'NOPE',
+    ].includes(upper);
 
     if (isYes || isNo) {
       // Only route YES/NO to listing flow if there is an active pending state
-      if (this.listingFlow.hasPendingFarmerResponse(phone) || this.listingFlow.isInPriceState(phone)) {
+      if (
+        this.listingFlow.hasPendingFarmerResponse(phone) ||
+        this.listingFlow.isInPriceState(phone)
+      ) {
         return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
       }
     }
@@ -168,13 +208,23 @@ export class BotService {
         return this.listingFlow.handle(phone, trimmed, channel);
       if (parsed.intent === 'help')
         return this.helpMessage(channel, lang, user?.name);
-      if (parsed.intent === 'yes' && this.listingFlow.hasPendingFarmerResponse(phone))
+      if (
+        parsed.intent === 'yes' &&
+        this.listingFlow.hasPendingFarmerResponse(phone)
+      )
         return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
-      if (parsed.intent === 'no' && this.listingFlow.hasPendingFarmerResponse(phone))
+      if (
+        parsed.intent === 'no' &&
+        this.listingFlow.hasPendingFarmerResponse(phone)
+      )
         return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
       if (parsed.intent === 'register') {
         if (!isRegistered) {
-          const reply = await this.registrationFlow.handle(phone, trimmed, channel);
+          const reply = await this.registrationFlow.handle(
+            phone,
+            trimmed,
+            channel,
+          );
           if (reply) return reply;
         }
         return this.helpMessage(channel, lang, user?.name);
@@ -242,9 +292,14 @@ export class BotService {
 
     let newLang: Language | null = null;
     if (input.includes('1') || input.includes('english')) newLang = 'english';
-    else if (input.includes('2') || input.includes('french') || input.includes('français'))
+    else if (
+      input.includes('2') ||
+      input.includes('french') ||
+      input.includes('français')
+    )
       newLang = 'french';
-    else if (input.includes('3') || input.includes('pidgin')) newLang = 'pidgin';
+    else if (input.includes('3') || input.includes('pidgin'))
+      newLang = 'pidgin';
 
     if (!newLang) {
       return `🌐 Choose your language:\n\n1️⃣ English\n2️⃣ Français\n3️⃣ Pidgin`;

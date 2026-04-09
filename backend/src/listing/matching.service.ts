@@ -19,16 +19,21 @@ export class MatchingService {
   async findMatches(
     listing: ListingDocument,
     limit = 5,
+    excludeUserPhone?: string,
   ): Promise<MatchResult[]> {
     const oppositeType = listing.type === 'sell' ? 'buy' : 'sell';
 
-    const candidates = await this.listingModel
-      .find({
-        type: oppositeType,
-        status: 'active',
-        product: listing.product, // must be same product
-      })
-      .exec();
+    const query: any = {
+      type: oppositeType,
+      status: 'active',
+      product: listing.product,
+    };
+
+    if (excludeUserPhone) {
+      query.userPhone = { $ne: excludeUserPhone };
+    }
+
+    const candidates = await this.listingModel.find(query).exec();
 
     const matches: MatchResult[] = candidates.map((candidate) => ({
       listing: candidate,

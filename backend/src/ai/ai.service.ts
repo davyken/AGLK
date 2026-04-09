@@ -27,7 +27,7 @@ export interface ParsedIntent {
   unit?: string;
   price?: number;
   // user profile fields — extracted from free-form text
-  name?: string;     // "I'm Paul Biya" → "Paul Biya"
+  name?: string; // "I'm Paul Biya" → "Paul Biya"
   location?: string; // "in Douala" or "à Bafoussam"
   role?: 'farmer' | 'buyer'; // "I sell" → farmer
   raw: string;
@@ -179,7 +179,9 @@ JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"q
         ? 'buyer'
         : undefined;
 
-    if (/^(yes|oui|ok|okay|na so|yep|d'accord|yes na|correct|sure)$/i.test(lower)) {
+    if (
+      /^(yes|oui|ok|okay|na so|yep|d'accord|yes na|correct|sure)$/i.test(lower)
+    ) {
       return { intent: 'yes', language, raw };
     }
     if (/^(no|non|nope|no be dat|non merci|pas du tout)$/i.test(lower)) {

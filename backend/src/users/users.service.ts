@@ -142,16 +142,16 @@ export class UsersService {
     response: Record<string, any>,
   ): Promise<void> {
     await this.userModel
-      .findOneAndUpdate({ phone }, { $set: { pendingFarmerResponse: response } })
+      .findOneAndUpdate(
+        { phone },
+        { $set: { pendingFarmerResponse: response } },
+      )
       .exec();
   }
 
   async clearPendingFarmerResponse(phone: string): Promise<void> {
     await this.userModel
-      .findOneAndUpdate(
-        { phone },
-        { $set: { pendingFarmerResponse: null } },
-      )
+      .findOneAndUpdate({ phone }, { $set: { pendingFarmerResponse: null } })
       .exec();
   }
 

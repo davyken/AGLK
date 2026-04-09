@@ -93,14 +93,14 @@ export class RegistrationFlowService {
 
   // ─── Determine which state comes first given what we know ─────
   private determineFirstMissingState(
-    role: 'farmer' | 'buyer' | null,
+    role: 'farmer' | 'buyer' | 'both' | null,
     name: string | null,
     location: string | null,
   ): string {
     if (!role) return 'AWAITING_ROLE';
     if (!name) return 'AWAITING_NAME';
     if (!location) return 'AWAITING_LOCATION';
-    if (role === 'farmer') return 'AWAITING_PRODUCES';
+    if (role === 'farmer' || role === 'both') return 'AWAITING_PRODUCES';
     return 'AWAITING_BUSINESS';
   }
 
@@ -133,7 +133,9 @@ export class RegistrationFlowService {
         if (hasLocation) parts.push(`You're based in *${parsed.location}*.`);
 
         if (nextState === 'AWAITING_ROLE')
-          parts.push(`Are you a *farmer* (sells produce) or a *buyer*?\n\n1️⃣ Farmer\n2️⃣ Buyer`);
+          parts.push(
+            `Are you a *farmer*, *buyer*, or *both*?\n\n1️⃣ Farmer\n2️⃣ Buyer\n3️⃣ Both`,
+          );
         else if (nextState === 'AWAITING_NAME')
           parts.push(`What is your full name?`);
         else if (nextState === 'AWAITING_LOCATION')
@@ -152,7 +154,7 @@ export class RegistrationFlowService {
 
         if (nextState === 'AWAITING_ROLE')
           parts.push(
-            `Êtes-vous *agriculteur* ou *acheteur* ?\n\n1️⃣ Agriculteur\n2️⃣ Acheteur`,
+            `Êtes-vous *agriculteur*, *acheteur*, ou les deux ?\n\n1️⃣ Agriculteur\n2️⃣ Acheteur\n3️⃣ Les deux`,
           );
         else if (nextState === 'AWAITING_NAME')
           parts.push(`Quel est votre nom complet ?`);
@@ -174,7 +176,9 @@ export class RegistrationFlowService {
         if (hasLocation) parts.push(`You dey *${parsed.location}*.`);
 
         if (nextState === 'AWAITING_ROLE')
-          parts.push(`You be farmer or buyer?\n\n1️⃣ Farmer\n2️⃣ Buyer`);
+          parts.push(
+            `You be farmer, buyer, or both?\n\n1️⃣ Farmer\n2️⃣ Buyer\n3️⃣ Both`,
+          );
         else if (nextState === 'AWAITING_NAME')
           parts.push(`Wetin be your full name?`);
         else if (nextState === 'AWAITING_LOCATION')
@@ -197,22 +201,32 @@ export class RegistrationFlowService {
     lang: Language,
     nextState: string,
   ): Promise<string> {
+    const role = parsed.role as string;
     const roleLabel =
-      parsed.role === 'farmer'
+      role === 'farmer'
         ? lang === 'french'
           ? 'agriculteur'
           : lang === 'pidgin'
             ? 'farmer'
             : 'farmer'
-        : lang === 'french'
-          ? 'acheteur'
-          : lang === 'pidgin'
-            ? 'buyer'
-            : 'buyer';
+        : role === 'both'
+          ? lang === 'french'
+            ? 'agriculteur et acheteur'
+            : lang === 'pidgin'
+              ? 'farmer and buyer'
+              : 'farmer and buyer'
+          : lang === 'french'
+            ? 'acheteur'
+            : lang === 'pidgin'
+              ? 'buyer'
+              : 'buyer';
 
     if (lang === 'french') {
-      const confirm = `Parfait ${parsed.name ? `, *${parsed.name}*` : ''} !`
-        + (parsed.location ? ` Vous êtes *${roleLabel}* à *${parsed.location}*.` : ` Vous êtes *${roleLabel}*.`);
+      const confirm =
+        `Parfait ${parsed.name ? `, *${parsed.name}*` : ''} !` +
+        (parsed.location
+          ? ` Vous êtes *${roleLabel}* à *${parsed.location}*.`
+          : ` Vous êtes *${roleLabel}*.`);
 
       if (nextState === 'AWAITING_PRODUCES')
         return `${confirm}\n\nQuels produits cultivez-vous ? (ex: maïs, manioc, tomates)`;
@@ -222,8 +236,11 @@ export class RegistrationFlowService {
     }
 
     if (lang === 'pidgin') {
-      const confirm = `No wahala${parsed.name ? `, *${parsed.name}*` : ''} !`
-        + (parsed.location ? ` You be *${roleLabel}* for *${parsed.location}*.` : ` You be *${roleLabel}*.`);
+      const confirm =
+        `No wahala${parsed.name ? `, *${parsed.name}*` : ''} !` +
+        (parsed.location
+          ? ` You be *${roleLabel}* for *${parsed.location}*.`
+          : ` You be *${roleLabel}*.`);
 
       if (nextState === 'AWAITING_PRODUCES')
         return `${confirm}\n\nWetin you dey farm? (e.g. maize, cassava, tomatoes)`;
@@ -233,8 +250,9 @@ export class RegistrationFlowService {
     }
 
     // English
-    const confirm = `Great${parsed.name ? `, *${parsed.name}*` : ''}!`
-      + (parsed.location
+    const confirm =
+      `Great${parsed.name ? `, *${parsed.name}*` : ''}!` +
+      (parsed.location
         ? ` So you're a *${roleLabel}* based in *${parsed.location}*.`
         : ` So you're a *${roleLabel}*.`);
 
@@ -336,26 +354,55 @@ export class RegistrationFlowService {
   ): Promise<string> {
     const lower = input.toLowerCase();
 
-    const farmerKeywords = ['1', 'farmer', 'agriculteur', 'sell', 'vend', 'farm', 'cultiv', 'grow', 'i get', 'i dey'];
-    const buyerKeywords = ['2', 'buyer', 'acheteur', 'buy', 'achet', 'purchas', 'need', 'want'];
+    const farmerKeywords = [
+      '1',
+      'farmer',
+      'agriculteur',
+      'sell',
+      'vend',
+      'farm',
+      'cultiv',
+      'grow',
+      'i get',
+      'i dey',
+    ];
+    const buyerKeywords = [
+      '2',
+      'buyer',
+      'acheteur',
+      'buy',
+      'achet',
+      'purchas',
+      'need',
+      'want',
+    ];
+    const bothKeywords = [
+      '3',
+      'both',
+      'les deux',
+      'all',
+      'i get am and i want am',
+    ];
 
     const isFarmer =
-      parsed.role === 'farmer' ||
-      farmerKeywords.some((k) => lower.includes(k));
+      parsed.role === 'farmer' || farmerKeywords.some((k) => lower.includes(k));
     const isBuyer =
-      parsed.role === 'buyer' ||
-      buyerKeywords.some((k) => lower.includes(k));
+      parsed.role === 'buyer' || buyerKeywords.some((k) => lower.includes(k));
+    const isBoth =
+      (parsed.role as string) === 'both' ||
+      lower === '3' ||
+      bothKeywords.some((k) => lower.includes(k));
 
-    if (!isFarmer && !isBuyer) {
+    if (!isFarmer && !isBuyer && !isBoth) {
       const errors: Record<Language, string> = {
-        english: `Please reply *1* for Farmer or *2* for Buyer.`,
-        french: `Veuillez répondre *1* pour Agriculteur ou *2* pour Acheteur.`,
-        pidgin: `Send *1* if you be Farmer, *2* if you be Buyer.`,
+        english: `Please reply *1* for Farmer, *2* for Buyer, or *3* for Both.`,
+        french: `Veuillez répondre *1* pour Agriculteur, *2* pour Acheteur, ou *3* pour Les deux.`,
+        pidgin: `Send *1* if you be Farmer, *2* if you be Buyer, *3* if you be both.`,
       };
       return errors[lang];
     }
 
-    const role = isBuyer && !isFarmer ? 'buyer' : 'farmer';
+    const role = isBoth ? 'both' : isBuyer && !isFarmer ? 'buyer' : 'farmer';
 
     // Also store name/location if the user included them
     const updates: Record<string, any> = {
@@ -447,10 +494,12 @@ export class RegistrationFlowService {
     await this.usersService.update(phone, {
       location,
       conversationState:
-        role === 'farmer' ? 'AWAITING_PRODUCES' : 'AWAITING_BUSINESS',
+        role === 'farmer' || role === 'both'
+          ? 'AWAITING_PRODUCES'
+          : 'AWAITING_BUSINESS',
     });
 
-    return role === 'farmer'
+    return role === 'farmer' || role === 'both'
       ? await this.askProduces(lang)
       : await this.askBusiness(lang);
   }
@@ -475,13 +524,24 @@ export class RegistrationFlowService {
       return errors[lang];
     }
 
-    const user = await this.usersService.update(phone, {
+    const user = await this.usersService.findByPhone(phone);
+    const isBoth = user?.role === 'both';
+
+    if (isBoth) {
+      await this.usersService.update(phone, {
+        produces,
+        conversationState: 'AWAITING_BUSINESS',
+      });
+      return await this.askBusiness(lang);
+    }
+
+    const userUpdated = await this.usersService.update(phone, {
       produces,
       conversationState: 'REGISTERED',
     });
 
     return await this.aiService.reply('registered_farmer', lang, {
-      name: user.name,
+      name: userUpdated.name,
     });
   }
 
@@ -522,19 +582,32 @@ export class RegistrationFlowService {
     if (needs.length === 0) {
       const errors: Record<Language, string> = {
         english: `List at least one product you need.\nExample: maize, tomatoes`,
-        french: `Listez au moins un produit recherché.\nExemple: maïs, tomates`,
+        french: `Listez au moins un produit recherché.\nExemple: maíz, tomates`,
         pidgin: `List at least one thing wey you need.\nExample: maize, tomatoes`,
       };
       return errors[lang];
     }
 
-    const user = await this.usersService.update(phone, {
+    const user = await this.usersService.findByPhone(phone);
+    const isBoth = user?.role === 'both';
+
+    if (isBoth) {
+      await this.usersService.update(phone, {
+        needs,
+        conversationState: 'REGISTERED',
+      });
+      return await this.aiService.reply('registered_both', lang, {
+        name: user.name,
+      });
+    }
+
+    const userUpdated = await this.usersService.update(phone, {
       needs,
       conversationState: 'REGISTERED',
     });
 
     return await this.aiService.reply('registered_buyer', lang, {
-      name: user.name,
+      name: userUpdated.name,
     });
   }
 
