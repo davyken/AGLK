@@ -9,7 +9,6 @@ import { AiService, Language } from '../ai/ai.service';
 import { FilterParserService } from './filter-parser.service';
 import { CropMediaService } from './Crop media.service';
 
-// ─── In-memory state (persists across messages in same session) ───
 interface PendingState {
   type: 'sell' | 'sell_waiting_image' | 'buy_select';
   product: string;
