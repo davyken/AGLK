@@ -267,6 +267,8 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
       // ── Farmer YES/NO response to buyer ───────────────────
       match_found_farmer: `A buyer in ${d.location} is interested in buying ${d.quantity} ${d.unit} of ${d.product}. Ask the farmer: are you interested? They should reply YES or NO.`,
 
+      match_found_farmer_counter: `New buyer alert! ${d.buyerName ? `*${d.buyerName}*` : 'A buyer'} in *${d.location}* wants to buy *${d.quantity} ${d.unit}* of *${d.product}* at *${d.price}*. Give the farmer 3 options clearly numbered: 1 = Accept this deal, 2 = Make a counter-offer (different price), 3 = Decline. Keep it short and friendly.`,
+
       connected: `Deal confirmed! Both farmer and buyer have agreed. Share the WhatsApp contact link: ${d.link}. Show deal summary: ${d.product}, ${d.quantity} ${d.unit}, ${d.price}. Encourage them to chat directly to finalise.`,
 
       farmer_no_pending: `No pending buyer requests for this farmer. Tell them to type HELP for available options.`,
@@ -283,6 +285,12 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
       offer_only_buyers: `Only buyers can make offers.`,
 
       offer_sent: `Offer of ${d.price} sent for ${d.product}. Tell them the farmer will respond shortly.`,
+
+      // ── Counter-offer ─────────────────────────────────────
+      counter_offer_received_buyer: `The farmer *${d.farmerName}* has made a counter-offer for *${d.product}* (${d.quantity} ${d.unit}). Original price: ${d.originalPrice}. Counter price: *${d.counterPrice}*. Ask the buyer to reply: 1 = Accept the counter-offer, 2 = Decline.`,
+
+      // ── Returning / context-aware greetings ──────────────
+      welcome_registered: `Greet the returning user *${d.name}* warmly by name. They are a *${d.role}*. Tell them in one short sentence how to get started (SELL or BUY command). Keep it brief — max 2 lines.`,
 
       // ── General ───────────────────────────────────────────
       unknown_command: `The bot didn't understand the message. Suggest the user try: SELL maize 10 bags, BUY maize 20 bags, or type HELP for all options.`,
@@ -368,6 +376,21 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
         english: `🔔 *New Buyer!*\n\nBuyer in *${data.location}* wants:\n🌽 ${data.product} — ${data.quantity} ${data.unit}\n\nInterested? Reply *YES* or *NO*`,
         french: `🔔 *Nouvel Acheteur!*\n\nAcheteur à *${data.location}* cherche:\n🌽 ${data.product} — ${data.quantity} ${data.unit}\n\nRépondez *OUI* ou *NON*`,
         pidgin: `🔔 *Buyer Dey!*\n\nBuyer for *${data.location}* wan:\n🌽 ${data.product} — ${data.quantity} ${data.unit}\n\nYou agree? Reply *YES* or *NO*`,
+      },
+      match_found_farmer_counter: {
+        english: `🔔 *New Buyer!*\n\n*${data.buyerName || 'A buyer'}* (${data.location}) wants:\n🌽 *${data.product}* — ${data.quantity} ${data.unit} @ *${data.price}*\n\n1️⃣ Accept\n2️⃣ Counter-offer\n3️⃣ Decline`,
+        french: `🔔 *Nouvel Acheteur!*\n\n*${data.buyerName || 'Un acheteur'}* (${data.location}) cherche:\n🌽 *${data.product}* — ${data.quantity} ${data.unit} @ *${data.price}*\n\n1️⃣ Accepter\n2️⃣ Contre-offre\n3️⃣ Refuser`,
+        pidgin: `🔔 *New Buyer!*\n\n*${data.buyerName || 'One buyer'}* (${data.location}) wan:\n🌽 *${data.product}* — ${data.quantity} ${data.unit} @ *${data.price}*\n\n1️⃣ Accept\n2️⃣ Counter-offer\n3️⃣ No`,
+      },
+      counter_offer_received_buyer: {
+        english: `💬 *Counter-Offer from ${data.farmerName}*\n\n🌽 ${data.product} — ${data.quantity} ${data.unit}\nOriginal: ${data.originalPrice}\nNew offer: *${data.counterPrice}*\n\n1️⃣ Accept  2️⃣ Decline`,
+        french: `💬 *Contre-offre de ${data.farmerName}*\n\n🌽 ${data.product} — ${data.quantity} ${data.unit}\nOriginal: ${data.originalPrice}\nNouvelle offre: *${data.counterPrice}*\n\n1️⃣ Accepter  2️⃣ Refuser`,
+        pidgin: `💬 *Counter-offer from ${data.farmerName}*\n\n🌽 ${data.product} — ${data.quantity} ${data.unit}\nFirst price: ${data.originalPrice}\nNew offer: *${data.counterPrice}*\n\n1️⃣ Accept  2️⃣ No`,
+      },
+      welcome_registered: {
+        english: `Hey *${data.name}*! 👋\n\n${data.role === 'farmer' ? 'Type *SELL maize 10 bags* to list your produce.' : 'Type *BUY maize 20 bags* to find sellers.'}\n\n_Type HELP for options._`,
+        french: `Bonjour *${data.name}* ! 👋\n\n${data.role === 'farmer' ? 'Tapez *VENDRE maïs 10 sacs* pour créer une annonce.' : 'Tapez *ACHETER maïs 20 sacs* pour trouver des vendeurs.'}\n\n_Tapez AIDE pour les options._`,
+        pidgin: `How you dey, *${data.name}*! 👋\n\n${data.role === 'farmer' ? 'Type *SELL maize 10 bags* to list your thing.' : 'Type *BUY maize 20 bags* to find sellers.'}\n\n_Type HELP for options._`,
       },
       connected: {
         english: `✅ *Deal Confirmed!*\n\nContact: ${data.link}\n\n📋 ${data.product} — ${data.quantity} ${data.unit} @ ${data.price}`,

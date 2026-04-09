@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsBoolean,
   IsNumber,
+  IsObject,
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -91,4 +92,12 @@ export class UpdateUserDto {
   @IsOptional()
   @IsNumber()
   trustScore?: number;
+
+  @IsOptional()
+  @IsObject()
+  pendingState?: Record<string, any> | null;
+
+  @IsOptional()
+  @IsObject()
+  pendingFarmerResponse?: Record<string, any> | null;
 }

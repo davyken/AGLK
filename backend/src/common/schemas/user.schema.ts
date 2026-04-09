@@ -62,10 +62,61 @@ export class User {
       'REGISTERED',
       'AWAITING_PRICE',
       'AWAITING_CONFIRM',
+      'AWAITING_LANGUAGE',
+      'AWAITING_COUNTER_PRICE', // farmer is typing counter-offer price
     ],
     default: 'START',
   })
   conversationState: string;
+
+  // ── Persisted pending states (survives server restarts) ───────
+  // Stores transient sell/buy_select flow state
+  @Prop({ type: Object, default: null })
+  pendingState: {
+    type:
+      | 'sell'
+      | 'sell_waiting_image'
+      | 'buy_select'
+      | 'awaiting_counter_response';
+    product: string;
+    productDisplay?: string;
+    quantity: number;
+    unit: string;
+    price?: number;
+    imageUrl?: string;
+    imageMediaId?: string;
+    expiresAt?: string; // ISO string — TTL after which state is discarded
+    listings?: Array<{
+      id: string;
+      userPhone: string;
+      farmerName: string;
+      location: string;
+      quantity: number;
+      price: number;
+      imageUrl?: string;
+      imageMediaId?: string;
+    }>;
+    // counter-offer fields (buyer side)
+    farmerPhone?: string;
+    counterPrice?: number;
+    sellerListingId?: string;
+    buyerListingId?: string;
+  } | null;
+
+  // Stores farmer YES/NO (or counter-offer) pending response state
+  @Prop({ type: Object, default: null })
+  pendingFarmerResponse: {
+    buyerPhone: string;
+    sellerListingId: string;
+    buyerListingId: string;
+    product: string;
+    quantity: number;
+    unit: string;
+    price: number;
+    language: string;
+    awaitingCounterPrice?: boolean; // true when farmer chose "counter"
+    expiresAt?: string;
+  } | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
