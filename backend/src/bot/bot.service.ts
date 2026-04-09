@@ -5,8 +5,8 @@ import { ListingFlowService } from '../bot/listing.flow';
 import { AiService, Language } from '../ai/ai.service';
 
 export interface IncomingMessage {
-  phone:   string;
-  text:    string;
+  phone: string;
+  text: string;
   channel: 'sms' | 'whatsapp';
 }
 
@@ -15,26 +15,33 @@ export class BotService {
   private readonly logger = new Logger(BotService.name);
 
   constructor(
-    private readonly usersService:     UsersService,
+    private readonly usersService: UsersService,
     private readonly registrationFlow: RegistrationFlowService,
-    private readonly listingFlow:      ListingFlowService,
-    private readonly aiService:        AiService,
+    private readonly listingFlow: ListingFlowService,
+    private readonly aiService: AiService,
   ) {}
 
   async handleMessage(msg: IncomingMessage): Promise<string> {
     const { phone, text, channel } = msg;
 
-    const trimmed  = text.trim();
-    const upper    = trimmed.toUpperCase();
+    const trimmed = text.trim();
+    const upper = trimmed.toUpperCase();
     const normalized = this.normalizeCommand(upper);
 
     // ── Load user ─────────────────────────────────────────
     const user = await this.usersService.findByPhone(phone);
 
     // ── Language Resolution ──────────────────────────────
-    const detectedLang: Language = this.aiService.detectLanguage(trimmed);
-    const savedLang:    Language = (user as any)?.language ?? 'english';
-    const lang: Language = detectedLang !== 'english' ? detectedLang : savedLang;
+    // 1. Detect from current message via LLM + statistical analysis
+    // 2. If high-confidence signal found → use it and save to DB
+    // 3. If low-confidence (e.g. user typed "1" or "20") → use saved language
+    // This means once a user speaks French, ALL replies stay French
+    const detectedLang: Language = await this.aiService.detectLanguage(trimmed);
+    const savedLang: Language = (user as any)?.language ?? 'english';
+
+    // Only override saved language if we found a clear non-English signal
+    const lang: Language =
+      detectedLang !== 'english' ? detectedLang : savedLang;
 
     if (user && lang !== savedLang) {
       await this.usersService.updateLanguage(phone, lang);
@@ -94,7 +101,11 @@ export class BotService {
     }
 
     // LANGUAGE switch
-    if (normalized.startsWith('LANGUAGE') || normalized.startsWith('LANG') || normalized.startsWith('LANGUE')) {
+    if (
+      normalized.startsWith('LANGUAGE') ||
+      normalized.startsWith('LANG') ||
+      normalized.startsWith('LANGUE')
+    ) {
       return this.handleLanguageSwitch(phone, trimmed, channel, lang);
     }
 
@@ -105,8 +116,8 @@ export class BotService {
       }
       const msgs: Record<Language, string> = {
         english: `❌ Nothing to cancel. Type HELP for options.`,
-        french:  `❌ Rien à annuler. Tapez AIDE.`,
-        pidgin:  `❌ Nothing dey cancel. Type HELP.`,
+        french: `❌ Rien à annuler. Tapez AIDE.`,
+        pidgin: `❌ Nothing dey cancel. Type HELP.`,
       };
       return msgs[lang];
     }
@@ -120,8 +131,10 @@ export class BotService {
 
     if (this.listingFlow.hasPendingFarmerResponse(phone)) {
       // YES / NO check directly — no AI needed
-      if (['YES', 'OUI', 'YES NA', 'NA SO'].includes(upper) ||
-          ['NO', 'NON', 'NO BE DAT'].includes(upper)) {
+      if (
+        ['YES', 'OUI', 'YES NA', 'NA SO'].includes(upper) ||
+        ['NO', 'NON', 'NO BE DAT'].includes(upper)
+      ) {
         return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
       }
     }
@@ -144,20 +157,24 @@ export class BotService {
     // ─────────────────────────────────────────────────────
 
     // SELL (English + French + Pidgin variants)
-    if (normalized.startsWith('SELL') ||
-        upper.startsWith('VENDRE') ||
-        upper.startsWith('I GET') ||
-        upper.startsWith('I WAN SELL') ||
-        upper.includes('FOR SELL')) {
+    if (
+      normalized.startsWith('SELL') ||
+      upper.startsWith('VENDRE') ||
+      upper.startsWith('I GET') ||
+      upper.startsWith('I WAN SELL') ||
+      upper.includes('FOR SELL')
+    ) {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
     // BUY (English + French + Pidgin variants)
-    if (normalized.startsWith('BUY') ||
-        upper.startsWith('ACHETER') ||
-        upper.startsWith('I WAN BUY') ||
-        upper.startsWith('I DEY FIND') ||
-        upper.includes('FOR BUY')) {
+    if (
+      normalized.startsWith('BUY') ||
+      upper.startsWith('ACHETER') ||
+      upper.startsWith('I WAN BUY') ||
+      upper.startsWith('I DEY FIND') ||
+      upper.includes('FOR BUY')
+    ) {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
@@ -177,7 +194,11 @@ export class BotService {
     // GREETINGS → re-registration or menu
     if (['HI', 'HELLO', 'BONJOUR', 'SALUT', 'HEY', 'START'].includes(upper)) {
       if (!isRegistered) {
-        const reply = await this.registrationFlow.handle(phone, trimmed, channel);
+        const reply = await this.registrationFlow.handle(
+          phone,
+          trimmed,
+          channel,
+        );
         if (reply) return reply;
       }
       return this.helpMessage(channel, lang);
@@ -190,14 +211,23 @@ export class BotService {
     try {
       const parsed = await this.aiService.parseIntent(trimmed);
 
-      if (parsed.intent === 'sell')  return this.listingFlow.handle(phone, trimmed, channel);
-      if (parsed.intent === 'buy')   return this.listingFlow.handle(phone, trimmed, channel);
-      if (parsed.intent === 'price') return this.listingFlow.handle(phone, trimmed, channel);
-      if (parsed.intent === 'help')  return this.helpMessage(channel, lang);
-      if (parsed.intent === 'yes')   return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
-      if (parsed.intent === 'no')    return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
+      if (parsed.intent === 'sell')
+        return this.listingFlow.handle(phone, trimmed, channel);
+      if (parsed.intent === 'buy')
+        return this.listingFlow.handle(phone, trimmed, channel);
+      if (parsed.intent === 'price')
+        return this.listingFlow.handle(phone, trimmed, channel);
+      if (parsed.intent === 'help') return this.helpMessage(channel, lang);
+      if (parsed.intent === 'yes')
+        return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
+      if (parsed.intent === 'no')
+        return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
       if (parsed.intent === 'register') {
-        const reply = await this.registrationFlow.handle(phone, trimmed, channel);
+        const reply = await this.registrationFlow.handle(
+          phone,
+          trimmed,
+          channel,
+        );
         if (reply) return reply;
         return this.helpMessage(channel, lang);
       }
@@ -208,22 +238,28 @@ export class BotService {
     // ─────────────────────────────────────────────────────
     // FALLBACK: unknown command
     // ─────────────────────────────────────────────────────
-    return this.aiService.reply('unknown_command', lang, {});
+    return await this.aiService.reply('unknown_command', lang, {});
   }
 
   // ─── Language switch ──────────────────────────────────────
   private async handleLanguageSwitch(
-    phone:       string,
-    text:        string,
-    channel:     'sms' | 'whatsapp',
+    phone: string,
+    text: string,
+    channel: 'sms' | 'whatsapp',
     currentLang: Language,
   ): Promise<string> {
     const input = text.trim().toLowerCase();
 
     let newLang: Language | null = null;
-    if (input.includes('1') || input.includes('english'))                                   newLang = 'english';
-    else if (input.includes('2') || input.includes('french') || input.includes('français')) newLang = 'french';
-    else if (input.includes('3') || input.includes('pidgin'))                               newLang = 'pidgin';
+    if (input.includes('1') || input.includes('english')) newLang = 'english';
+    else if (
+      input.includes('2') ||
+      input.includes('french') ||
+      input.includes('français')
+    )
+      newLang = 'french';
+    else if (input.includes('3') || input.includes('pidgin'))
+      newLang = 'pidgin';
 
     if (!newLang) {
       await this.usersService.updateState(phone, 'AWAITING_LANGUAGE');
@@ -235,8 +271,8 @@ export class BotService {
 
     const confirms: Record<Language, string> = {
       english: `✅ Language set to English.`,
-      french:  `✅ Langue définie sur Français.`,
-      pidgin:  `✅ Language don change to Pidgin.`,
+      french: `✅ Langue définie sur Français.`,
+      pidgin: `✅ Language don change to Pidgin.`,
     };
     return confirms[newLang];
   }
@@ -246,8 +282,8 @@ export class BotService {
     if (channel === 'sms') {
       const sms: Record<Language, string> = {
         english: `AgroLink Help:\nSELL maize 10 bags\nBUY maize 20 bags\nLANGUAGE - change language\nHELP - this menu`,
-        french:  `AgroLink Aide:\nVENDRE maïs 10 sacs\nACHETER maïs 20 sacs\nLANGUE - changer langue\nAIDE - ce menu`,
-        pidgin:  `AgroLink Help:\nSELL maize 10 bags\nBUY maize 20 bags\nLANGUAGE - change language\nHELP - this menu`,
+        french: `AgroLink Aide:\nVENDRE maïs 10 sacs\nACHETER maïs 20 sacs\nLANGUE - changer langue\nAIDE - ce menu`,
+        pidgin: `AgroLink Help:\nSELL maize 10 bags\nBUY maize 20 bags\nLANGUAGE - change language\nHELP - this menu`,
       };
       return sms[lang];
     }
@@ -295,15 +331,15 @@ export class BotService {
 
   // ─── Normalize French/Pidgin → English ───────────────────
   private normalizeCommand(input: string): string {
-    if (input.startsWith('VENDRE'))  return 'SELL'     + input.slice(6);
-    if (input.startsWith('ACHETER')) return 'BUY'      + input.slice(7);
-    if (input.startsWith('OFFRE'))   return 'OFFER'    + input.slice(5);
-    if (input.startsWith('LANGUE'))  return 'LANGUAGE' + input.slice(6);
-    if (input === 'OUI')             return 'YES';
-    if (input === 'NON')             return 'NO';
-    if (input === 'AIDE')            return 'HELP';
-    if (input === 'SAUTER')         return 'SKIP';
-    if (input === 'ANNULER')         return 'CANCEL';
+    if (input.startsWith('VENDRE')) return 'SELL' + input.slice(6);
+    if (input.startsWith('ACHETER')) return 'BUY' + input.slice(7);
+    if (input.startsWith('OFFRE')) return 'OFFER' + input.slice(5);
+    if (input.startsWith('LANGUE')) return 'LANGUAGE' + input.slice(6);
+    if (input === 'OUI') return 'YES';
+    if (input === 'NON') return 'NO';
+    if (input === 'AIDE') return 'HELP';
+    if (input === 'SAUTER') return 'SKIP';
+    if (input === 'ANNULER') return 'CANCEL';
     return input;
   }
 }

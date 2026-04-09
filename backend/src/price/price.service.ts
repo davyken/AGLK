@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Listing, ListingDocument } from '../common/schemas/listing.schema';
+import {
+  PriceHistory,
+  PriceHistoryDocument,
+} from '../common/schemas/price-history.schema';
 
 export interface MarketPrice {
   product: string;
@@ -14,109 +18,91 @@ export interface MarketPrice {
 
 @Injectable()
 export class PriceService {
-  private priceCache: Map<string, MarketPrice> = new Map();
-  private cacheTTL = 60 * 60 * 1000;
-  private cacheTimestamps: Map<string, number> = new Map();
-
   constructor(
     @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
+    @InjectModel(PriceHistory.name)
+    private priceHistoryModel: Model<PriceHistoryDocument>,
   ) {}
 
   async getPrice(product: string): Promise<MarketPrice | null> {
     const normalizedProduct = product.toLowerCase().trim();
-    
-    if (this.isCacheValid(normalizedProduct)) {
-      return this.priceCache.get(normalizedProduct) || null;
+
+    const priceDoc = await this.priceHistoryModel
+      .findOne({
+        product: normalizedProduct,
+      })
+      .exec();
+
+    if (!priceDoc) {
+      return null;
     }
 
-    const price = await this.calculatePriceFromListings(normalizedProduct);
-    
-    if (price) {
-      this.priceCache.set(normalizedProduct, price);
-      this.cacheTimestamps.set(normalizedProduct, Date.now());
-    }
-    
-    return price;
+    return {
+      product: priceDoc.product,
+      low: priceDoc.minPrice,
+      avg: priceDoc.avgPrice,
+      high: priceDoc.maxPrice,
+      suggested: priceDoc.suggestedPrice,
+      lastUpdated: priceDoc.updatedAt,
+    };
   }
 
   async getAllPrices(): Promise<MarketPrice[]> {
-    const products = await this.getDistinctProducts();
-    const prices: MarketPrice[] = [];
+    const prices = await this.priceHistoryModel.find().exec();
 
-    for (const product of products) {
-      const price = await this.getPrice(product);
-      if (price) {
-        prices.push(price);
-      }
-    }
-
-    return prices;
+    return prices.map((priceDoc) => ({
+      product: priceDoc.product,
+      low: priceDoc.minPrice,
+      avg: priceDoc.avgPrice,
+      high: priceDoc.maxPrice,
+      suggested: priceDoc.suggestedPrice,
+      lastUpdated: priceDoc.updatedAt,
+    }));
   }
 
-  async updatePrice(
+  async recalculatePrice(
     product: string,
-    prices: Partial<MarketPrice>,
-  ): Promise<MarketPrice> {
+    location?: string,
+  ): Promise<MarketPrice | null> {
     const normalizedProduct = product.toLowerCase().trim();
-    const existing = this.priceCache.get(normalizedProduct);
+    const normalizedLocation = location?.toLowerCase().trim();
 
-    if (existing) {
-      const updated = { ...existing, ...prices, lastUpdated: new Date() };
-      this.priceCache.set(normalizedProduct, updated);
-      return updated;
-    }
-
-    const newPrice: MarketPrice = {
+    const query: any = {
       product: normalizedProduct,
-      low: prices.low || 0,
-      avg: prices.avg || 0,
-      high: prices.high || 0,
-      suggested: prices.suggested || 0,
-      lastUpdated: new Date(),
-    };
-    this.priceCache.set(normalizedProduct, newPrice);
-    return newPrice;
-  }
-
-  async hasPrice(product: string): Promise<boolean> {
-    return this.priceCache.has(product.toLowerCase().trim());
-  }
-
-  async getAvailableProducts(): Promise<string[]> {
-    return Array.from(this.priceCache.keys());
-  }
-
-  async invalidateCache(product?: string): Promise<void> {
-    if (product) {
-      const normalizedProduct = product.toLowerCase().trim();
-      this.priceCache.delete(normalizedProduct);
-      this.cacheTimestamps.delete(normalizedProduct);
-    } else {
-      this.priceCache.clear();
-      this.cacheTimestamps.clear();
-    }
-  }
-
-  private isCacheValid(product: string): boolean {
-    const timestamp = this.cacheTimestamps.get(product);
-    if (!timestamp) return false;
-    return Date.now() - timestamp < this.cacheTTL;
-  }
-
-  private async calculatePriceFromListings(product: string): Promise<MarketPrice | null> {
-    const listings = await this.listingModel.find({
-      product: product.toLowerCase().trim(),
       status: 'active',
       price: { $exists: true, $ne: null },
-    }).exec();
+    };
+
+    if (normalizedLocation) {
+      query.$or = [
+        { location: normalizedLocation },
+        { userLocation: normalizedLocation },
+      ];
+    }
+
+    const listings = await this.listingModel.find(query).exec();
 
     if (listings.length === 0) {
+      if (normalizedLocation) {
+        await this.priceHistoryModel
+          .findOneAndDelete({
+            product: normalizedProduct,
+            location: normalizedLocation,
+          })
+          .exec();
+      } else {
+        await this.priceHistoryModel
+          .findOneAndDelete({
+            product: normalizedProduct,
+          })
+          .exec();
+      }
       return null;
     }
 
     const prices = listings
-      .map(l => l.price)
-      .filter(p => typeof p === 'number' && p > 0);
+      .map((l) => l.price)
+      .filter((p) => typeof p === 'number' && p > 0);
 
     if (prices.length === 0) {
       return null;
@@ -127,24 +113,68 @@ export class PriceService {
     const max = sortedPrices[sortedPrices.length - 1];
     const sum = sortedPrices.reduce((a, b) => a + b, 0);
     const avg = sum / sortedPrices.length;
-    
     const suggested = Math.round(avg * 0.95);
 
+    const update: any = {
+      product: normalizedProduct,
+      location: normalizedLocation || '',
+      avgPrice: Math.round(avg),
+      minPrice: min,
+      maxPrice: max,
+      suggestedPrice: suggested,
+      sampleSize: prices.length,
+      source: 'transaction',
+      updatedAt: new Date(),
+    };
+
+    const options = normalizedLocation
+      ? { upsert: true, new: true, setDefaultsOnInsert: true }
+      : { upsert: true, new: true, setDefaultsOnInsert: true };
+
+    const priceDoc = await this.priceHistoryModel
+      .findOneAndUpdate(
+        normalizedLocation
+          ? { product: normalizedProduct, location: normalizedLocation }
+          : { product: normalizedProduct },
+        { $set: update },
+        options,
+      )
+      .exec();
+
     return {
-      product: product.toLowerCase().trim(),
-      low: min,
-      avg: Math.round(avg),
-      high: max,
-      suggested,
-      lastUpdated: new Date(),
+      product: priceDoc!.product,
+      low: priceDoc!.minPrice,
+      avg: priceDoc!.avgPrice,
+      high: priceDoc!.maxPrice,
+      suggested: priceDoc!.suggestedPrice,
+      lastUpdated: priceDoc!.updatedAt,
     };
   }
 
-  private async getDistinctProducts(): Promise<string[]> {
-    const products = await this.listingModel.distinct('product', {
-      status: 'active',
-      price: { $exists: true, $ne: null },
-    }).exec();
-    return products.map(p => p.toString().toLowerCase().trim());
+  async hasPrice(product: string): Promise<boolean> {
+    const normalizedProduct = product.toLowerCase().trim();
+    const priceDoc = await this.priceHistoryModel
+      .findOne({
+        product: normalizedProduct,
+      })
+      .exec();
+    return !!priceDoc;
+  }
+
+  async getAvailableProducts(): Promise<string[]> {
+    const products = await this.priceHistoryModel.distinct('product').exec();
+    return products.map((p) => p.toString());
+  }
+
+  async deletePrice(product: string, location?: string): Promise<void> {
+    const normalizedProduct = product.toLowerCase().trim();
+    const normalizedLocation = location?.toLowerCase().trim();
+
+    const query: any = { product: normalizedProduct };
+    if (normalizedLocation) {
+      query.location = normalizedLocation;
+    }
+
+    await this.priceHistoryModel.deleteMany(query).exec();
   }
 }

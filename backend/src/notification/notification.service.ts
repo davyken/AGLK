@@ -22,9 +22,7 @@ export class NotificationService {
   @OnEvent('listing.created')
   async handleListingCreated(event: ListingCreatedEvent): Promise<void> {
     try {
-      const listing = await this.listingModel
-        .findById(event.listingId)
-        .exec();
+      const listing = await this.listingModel.findById(event.listingId).exec();
 
       if (!listing) return;
 

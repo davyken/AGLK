@@ -35,4 +35,5 @@ export class PriceHistory {
 
 export const PriceHistorySchema = SchemaFactory.createForClass(PriceHistory);
 
-PriceHistorySchema.index({ product: 1, location: 1 }, { unique: true });
+PriceHistorySchema.index({ product: 1, location: 1 });
+PriceHistorySchema.index({ product: 1 });

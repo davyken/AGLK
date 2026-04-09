@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 export interface CropMedia {
-  emoji:    string;
+  emoji: string;
   imageUrl: string | null;
 }
 
@@ -17,7 +17,7 @@ export class CropMediaService {
 
   // ─── Get emoji + image URL for a crop ────────────────────
   async getMedia(product: string): Promise<CropMedia> {
-    const emoji    = this.getEmoji(product);
+    const emoji = this.getEmoji(product);
     const imageUrl = await this.getImage(product);
     return { emoji, imageUrl };
   }
@@ -28,96 +28,96 @@ export class CropMediaService {
 
     const emojiMap: Record<string, string> = {
       // Grains & cereals
-      'maize':       '🌽',
-      'corn':        '🌽',
-      'rice':        '🍚',
-      'wheat':       '🌾',
-      'millet':      '🌾',
-      'sorghum':     '🌾',
+      maize: '🌽',
+      corn: '🌽',
+      rice: '🍚',
+      wheat: '🌾',
+      millet: '🌾',
+      sorghum: '🌾',
 
       // Roots & tubers
-      'cassava':     '🥔',
-      'manioc':      '🥔',
-      'yam':         '🍠',
-      'potato':      '🥔',
-      'sweet potato':'🍠',
-      'macabo':      '🥔',
-      'cocoyam':     '🥔',
+      cassava: '🥔',
+      manioc: '🥔',
+      yam: '🍠',
+      potato: '🥔',
+      'sweet potato': '🍠',
+      macabo: '🥔',
+      cocoyam: '🥔',
 
       // Vegetables
-      'tomatoes':    '🍅',
-      'tomato':      '🍅',
-      'tomate':      '🍅',
-      'pepper':      '🌶️',
-      'piment':      '🌶️',
-      'onion':       '🧅',
-      'oignon':      '🧅',
-      'garlic':      '🧄',
-      'ail':         '🧄',
-      'eggplant':    '🍆',
-      'aubergine':   '🍆',
-      'cucumber':    '🥒',
-      'concombre':   '🥒',
-      'okra':        '🥬',
-      'gombo':       '🥬',
-      'cabbage':     '🥬',
-      'chou':        '🥬',
-      'carrot':      '🥕',
-      'carotte':     '🥕',
-      'spinach':     '🥬',
-      'lettuce':     '🥬',
+      tomatoes: '🍅',
+      tomato: '🍅',
+      tomate: '🍅',
+      pepper: '🌶️',
+      piment: '🌶️',
+      onion: '🧅',
+      oignon: '🧅',
+      garlic: '🧄',
+      ail: '🧄',
+      eggplant: '🍆',
+      aubergine: '🍆',
+      cucumber: '🥒',
+      concombre: '🥒',
+      okra: '🥬',
+      gombo: '🥬',
+      cabbage: '🥬',
+      chou: '🥬',
+      carrot: '🥕',
+      carotte: '🥕',
+      spinach: '🥬',
+      lettuce: '🥬',
 
       // Fruits
-      'plantain':    '🍌',
-      'banana':      '🍌',
-      'banane':      '🍌',
-      'mango':       '🥭',
-      'mangue':      '🥭',
-      'avocado':     '🥑',
-      'avocat':      '🥑',
-      'pineapple':   '🍍',
-      'ananas':      '🍍',
-      'papaya':      '🍈',
-      'orange':      '🍊',
-      'lemon':       '🍋',
-      'citron':      '🍋',
-      'watermelon':  '🍉',
-      'pasteque':    '🍉',
-      'coconut':     '🥥',
-      'noix':        '🥜',
+      plantain: '🍌',
+      banana: '🍌',
+      banane: '🍌',
+      mango: '🥭',
+      mangue: '🥭',
+      avocado: '🥑',
+      avocat: '🥑',
+      pineapple: '🍍',
+      ananas: '🍍',
+      papaya: '🍈',
+      orange: '🍊',
+      lemon: '🍋',
+      citron: '🍋',
+      watermelon: '🍉',
+      pasteque: '🍉',
+      coconut: '🥥',
+      noix: '🥜',
 
       // Legumes
-      'beans':       '🫘',
-      'haricot':     '🫘',
-      'groundnuts':  '🥜',
-      'arachide':    '🥜',
-      'peanut':      '🥜',
-      'soybean':     '🫘',
-      'cowpea':      '🫘',
+      beans: '🫘',
+      haricot: '🫘',
+      groundnuts: '🥜',
+      arachide: '🥜',
+      peanut: '🥜',
+      soybean: '🫘',
+      cowpea: '🫘',
 
       // Animal products
-      'chicken':     '🐔',
-      'poulet':      '🐔',
-      'fish':        '🐟',
-      'poisson':     '🐟',
-      'pork':        '🥩',
-      'porc':        '🥩',
-      'beef':        '🥩',
-      'boeuf':       '🥩',
-      'egg':         '🥚',
-      'oeuf':        '🥚',
-      'milk':        '🥛',
-      'lait':        '🥛',
+      chicken: '🐔',
+      poulet: '🐔',
+      fish: '🐟',
+      poisson: '🐟',
+      pork: '🥩',
+      porc: '🥩',
+      beef: '🥩',
+      boeuf: '🥩',
+      egg: '🥚',
+      oeuf: '🥚',
+      milk: '🥛',
+      lait: '🥛',
 
       // Other
-      'palm oil':    '🛢️',
-      'palme':       '🛢️',
-      'coffee':      '☕',
-      'cafe':        '☕',
-      'cocoa':       '🍫',
-      'cacao':       '🍫',
-      'sugar':       '🍬',
-      'sucre':       '🍬',
+      'palm oil': '🛢️',
+      palme: '🛢️',
+      coffee: '☕',
+      cafe: '☕',
+      cocoa: '🍫',
+      cacao: '🍫',
+      sugar: '🍬',
+      sucre: '🍬',
       'njama njama': '🥬',
     };
 
@@ -147,16 +147,16 @@ export class CropMediaService {
     }
 
     try {
-      const query    = encodeURIComponent(`${product} crop farm fresh`);
-      const url      = `https://api.unsplash.com/photos/random?query=${query}&orientation=landscape&client_id=${accessKey}`;
-      const res      = await fetch(url);
+      const query = encodeURIComponent(`${product} crop farm fresh`);
+      const url = `https://api.unsplash.com/photos/random?query=${query}&orientation=landscape&client_id=${accessKey}`;
+      const res = await fetch(url);
 
       if (!res.ok) {
         this.logger.warn(`Unsplash failed for "${product}": ${res.status}`);
         return null;
       }
 
-      const data     = await res.json() as { urls?: { regular?: string } };
+      const data = (await res.json()) as { urls?: { regular?: string } };
       const imageUrl = data?.urls?.regular ?? null;
 
       if (imageUrl) {
@@ -165,7 +165,6 @@ export class CropMediaService {
       }
 
       return imageUrl;
-
     } catch (err: any) {
       this.logger.warn(`Unsplash error for "${product}": ${err?.message}`);
       return null;
@@ -174,20 +173,20 @@ export class CropMediaService {
 
   // ─── Build listing confirmed message with correct emoji ───
   buildListingConfirmedMessage(
-    product:        string,
+    product: string,
     productDisplay: string,
-    quantity:       number,
-    unit:           string,
-    price:          string,
-    lang:           'english' | 'french' | 'pidgin',
-    emoji:          string,
+    quantity: number,
+    unit: string,
+    price: string,
+    lang: 'english' | 'french' | 'pidgin',
+    emoji: string,
   ): string {
     const displayName = productDisplay || product;
 
     const msgs: Record<string, string> = {
       english: `✅ *Listing Created!*\n\n${emoji} ${displayName}\n📦 ${quantity} ${unit}\n💰 ${price}\n\nBuyers will be notified.`,
-      french:  `✅ *Annonce créée!*\n\n${emoji} ${displayName}\n📦 ${quantity} ${unit}\n💰 ${price}\n\nLes acheteurs seront notifiés.`,
-      pidgin:  `✅ *Listing don create!*\n\n${emoji} ${displayName}\n📦 ${quantity} ${unit}\n💰 ${price}\n\nBuyers go see am.`,
+      french: `✅ *Annonce créée!*\n\n${emoji} ${displayName}\n📦 ${quantity} ${unit}\n💰 ${price}\n\nLes acheteurs seront notifiés.`,
+      pidgin: `✅ *Listing don create!*\n\n${emoji} ${displayName}\n📦 ${quantity} ${unit}\n💰 ${price}\n\nBuyers go see am.`,
     };
 
     return msgs[lang] ?? msgs['english'];
