@@ -7,6 +7,7 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  Delete,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto';
@@ -66,5 +67,15 @@ export class UsersController {
   ) {
     const user = await this.usersService.updateTrustScore(phone, score);
     return { success: true, message: 'Trust score updated', data: user };
+  }
+
+  @Delete(':phone')
+  async delete(@Param('phone') phone: string) {
+    const user = await this.usersService.delete(phone);
+    return {
+      success: true,
+      message: 'User deleted successfully',
+      data: user,
+    };
   }
 }
