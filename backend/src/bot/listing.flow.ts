@@ -25,7 +25,8 @@ interface PendingState {
     | 'sell_waiting_image'
     | 'buy_select'
     | 'awaiting_counter_response'
-    | 'buy';
+    | 'buy'
+    | 'awaiting_location';
   product: string;
   productDisplay?: string; // original name user typed e.g. "manioc"
   quantity: number;
@@ -463,7 +464,7 @@ export class ListingFlowService implements OnModuleInit {
         quantity: 0,
         unit: smartUnit,
         userPhone: phone,
-        userRole: 'user',
+        userRole: 'seller',
         language: lang,
         availableAt,
       });
@@ -477,10 +478,11 @@ export class ListingFlowService implements OnModuleInit {
 
     const user = await this.usersService.findByPhone(phone);
 
-    // If price provided in initial input, skip suggestion and go directly to image
-    const effectivePrice = price ?? this.parsePrice(text || '');
+    // If price provided in initial input, check if it fits market range — if so skip suggestion
+    const effectivePrice = price ?? this.extractPriceFromText(text || '', quantity);
 
     if (effectivePrice && effectivePrice > 0) {
+      // Always accept the user's stated price — no need to re-ask
       await this.setPendingState(phone, {
         type: 'sell_waiting_image',
         product,
@@ -489,7 +491,7 @@ export class ListingFlowService implements OnModuleInit {
         unit,
         price: effectivePrice,
         userPhone: phone,
-        userRole: 'user',
+        userRole: 'seller',
         language: lang,
       });
       return this.askForImage(lang);
@@ -499,11 +501,11 @@ export class ListingFlowService implements OnModuleInit {
     await this.setPendingState(phone, {
       type: 'sell',
       product,
-      productDisplay: displayName, 
+      productDisplay: displayName,
       quantity,
       unit,
       userPhone: phone,
-      userRole: 'user',
+      userRole: 'seller',
       language: lang,
     });
 
@@ -639,7 +641,7 @@ Example: 20000`,
       quantity,
       unit,
       userPhone: phone,
-      userRole: 'user',
+      userRole: 'buyer',
       language: lang,
       listings: top.map((l) => ({
         id: l._id.toString(),
@@ -781,7 +783,7 @@ Example: 20000`,
       quantity: parsed.quantity,
       unit: parsed.unit,
       userPhone: phone,
-      userRole: 'user',
+      userRole: 'buyer',
       language: lang,
       listings: top.map((l) => ({
         id: l._id.toString(),
@@ -991,6 +993,9 @@ ${filterSummary}
         savedLang,
       );
 
+    if (pending.type === 'awaiting_location')
+      return this.handleAwaitingLocation(phone, response, pending, savedLang);
+
     return await this.aiService.reply('unknown_command', savedLang, {});
   }
 
@@ -1156,7 +1161,26 @@ ${filterSummary}
         return msgs[lang];
       }
 
-      // Update pending state with the quantity
+      // Check if user also included a price in the same reply (e.g. "30 bunches 5000")
+      const allNumbers = (response.match(/\b\d[\d,]*\b/g) ?? []).map((n) =>
+        parseInt(n.replace(/,/g, ''), 10),
+      );
+      // If there are two or more numbers, the second (last) one is likely the price
+      const inlinePrice =
+        allNumbers.length >= 2 ? allNumbers[allNumbers.length - 1] : null;
+
+      if (inlinePrice && inlinePrice > 0 && inlinePrice !== qty) {
+        // User gave qty + price in one message — skip the price suggestion
+        await this.setPendingState(phone, {
+          ...pending,
+          quantity: qty,
+          type: 'sell_waiting_image',
+          price: inlinePrice,
+        });
+        return this.askForImage(lang);
+      }
+
+      // Update pending state with the quantity only
       await this.setPendingState(phone, { ...pending, quantity: qty });
 
       // Now fetch price data
@@ -1310,6 +1334,9 @@ Example: 20000`,
         channel: user?.lastChannelUsed || 'whatsapp',
       });
 
+      // Tag this user as a seller now that they've confirmed a listing
+      await this.usersService.update(phone, { role: 'farmer' }).catch(() => {});
+
       await this.deletePendingState(phone);
 
       // ── Get correct emoji + real crop image ──────────────
@@ -1334,9 +1361,22 @@ Example: 20000`,
       // after the listing is confirmed, so buyers can find them.
       const noLocation =
         !user?.location || user.location === 'unknown';
-      const locationNote = noLocation
-        ? this.buildLocationAsk(savedLang)
-        : '';
+
+      if (noLocation) {
+        // Set a pending state so the next message is captured as the user's location
+        await this.setPendingState(phone, {
+          type: 'awaiting_location',
+          product: listing.product,
+          productDisplay: productDisplay,
+          quantity: listing.quantity,
+          unit: listing.unit,
+          userPhone: phone,
+          userRole: 'seller',
+          language: savedLang,
+        });
+      }
+
+      const locationNote = noLocation ? this.buildLocationAsk(savedLang) : '';
 
       // If no farmer image was uploaded AND we got a crop image → send it
       if (
@@ -1423,6 +1463,9 @@ Example: 20000`,
         channel: buyerUser?.lastChannelUsed || 'whatsapp',
       });
 
+      // Tag this user as a buyer now that they've confirmed a purchase request
+      await this.usersService.update(phone, { role: 'buyer' }).catch(() => {});
+
       await this.deletePendingState(phone);
 
       // Notify farmer in THEIR language
@@ -1448,8 +1491,11 @@ Example: 20000`,
           'match_found_farmer_counter',
           farmerLang,
           {
-            buyerName: buyerUser?.name || '',
-            location: buyerUser?.location || '',
+            buyerName:
+              buyerUser?.name && buyerUser.name !== 'unknown'
+                ? buyerUser.name
+                : '',
+            location: buyerUser?.location && buyerUser.location !== 'unknown' ? buyerUser.location : '',
             product: pending.product,
             quantity: pending.quantity,
             unit: pending.unit,
@@ -1897,9 +1943,56 @@ Example: 20000`,
   }
 
   private parsePrice(text: string): number | null {
-    const cleaned = text?.replace(/[,\s]/g, '') ?? '';
-    const price = parseInt(cleaned, 10);
-    return isNaN(price) || price <= 0 ? null : price;
+    // Find all standalone numbers (handles "20,000", "20000")
+    const matches = text?.match(/\b\d[\d,]*\b/g) ?? [];
+    if (matches.length === 0) return null;
+    // For single-token price replies ("20000", "20,000"), parse directly
+    const last = parseInt(matches[matches.length - 1].replace(/,/g, ''), 10);
+    return isNaN(last) || last <= 0 ? null : last;
+  }
+
+  /**
+   * Extract a price from a mixed text that may contain quantity AND price.
+   * e.g. "30 bunches 5000" → 5000 (last distinct number from qty)
+   * e.g. "sell banana 30 bags 15000" → 15000
+   * Returns null if only one number is present (likely just qty, not price).
+   */
+  private extractPriceFromText(text: string, qty: number): number | null {
+    const matches = text?.match(/\b\d[\d,]*\b/g) ?? [];
+    if (matches.length < 2) return null; // only one number → no separate price
+    const allNums = matches.map((m) => parseInt(m.replace(/,/g, ''), 10)).filter((n) => !isNaN(n) && n > 0);
+    // Find the last number that is different from the qty (price is usually the last distinct value)
+    for (let i = allNums.length - 1; i >= 0; i--) {
+      if (allNums[i] !== qty) return allNums[i];
+    }
+    return null;
+  }
+
+  // ─── Handle awaiting_location pending state ───────────────
+  private async handleAwaitingLocation(
+    phone: string,
+    response: string,
+    pending: PendingState,
+    lang: Language,
+  ): Promise<string> {
+    const location = response.trim();
+
+    // Ignore very short or clearly non-location inputs
+    if (location.length < 2) {
+      await this.deletePendingState(phone);
+      return '';
+    }
+
+    // Save the location and clear pending state
+    await this.usersService.update(phone, { location }).catch(() => {});
+    await this.deletePendingState(phone);
+
+    const msgs: Record<Language, string> = {
+      english: `📍 Got it! Your location is set to *${location}*. Nearby buyers can now find your listing faster.`,
+      french: `📍 Compris ! Votre localisation est définie sur *${location}*. Les acheteurs proches vont vous trouver plus facilement.`,
+      pidgin: `📍 Okay! We don set your location as *${location}*. Buyers near you go fit find your listing faster.`,
+    };
+    return msgs[lang];
   }
 
   private fmt(price: number): string {

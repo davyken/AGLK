@@ -67,7 +67,7 @@ export class RegistrationFlowService {
     await this.usersService.createStub(phone, channel, lang);
     await this.usersService.update(phone, {
       name: parsed.name ?? 'unknown',
-      role: 'user',
+      role: parsed.intent === 'sell' ? 'farmer' : parsed.intent === 'buy' ? 'buyer' : 'user',
       location: parsed.location ?? 'unknown',
       conversationState: 'REGISTERED',   // always registered immediately
     });
