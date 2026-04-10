@@ -124,18 +124,30 @@ export class ResponseGenerationService {
   // ─────────────────────────────────────────────────────────────
 
   private buildSystemPrompt(lang: Language): string {
-    const base = `You are AgroLink, a WhatsApp chatbot for an agricultural marketplace in Cameroon.
+    const base = `You are AgroLink, a WhatsApp agricultural marketplace assistant in Cameroon.
 You connect farmers who sell produce with buyers who purchase it.
 
-Your personality: friendly, warm, concise, action-oriented. You guide users step by step.
-You never hallucinate data — if you're given specific numbers, use them exactly.
+PERSONALITY:
+- Warm, concise, action-oriented — like a helpful market friend, not a robot.
+- Never repeat the same phrase twice in a session.
+- Acknowledge what the user said before asking for more information.
+- Never invent data — use only values provided in the brief.
+- One question at a time — never stack multiple questions in one message.
+- End actionable messages with a clear next step.
 
-WhatsApp formatting rules:
-- Use *bold* for important words, product names, and CTAs
-- Keep responses under 300 characters when possible
-- Use relevant emojis (🌽 for crops, 📦 for quantity, 💰 for price, 📍 for location)
-- Use numbered options (1️⃣ 2️⃣) when asking users to choose
+WHATSAPP FORMATTING:
+- *bold* for product names, prices, names, key actions
+- Keep replies under 280 characters when possible
+- Use line breaks for readability — not walls of text
+- Crop emojis: 🌽 maize, 🍅 tomatoes, 🌿 cassava, 🥜 groundnuts, 🍌 plantain, 🥬 vegetables
+- 📦 quantity, 💰 price, 📍 location, 🔔 notification, ✅ success, ❌ error, 🌾 farming general
+- Numbered options: 1️⃣ 2️⃣ 3️⃣ for menus — never more than 3 at once
 - No markdown other than *bold*
+
+RULES:
+- NEVER ask for information already given in the brief
+- NEVER say "I cannot" or "I don't know" — redirect constructively
+- If data is absent from the brief, ask for it; do not guess
 
 IMPORTANT: Respond ONLY with the message text — no explanations, no quotes around the response.`;
 
@@ -292,10 +304,39 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
       counter_offer_received_buyer: `The farmer *${d.farmerName}* has made a counter-offer for *${d.product}* (${d.quantity} ${d.unit}). Original price: ${d.originalPrice}. Counter price: *${d.counterPrice}*. Ask the buyer to reply: 1 = Accept the counter-offer, 2 = Decline.`,
 
       // ── Returning / context-aware greetings ──────────────
-      welcome_registered: `Greet the returning user *${d.name}* warmly by name. They are a *${d.role}*. Tell them in one short sentence how to get started (SELL or BUY command). Keep it brief — max 2 lines.`,
+      welcome_registered: `Greet the returning user *${d.name}* warmly by name. They are a *${d.role}*. Ask them in ONE natural question what they want to do today — don't dump commands. Keep it brief — max 2 lines.`,
+
+      welcome_registered_with_listing: `Greet returning user *${d.name}* warmly. They have an active *${d.product}* listing (${d.quantity} ${d.unit}). Mention it briefly, then ask if they want to add another listing or need something else.`,
+
+      // ── Adaptive questions ────────────────────────────────
+      clarify_intent: `The user mentioned *${d.product}* but it's unclear if they want to sell or buy it. Ask in ONE short question: do they want to sell or buy?`,
+
+      ask_product_sell: `The user wants to sell something but didn't say what. Ask which crop or product they want to sell. Give 2-3 examples.`,
+
+      ask_product_buy: `The user wants to buy something but didn't say what. Ask which crop or product they need. Give 2-3 examples.`,
+
+      ask_quantity_sell: `The user wants to sell *${d.product}* but didn't say how many *${d.unit}* they have. Ask how many ${d.unit} are available. Give a short example.`,
+
+      ask_quantity_buy: `The user wants to buy *${d.product}* but didn't say how many *${d.unit}* they need. Ask how many ${d.unit} they want. Give a short example.`,
+
+      confirm_extracted: `Confirm what was understood from the user's message: name=${d.name}, role=${d.role}, location=${d.location}. Acknowledge all three in ONE natural sentence, then ask if the details are correct (YES/NO).`,
+
+      // ── Corrections ───────────────────────────────────────
+      field_corrected: `The user just corrected their *${d.field}* to "${d.newValue}". Confirm the update warmly in one sentence. Ask if they want to change anything else.`,
+
+      // ── Listing expiry ────────────────────────────────────
+      listing_expired: `The user's listing draft for *${d.product}* was cleared because it was inactive for too long. Tell them gently and suggest they start a new one.`,
+
+      // ── Voice notes ───────────────────────────────────────
+      voice_processing: `Tell the user you received their voice note and are processing it. Keep it very short — just one line.`,
+
+      voice_processed: `Voice message heard as: "${d.text}". Understood: ${d.intent}. Tell the user what you heard in ONE sentence and what action you're taking. Keep it natural.`,
+
+      // ── Price range buy request ───────────────────────────
+      buy_with_price_range: `Buyer wants *${d.quantity} ${d.unit}* of *${d.product}* and offered between *${d.priceMin}* and *${d.priceMax}* XAF. Confirm the search in one sentence and tell them you're looking for matching farmers.`,
 
       // ── General ───────────────────────────────────────────
-      unknown_command: `The bot didn't understand the message. Suggest the user try: SELL maize 10 bags, BUY maize 20 bags, or type HELP for all options.`,
+      unknown_command: `The bot didn't understand the message. In one short line, suggest the user try typing SELL or BUY followed by a product, or type HELP.`,
 
       clarification_needed: `Bot couldn't detect the user's language reliably. Ask them in simple English and French (bilingual) to confirm their language preference: reply 1 for English, 2 for Français, 3 for Pidgin.`,
     };
@@ -395,9 +436,69 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
         pidgin: `💬 *Counter-offer from ${data.farmerName}*\n\n🌽 ${data.product} — ${data.quantity} ${data.unit}\nFirst price: ${data.originalPrice}\nNew offer: *${data.counterPrice}*\n\n1️⃣ Accept  2️⃣ No`,
       },
       welcome_registered: {
-        english: `Hey *${data.name}*! 👋\n\n${data.role === 'farmer' ? 'Type *SELL maize 10 bags* to list your produce.' : 'Type *BUY maize 20 bags* to find sellers.'}\n\n_Type HELP for options._`,
-        french: `Bonjour *${data.name}* ! 👋\n\n${data.role === 'farmer' ? 'Tapez *VENDRE maïs 10 sacs* pour créer une annonce.' : 'Tapez *ACHETER maïs 20 sacs* pour trouver des vendeurs.'}\n\n_Tapez AIDE pour les options._`,
-        pidgin: `How you dey, *${data.name}*! 👋\n\n${data.role === 'farmer' ? 'Type *SELL maize 10 bags* to list your thing.' : 'Type *BUY maize 20 bags* to find sellers.'}\n\n_Type HELP for options._`,
+        english: `Hey *${data.name}*! 👋 Good to have you back.\n\nWhat do you want to do today — sell your produce or find something to buy?`,
+        french: `Bonjour *${data.name}* ! 👋 Content de vous revoir.\n\nVous voulez vendre votre récolte ou acheter quelque chose aujourd'hui?`,
+        pidgin: `How you dey, *${data.name}*! 👋 Welcome back.\n\nYou wan sell something or you wan buy today?`,
+      },
+      welcome_registered_with_listing: {
+        english: `Hey *${data.name}*! 👋 You have an active *${data.product}* listing (${data.quantity} ${data.unit}).\n\nWant to add another listing or need something else?`,
+        french: `Bonjour *${data.name}* ! 👋 Vous avez une annonce active pour *${data.product}* (${data.quantity} ${data.unit}).\n\nVoulez-vous ajouter une autre annonce ou autre chose?`,
+        pidgin: `How you dey, *${data.name}*! 👋 You get active *${data.product}* listing (${data.quantity} ${data.unit}).\n\nYou wan add another or need something else?`,
+      },
+      clarify_intent: {
+        english: `Got it — *${data.product}*. Do you want to *sell* it or *buy* it?`,
+        french: `Compris — *${data.product}*. Vous voulez le *vendre* ou l'*acheter* ?`,
+        pidgin: `Okay — *${data.product}*. You wan *sell* am or you wan *buy* am?`,
+      },
+      ask_product_sell: {
+        english: `What are you selling? (e.g. maize, cassava, tomatoes)`,
+        french: `Que voulez-vous vendre? (ex: maïs, manioc, tomates)`,
+        pidgin: `Wetin you wan sell? (e.g. maize, cassava, tomatoes)`,
+      },
+      ask_product_buy: {
+        english: `What are you looking for? (e.g. maize, cassava, tomatoes)`,
+        french: `Que cherchez-vous? (ex: maïs, manioc, tomates)`,
+        pidgin: `Wetin you dey find? (e.g. maize, cassava, tomatoes)`,
+      },
+      ask_quantity_sell: {
+        english: `How many *${data.unit}* of *${data.product}* do you have? (e.g. 10)`,
+        french: `Combien de *${data.unit}* de *${data.product}* avez-vous? (ex: 10)`,
+        pidgin: `How many *${data.unit}* of *${data.product}* you get? (e.g. 10)`,
+      },
+      ask_quantity_buy: {
+        english: `How many *${data.unit}* of *${data.product}* do you need? (e.g. 20)`,
+        french: `Combien de *${data.unit}* de *${data.product}* voulez-vous? (ex: 20)`,
+        pidgin: `How many *${data.unit}* of *${data.product}* you need? (e.g. 20)`,
+      },
+      confirm_extracted: {
+        english: `Got it — you're a *${data.role}* named *${data.name}* based in *${data.location}*. Is that right?`,
+        french: `Compris — vous êtes *${data.role}*, vous vous appelez *${data.name}* et vous êtes à *${data.location}*. C'est bien ça?`,
+        pidgin: `Okay — you be *${data.role}*, your name na *${data.name}*, you dey *${data.location}*. Na so?`,
+      },
+      field_corrected: {
+        english: `✅ Updated your *${data.field}* to *${data.newValue}*. Anything else to change?`,
+        french: `✅ Votre *${data.field}* a été mis à jour: *${data.newValue}*. Autre chose à corriger?`,
+        pidgin: `✅ We don update your *${data.field}* to *${data.newValue}*. Anything else?`,
+      },
+      listing_expired: {
+        english: `Your *${data.product}* draft listing was cleared (inactive too long).\n\nType *SELL ${data.product}* to start a new one.`,
+        french: `Votre annonce *${data.product}* a été effacée (inactive trop longtemps).\n\nTapez *VENDRE ${data.product}* pour recommencer.`,
+        pidgin: `Your *${data.product}* listing don clear (you leave am too long).\n\nType *SELL ${data.product}* to start again.`,
+      },
+      voice_processing: {
+        english: `🎤 Got your voice note — processing...`,
+        french: `🎤 Message vocal reçu — traitement en cours...`,
+        pidgin: `🎤 I hear your voice — I dey process am...`,
+      },
+      voice_processed: {
+        english: `🎤 I heard: *"${data.text}"*\n\nOn it!`,
+        french: `🎤 J'ai entendu: *"${data.text}"*\n\nJe traite ça!`,
+        pidgin: `🎤 I hear: *"${data.text}"*\n\nI dey handle am!`,
+      },
+      buy_with_price_range: {
+        english: `🔍 Looking for *${data.quantity} ${data.unit}* of *${data.product}* between *${data.priceMin}* and *${data.priceMax}* XAF...`,
+        french: `🔍 Recherche de *${data.quantity} ${data.unit}* de *${data.product}* entre *${data.priceMin}* et *${data.priceMax}* XAF...`,
+        pidgin: `🔍 I dey find *${data.quantity} ${data.unit}* of *${data.product}* for price between *${data.priceMin}* and *${data.priceMax}*...`,
       },
       connected: {
         english: `✅ *Deal Confirmed!*\n\nContact: ${data.link}\n\n📋 ${data.product} — ${data.quantity} ${data.unit} @ ${data.price}`,

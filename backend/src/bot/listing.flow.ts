@@ -5,7 +5,7 @@ import { CreateListingDto } from '../listing/dto';
 import { PriceService } from '../price/price.service';
 import { MatchingService } from '../listing/matching.service';
 import { MetaSenderService } from '../whatsapp/meta-sender.service';
-import { AiService, Language } from '../ai/ai.service';
+import { AiService, Language, ParsedIntent } from '../ai/ai.service';
 import { FilterParserService } from './filter-parser.service';
 import { CropMediaService } from './Crop media.service';
 import { normalizePhone } from '../common/format.util';
@@ -88,9 +88,14 @@ export class ListingFlowService implements OnModuleInit {
       for (const user of users) {
         const ps = (user as any).pendingState;
         if (ps) {
-          // Discard expired states
           if (ps.expiresAt && ps.expiresAt < now) {
+            // Expired draft — clear it and notify the user proactively
             await this.usersService.clearPendingState(user.phone);
+            const lang: Language = (user as any).language ?? 'english';
+            const msg = await this.aiService.reply('listing_expired', lang, {
+              product: ps.product ?? 'your listing',
+            });
+            this.metaSender.send(user.phone, msg).catch(() => {});
           } else {
             pendingStates.set(user.phone, ps as PendingState);
           }
@@ -255,7 +260,83 @@ export class ListingFlowService implements OnModuleInit {
     return await this.aiService.reply('unknown_command', lang, {});
   }
 
-  
+  /**
+   * Entry point used when the caller already has a parsed intent.
+   * Skips the second aiService.parseIntent() call to save latency and API cost.
+   */
+  async handleWithParsed(
+    phone: string,
+    text: string,
+    parsed: ParsedIntent,
+    channel: 'sms' | 'whatsapp',
+  ): Promise<string> {
+    const user = await this.usersService.findByPhone(phone);
+    const lang: Language = (user as any)?.language ?? 'english';
+
+    // Pending state always takes priority
+    if (pendingStates.has(phone)) {
+      return this.handlePendingState(phone, text.trim(), channel, lang);
+    }
+
+    if (parsed.intent === 'sell') {
+      const unit =
+        parsed.unit && parsed.unit !== 'bags'
+          ? parsed.unit
+          : this.aiService.defaultUnitForProduct(parsed.product ?? '');
+      return this.handleSellIntent(
+        phone,
+        parsed.product ?? '',
+        (parsed as any).productOriginal ?? parsed.product ?? '',
+        parsed.quantity ?? 0,
+        unit,
+        channel,
+        lang,
+        parsed.price,
+        text,
+        parsed.availableAt,
+      );
+    }
+
+    if (parsed.intent === 'buy') {
+      // If buyer provided a price range, acknowledge then search
+      if (parsed.priceMin && parsed.priceMax) {
+        const ack = await this.aiService.reply('buy_with_price_range', lang, {
+          product: parsed.product ?? '',
+          quantity: String(parsed.quantity ?? 0),
+          unit: parsed.unit ?? 'bags',
+          priceMin: String(parsed.priceMin),
+          priceMax: String(parsed.priceMax),
+        });
+        this.metaSender.send(phone, ack).catch(() => {});
+      }
+
+      if (this.filterParser.hasFilters(text)) {
+        const filtered = this.filterParser.parse(text);
+        if (filtered)
+          return this.handleBuyIntentWithFilters(phone, filtered, text, channel, lang);
+      }
+      const unit =
+        parsed.unit && parsed.unit !== 'bags'
+          ? parsed.unit
+          : this.aiService.defaultUnitForProduct(parsed.product ?? '');
+      return this.handleBuyIntent(
+        phone,
+        parsed.product ?? '',
+        parsed.quantity ?? 0,
+        unit,
+        channel,
+        lang,
+      );
+    }
+
+    if (parsed.intent === 'price') {
+      return this.handlePriceQuery(parsed.product ?? '', lang, channel);
+    }
+
+    // Fall back to full handle() for anything else
+    return this.handle(phone, text, channel);
+  }
+
   async handleSellIntent(
     phone: string,
     product: string, 
