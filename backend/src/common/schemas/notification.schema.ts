@@ -32,11 +32,15 @@ export class Notification {
   })
   status: string;
 
-  @Prop({ default: 0 })
+@Prop({ default: 0 })
   retryCount: number;
+
+  @Prop()
+  dedupHash: string;
 }
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
 
 NotificationSchema.index({ userPhone: 1, status: 1 });
 NotificationSchema.index({ status: 1, retryCount: 1 });
+NotificationSchema.index({ dedupHash: 1, userPhone: 1, createdAt: -1 });
