@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { NotificationService } from './notification.service';
 import { User, UserSchema } from '../common/schemas/user.schema';
 import { Listing, ListingSchema } from '../common/schemas/listing.schema';
+import { Notification, NotificationSchema } from '../common/schemas/notification.schema';
 import { ListingModule } from '../listing/listing.module';
 
 @Module({
@@ -10,6 +11,7 @@ import { ListingModule } from '../listing/listing.module';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Listing.name, schema: ListingSchema },
+      { name: Notification.name, schema: NotificationSchema },
     ]),
     ListingModule,
   ],

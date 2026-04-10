@@ -1,11 +1,14 @@
+
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Listing, ListingDocument } from '../common/schemas/listing.schema';
 import { User, UserDocument } from '../common/schemas/user.schema';
+import { Notification, NotificationDocument } from '../common/schemas/notification.schema';
 import { MatchingService, MatchResult } from '../listing/matching.service';
 import { MetaSenderService } from '../whatsapp/meta-sender.service';
+import { createHash } from 'crypto';
 import type { ListingCreatedEvent } from '../common/event-bus.service';
 
 @Injectable()
@@ -15,6 +18,7 @@ export class NotificationService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Listing.name) private listingModel: Model<ListingDocument>,
+    @InjectModel(Notification.name) private notificationModel: Model<NotificationDocument>,
     private readonly matchingService: MatchingService,
     private readonly metaSender: MetaSenderService,
   ) {}
@@ -51,6 +55,23 @@ export class NotificationService {
         .exec();
 
       if (buyer?.lastChannelUsed && buyer?.phone) {
+        const dedupHash = createHash('sha256')
+          .update(`${buyer.phone}_${sellListing.product}_${sellListing.quantity}_${sellListing.unit}_${sellListing.userName}_${sellListing.price || 'no'}_${sellListing.userLocation}`.toLowerCase())
+          .digest('hex');
+
+        const recentDup = await this.notificationModel.findOne({
+          dedupHash,
+          userPhone: buyer.phone,
+          type: 'match_found',
+          status: 'sent',
+          createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        });
+
+        if (recentDup) {
+          this.logger.log(`Skipped duplicate notification for ${buyer.phone}`);
+          continue;
+        }
+
         const message = this.buildSupplyNotification(
           sellListing,
           buyer.name || 'Buyer',
@@ -59,6 +80,14 @@ export class NotificationService {
         try {
           await this.metaSender.send(buyer.phone, message);
           this.logger.log(`Notified buyer ${buyer.phone} of new supply`);
+          await new this.notificationModel({
+            userPhone: buyer.phone,
+            type: 'match_found',
+            message,
+            channel: buyer.lastChannelUsed,
+            status: 'sent',
+            dedupHash,
+          }).save();
         } catch (error) {
           this.logger.error(`Failed to notify buyer: ${error}`);
         }
@@ -77,6 +106,23 @@ export class NotificationService {
         .exec();
 
       if (farmer?.lastChannelUsed && farmer?.phone) {
+        const dedupHash = createHash('sha256')
+          .update(`${farmer.phone}_${buyListing.product}_${buyListing.quantity}_${buyListing.unit}_${buyListing.userName}_${buyListing.price || 'no'}_${buyListing.userLocation}`.toLowerCase())
+          .digest('hex');
+
+        const recentDup = await this.notificationModel.findOne({
+          dedupHash,
+          userPhone: farmer.phone,
+          type: 'match_found',
+          status: 'sent',
+          createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        });
+
+        if (recentDup) {
+          this.logger.log(`Skipped duplicate notification for ${farmer.phone}`);
+          continue;
+        }
+
         const message = this.buildDemandNotification(
           buyListing,
           farmer.name || 'Farmer',
@@ -85,6 +131,14 @@ export class NotificationService {
         try {
           await this.metaSender.send(farmer.phone, message);
           this.logger.log(`Notified farmer ${farmer.phone} of new demand`);
+          await new this.notificationModel({
+            userPhone: farmer.phone,
+            type: 'match_found',
+            message,
+            channel: farmer.lastChannelUsed,
+            status: 'sent',
+            dedupHash,
+          }).save();
         } catch (error) {
           this.logger.error(`Failed to notify farmer: ${error}`);
         }
@@ -110,7 +164,7 @@ A new listing matches your demand:
 Farmer: ${sellListing.userName}
 
 To buy, reply:
-BUY ${sellListing.product} ${sellListing.quantity} ${sellListing.unit}
+BUY ${sellListing.product} ${sellListing.quantity} ${sellListing.unit} ${sellListing._id}
 
 Or make an offer:
 OFFER ${Math.floor((sellListing.price || 20000) * 0.95)} ${sellListing._id}`;
@@ -134,7 +188,7 @@ A new buyer needs your produce:
 Buyer: ${buyListing.userName}
 
 To sell, reply:
-SELL ${buyListing.product} ${buyListing.quantity} ${buyListing.unit}`;
+SELL ${buyListing.product} ${buyListing.quantity} ${buyListing.unit} ${buyListing._id}`;
   }
 
   private formatPrice(price: number): string {
@@ -145,3 +199,4 @@ SELL ${buyListing.product} ${buyListing.quantity} ${buyListing.unit}`;
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
 }
+
