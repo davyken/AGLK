@@ -18,7 +18,8 @@ interface PendingState {
     | 'sell'
     | 'sell_waiting_image'
     | 'buy_select'
-    | 'awaiting_counter_response';
+    | 'awaiting_counter_response'
+    | 'buy';
   product: string;
   productDisplay?: string; // original name user typed e.g. "manioc"
   quantity: number;
@@ -250,15 +251,15 @@ export class ListingFlowService implements OnModuleInit {
       return this.handleOfferCommand(phone, normalized, channel, lang);
     }
 
-    // ── Unknown command ────────────────────────────────────
+    
     return await this.aiService.reply('unknown_command', lang, {});
   }
 
-  // ─── Sell Intent ──────────────────────────────────────────
+  
   async handleSellIntent(
     phone: string,
-    product: string, // normalized English name for DB (e.g. "cassava")
-    productDisplay: string, // original name user typed (e.g. "manioc")
+    product: string, 
+    productDisplay: string,
     quantity: number,
     unit: string,
     channel: 'sms' | 'whatsapp',
@@ -755,7 +756,7 @@ ${filterSummary}
   }
 
   // ─── Handle pending state responses ──────────────────────
-  private async handlePendingState(
+private async handlePendingState(
     phone: string,
     response: string,
     channel: 'sms' | 'whatsapp',
@@ -792,6 +793,22 @@ ${filterSummary}
       return msgs[savedLang];
     }
 
+    if (pending.type === 'buy')
+      return this.handleBuyPending(
+        phone,
+        response,
+        channel,
+        pending,
+        savedLang,
+      );
+    if (pending.type === 'buy')
+      return this.handleBuyPending(
+        phone,
+        response,
+        channel,
+        pending,
+        savedLang,
+      );
     if (pending.type === 'sell')
       return this.handleSellPending(
         phone,
@@ -820,6 +837,128 @@ ${filterSummary}
 
     return await this.aiService.reply('unknown_command', savedLang, {});
   }
+
+  // ─── Buy pending: waiting for quantity ────────────
+  private async handleBuyPending(
+    phone: string,
+    response: string,
+    channel: 'sms' | 'whatsapp',
+    pending: PendingState,
+    lang: Language,
+  ): Promise<string> {
+    const input = response.trim().toLowerCase();
+
+    // Extract number from natural language
+    const numberMatch = response.match(/\d+/);
+    const qty = numberMatch ? parseInt(numberMatch[0], 10) : 0;
+
+    if (!qty || qty <= 0) {
+      const unitLabel = pending.unit || this.aiService.defaultUnitForProduct(pending.product);
+      const msgs: Record<Language, string> = {
+        english: `❌ Please enter a valid number.\n\nHow many ${unitLabel} of ${this.cap(pending.productDisplay || pending.product)} do you want?`,
+        french: `❌ Entrez un nombre valide.\n\nCombien de ${unitLabel} de ${this.cap(pending.productDisplay || pending.product)} voulez-vous?`,
+        pidgin: `❌ Send a correct number.\n\nHow many ${unitLabel} of ${this.cap(pending.productDisplay || pending.product)} you want?`,
+      };
+      return msgs[lang];
+    }
+
+    // Update with new quantity and proceed to search listings
+    await this.setPendingState(phone, { ...pending, quantity: qty });
+
+    // Now search for listings
+    const matchingListings = await this.listingService.findByProduct(pending.product);
+    const normalizedQueryPhone = normalizePhone(phone);
+    const sellListings = matchingListings.filter(
+      (l) =>
+        l.type === 'sell' &&
+        l.status === 'active' &&
+        normalizePhone(l.userPhone) !== normalizedQueryPhone,
+    );
+
+    if (sellListings.length === 0) {
+      const dto: CreateListingDto = {
+        type: 'buy',
+        product: pending.product,
+        quantity: qty,
+        unit: pending.unit,
+        priceType: 'none',
+      };
+      const user = await this.usersService.findByPhone(phone);
+      await this.listingService.createEnriched(dto, {
+        phone: user.phone,
+        name: user.name,
+        location: user.location,
+        channel: user.lastChannelUsed,
+      });
+      await this.deletePendingState(phone);
+
+      const msgs: Record<Language, string> = {
+        english: `🔍 No listings for ${this.cap(pending.product)} yet.\n\nYour request (${qty} ${pending.unit}) is saved.\nWe'll notify you when available.`,
+        french: `🔍 Aucune annonce pour ${this.cap(pending.product)}.\n\nVotre demande (${qty} ${pending.unit}) est enregistrée.`,
+        pidgin: `🔍 No ${this.cap(pending.product)} yet.\n\nWe save your request (${qty} ${pending.unit}).`,
+      };
+      return msgs[lang];
+    }
+
+    const top = sellListings.slice(0, 5);
+    await this.setPendingState(phone, {
+      type: 'buy_select',
+      product: pending.product,
+      quantity: qty,
+      unit: pending.unit,
+      userPhone: phone,
+      userRole: pending.userRole,
+      language: lang,
+      listings: top.map((l) => ({
+        id: l._id.toString(),
+        userPhone: l.userPhone,
+        farmerName: l.userName,
+        location: l.userLocation,
+        quantity: l.quantity,
+        price: l.price || 0,
+        imageUrl: l.imageUrl,
+        imageMediaId: l.imageMediaId,
+      })),
+    });
+
+    const headers: Record<Language, string> = {
+      english: `🔍 *Found ${sellListings.length} farmer(s) with ${this.cap(pending.product)}*\n\n`,
+      french: `🔍 *${sellListings.length} agriculteur(s) avec ${this.cap(pending.product)}*\n\n`,
+      pidgin: `🔍 *${sellListings.length} farmer(s) get ${this.cap(pending.product)}*\n\n`,
+    };
+
+    let message = headers[lang];
+
+    top.forEach((listing, i) => {
+      message += `${i + 1}️⃣ ${listing.userName}\n`;
+      message += `   📦 ${listing.quantity} ${listing.unit}\n`;
+      message += `   💰 ${this.fmt(listing.price || 0)}\n`;
+      message += `   📍 ${listing.userLocation}\n`;
+      if (listing.imageUrl || listing.imageMediaId) {
+        message += `   📷 Photo available\n`;
+      }
+      message += `\n`;
+    });
+
+    const footers: Record<Language, string> = {
+      english: `Reply with number (1-${top.length}) to select.`,
+      french: `Répondez avec le numéro (1-${top.length}) pour choisir.`,
+      pidgin: `Send number (1-${top.length}) to pick one.`,
+    };
+    message += footers[lang];
+
+    await this.metaSender.send(phone, message);
+
+    // Send images
+    for (const listing of top) {
+      if (listing.imageMediaId) {
+        await this.metaSender.sendImageByMediaId(phone, listing.imageMediaId, listing.product);
+      } else if (listing.imageUrl) {
+        await this.metaSender.sendImage(phone, listing.imageUrl, listing.product);
+      }
+    }
+
+    return '';
 
   // ─── Sell pending: waiting for quantity OR price ────────────
   private async handleSellPending(
