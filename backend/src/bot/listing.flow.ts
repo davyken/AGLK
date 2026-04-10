@@ -793,22 +793,6 @@ private async handlePendingState(
       return msgs[savedLang];
     }
 
-    if (pending.type === 'buy')
-      return this.handleBuyPending(
-        phone,
-        response,
-        channel,
-        pending,
-        savedLang,
-      );
-    if (pending.type === 'buy')
-      return this.handleBuyPending(
-        phone,
-        response,
-        channel,
-        pending,
-        savedLang,
-      );
     if (pending.type === 'sell')
       return this.handleSellPending(
         phone,
@@ -885,10 +869,10 @@ private async handlePendingState(
       };
       const user = await this.usersService.findByPhone(phone);
       await this.listingService.createEnriched(dto, {
-        phone: user.phone,
-        name: user.name,
-        location: user.location,
-        channel: user.lastChannelUsed,
+        phone: user?.phone || phone,
+        name: user?.name || '',
+        location: user?.location || '',
+        channel: user?.lastChannelUsed || 'whatsapp',
       });
       await this.deletePendingState(phone);
 
@@ -959,6 +943,7 @@ private async handlePendingState(
     }
 
     return '';
+  }
 
   // ─── Sell pending: waiting for quantity OR price ────────────
   private async handleSellPending(
