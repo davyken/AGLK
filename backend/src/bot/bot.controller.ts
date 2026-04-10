@@ -127,18 +127,30 @@ export class BotController {
         const text = message?.text?.body ?? '';
         if (!text) return { status: 'empty_text' };
 
+        // Mark message as read immediately (shows blue checkmarks)
+        await this.metaSender.markAsRead(phone, message.id);
+
         const reply = await this.botService.handleMessage({
           phone,
           text,
           channel: 'whatsapp',
         });
-        if (reply) await this.metaSender.send(phone, reply);
+        if (reply) {
+          // Natural typing delay proportional to reply length
+          await new Promise((r) =>
+            setTimeout(r, MetaSenderService.typingDelay(reply.length)),
+          );
+          await this.metaSender.send(phone, reply);
+        }
         return { status: 'ok' };
       }
 
       if (msgType === 'audio') {
         const mediaId = message?.audio?.id;
         if (!mediaId) return { status: 'no_media_id' };
+
+        // Mark as read immediately
+        await this.metaSender.markAsRead(phone, message.id);
 
         // Step 1 — immediate acknowledgement (before the slow Whisper call)
         await this.metaSender.send(
@@ -208,6 +220,9 @@ export class BotController {
 
         if (!mediaId) return { status: 'no_image_id' };
 
+        // Mark as read immediately
+        await this.metaSender.markAsRead(phone, message.id);
+
         if (!this.listingFlow.isInImageState(phone)) {
           if (caption) {
             const reply = await this.botService.handleMessage({
@@ -218,9 +233,9 @@ export class BotController {
             if (reply) await this.sendReply(phone, reply, 'whatsapp');
           } else {
             const msgs: Record<Language, string> = {
-              english: `📷 Photo received!\n\nTo list produce with a photo:\nSELL maize 10 bags\n(then send your photo)`,
-              french: `📷 Photo reçue!\n\nPour lister avec une photo:\nVENDRE maïs 10 sacs\n(puis envoyez la photo)`,
-              pidgin: `📷 Photo don reach!\n\nFor list with photo:\nSELL maize 10 bags\n(then send the photo)`,
+              english: `📷 Got your photo! To attach it to a listing, first tell me what you're selling — like "I want to sell 10 bags of maize" — then send the photo.`,
+              french: `📷 Photo reçue ! Pour l'ajouter à une annonce, dites-moi d'abord ce que vous vendez — par exemple "Je veux vendre 10 sacs de maïs" — puis envoyez la photo.`,
+              pidgin: `📷 Photo don reach! To add am to listing, first tell me wetin you dey sell — like "I wan sell 10 bags maize" — then send the photo.`,
             };
             await this.sendReply(phone, msgs[lang], 'whatsapp');
           }
@@ -233,9 +248,9 @@ export class BotController {
       }
 
       const unsupported: Record<Language, string> = {
-        english: `❌ I can only process text, voice notes, and images.\n\nType HELP for options.`,
-        french: `❌ Je traite seulement les textes, messages vocaux et images.\n\nTapez AIDE pour les options.`,
-        pidgin: `❌ I only understand text, voice and photo.\n\nType HELP for options.`,
+        english: `I can handle text messages, voice notes, and photos. What would you like to do?`,
+        french: `Je peux traiter les messages texte, les notes vocales et les photos. Que voulez-vous faire?`,
+        pidgin: `I fit handle text, voice note and photo. Wetin you wan do?`,
       };
       await this.sendReply(phone, unsupported[lang], 'whatsapp');
       return { status: 'unsupported_type' };
