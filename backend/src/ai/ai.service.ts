@@ -30,6 +30,7 @@ export interface ParsedIntent {
   name?: string; // "I'm Paul Biya" → "Paul Biya"
   location?: string; // "in Douala" or "à Bafoussam"
   role?: 'farmer' | 'buyer' | 'both'; // "I sell" → farmer
+  availableAt?: string; // when produce is available (e.g. "2024-10-25" or "in 2 weeks")
   raw: string;
 }
 
@@ -70,6 +71,7 @@ Fields to extract:
 - price: XAF number or null (e.g. "15000 XAF" → 15000, "15 mille" → 15000)
 - name: user's full name if they introduced themselves (e.g. "I'm Paul Biya" → "Paul Biya", "je suis Marie" → "Marie", null if not present)
 - location: city or region if mentioned (e.g. "in Douala", "à Bafoussam", "for Yaounde" → the city only, null if not present)
+- availableAt: extract when the produce will be available/ready (e.g. "in 2 weeks", "next month", "tomorrow", "October 20", "dans 2 semaines", "le mois prochain"). Return as a human readable string relative to now or a date. (null if not mentioned)
 - role: "farmer" if they sell/grow, "buyer" if they buy/need, null if not clear
   - farmer signals: "I sell", "I grow", "I have", "je vends", "je cultive", "I get", "I dey sell", "na farmer"
   - buyer signals: "I buy", "I need", "I want to buy", "j'achète", "je cherche", "I wan buy", "I dey find"
@@ -89,7 +91,7 @@ Intent rules:
 
 IMPORTANT: If a message contains BOTH identity info AND a sell/buy intent (e.g. "Hi I'm Paul in Douala I want to sell maize"), set intent to "sell" or "buy" — NOT "register".
 
-JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"quantity":null,"unit":"bags","price":null,"name":null,"location":null,"role":null}`,
+JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"quantity":null,"unit":"bags","price":null,"name":null,"location":null,"availableAt":null,"role":null}`,
           },
           { role: 'user', content: message },
         ],

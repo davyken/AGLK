@@ -57,6 +57,10 @@ export class CreateListingDto {
   @IsOptional()
   @IsString()
   imageMediaId?: string;
+
+  @IsOptional()
+  @IsString()
+  availableAt?: string;
 }
 
 export class UpdateListingDto {
@@ -91,4 +95,8 @@ export class UpdateListingDto {
   @IsOptional()
   @IsString()
   imageMediaId?: string;
+
+  @IsOptional()
+  @IsString()
+  availableAt?: string;
 }
