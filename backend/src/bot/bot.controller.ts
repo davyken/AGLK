@@ -13,6 +13,7 @@ import type { Response } from 'express';
 import { BotService } from './bot.service';
 import { MetaSenderService } from '../whatsapp/meta-sender.service';
 import { TwilioSmsService } from '../whatsapp/twilio-sms.service';
+import { TextToSpeechService } from '../ai/text-to-speech.service';
 import { AiService, Language } from '../ai/ai.service';
 import { ListingFlowService } from '../bot/listing.flow';
 import { UsersService } from '../users/users.service';
@@ -27,6 +28,7 @@ export class BotController {
     private readonly metaSender: MetaSenderService,
     private readonly twilioSms: TwilioSmsService,
     private readonly aiService: AiService,
+    private readonly textToSpeech: TextToSpeechService,
     private readonly listingFlow: ListingFlowService,
     private readonly usersService: UsersService,
     private readonly config: ConfigService,
@@ -41,6 +43,35 @@ export class BotController {
       await this.twilioSms.send(phone, message);
     } else {
       await this.metaSender.send(phone, message);
+    }
+  }
+
+  /**
+   * Send a voice reply (audio) along with optional text fallback.
+   * Used when user sends voice input — bot replies with voice.
+   */
+  private async sendVoiceReply(
+    phone: string,
+    message: string,
+    lang: Language,
+    sendText: boolean = true,
+  ): Promise<void> {
+    // Generate voice response
+    const audioMediaId = await this.textToSpeech.generateAndUpload(
+      message,
+      lang,
+    );
+
+    if (audioMediaId) {
+      // Send audio
+      await this.metaSender.sendAudio(phone, audioMediaId);
+      this.logger.log(`Voice reply sent to ${phone} (media ID: ${audioMediaId})`);
+    } else {
+      // Fallback to text if TTS failed
+      this.logger.warn(`TTS failed for ${phone}, sending text instead`);
+      if (sendText) {
+        await this.metaSender.send(phone, message);
+      }
     }
   }
 
@@ -111,10 +142,8 @@ export class BotController {
 
         const mediaUrl = await this.getMediaUrl(mediaId, accessToken);
         if (!mediaUrl) {
-          await this.metaSender.send(
-            phone,
-            await this.aiService.reply('voice_failed', lang, {}),
-          );
+          const failureMsg = await this.aiService.reply('voice_failed', lang, {});
+          await this.sendVoiceReply(phone, failureMsg, lang, true);
           return { status: 'media_url_failed' };
         }
 
@@ -122,33 +151,35 @@ export class BotController {
           await this.aiService.transcribeVoiceNote(mediaUrl, accessToken);
 
         if (!transcribed) {
-          await this.metaSender.send(
-            phone,
-            await this.aiService.reply('voice_failed', detectedLang, {}),
-          );
+          const failureMsg = await this.aiService.reply('voice_failed', detectedLang, {});
+          await this.sendVoiceReply(phone, failureMsg, detectedLang, true);
           return { status: 'transcription_failed' };
         }
 
         this.logger.log(`Voice transcribed [${phone}]: "${transcribed}"`);
 
-        await this.sendReply(
-          phone,
-          await this.aiService.reply('voice_received', detectedLang, {
-            text: transcribed,
-          }),
-          'whatsapp',
-        );
+        // Send confirmation that voice was received (as voice)
+        const confirmMsg = await this.aiService.reply('voice_received', detectedLang, {
+          text: transcribed,
+        });
+        await this.sendVoiceReply(phone, confirmMsg, detectedLang, true);
 
         if (user && detectedLang !== lang) {
           await this.usersService.updateLanguage(phone, detectedLang);
         }
 
+        // Process the transcribed text and get bot reply
         const reply = await this.botService.handleMessage({
           phone,
           text: transcribed,
           channel: 'whatsapp',
         });
-        if (reply) await this.sendReply(phone, reply, 'whatsapp');
+
+        // Send bot reply as voice (since user sent voice)
+        if (reply) {
+          await this.sendVoiceReply(phone, reply, detectedLang, true);
+        }
+
         return { status: 'ok' };
       }
 

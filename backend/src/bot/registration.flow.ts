@@ -177,7 +177,7 @@ export class RegistrationFlowService {
 
         if (nextState === 'AWAITING_ROLE')
           parts.push(
-            `You be farmer, buyer, or both?\n\n1️⃣ Farmer\n2️⃣ Buyer\n3️⃣ Both`,
+            `You be farmer, buyer, or both?\n\n1️⃣ Farmer\n2️⃣ Buyer\n3️⃣ For All`,
           );
         else if (nextState === 'AWAITING_NAME')
           parts.push(`Wetin be your full name?`);
