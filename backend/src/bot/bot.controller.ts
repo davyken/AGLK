@@ -164,7 +164,6 @@ export class BotController {
 
         this.logger.log(`Voice transcribed [${phone}]: "${transcribed}"`);
 
-<<<<<<< HEAD
         // Send confirmation that voice was received (as voice)
         const confirmMsg = await this.aiService.reply('voice_received', detectedLang, {
           text: transcribed,
@@ -176,7 +175,6 @@ export class BotController {
         }
 
         // Process the transcribed text and get bot reply
-=======
         if (user && detectedLang !== lang) {
           await this.usersService.updateLanguage(phone, detectedLang);
         }
@@ -190,7 +188,6 @@ export class BotController {
           'whatsapp',
         );
 
->>>>>>> ec1d005c4267d4ff113acacc67d32bf5e569ba0a
         const reply = await this.botService.handleMessage({
           phone,
           text: transcribed,
