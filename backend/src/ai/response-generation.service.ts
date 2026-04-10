@@ -196,7 +196,7 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
     const d = data;
     const briefs: Record<string, string> = {
       // ── Registration ──────────────────────────────────────
-      welcome: `Welcome the user to AgroLink agricultural marketplace. Ask if they are a farmer (who sells produce) or a buyer (who buys produce). Show options as 1 for Farmer, 2 for Buyer.`,
+      welcome: `Welcome the user to AgroLink agricultural marketplace. Ask if they are a farmer (who sells produce) or a buyer (who buys produce) or both (for some one who buys and sells). Show options as 1 for Farmer, 2 for Buyer, 3 for Both.`,
 
       ask_name: `Ask the user for their full name.`,
 
