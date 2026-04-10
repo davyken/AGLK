@@ -16,21 +16,31 @@ export interface ParsedIntent {
     | 'buy'
     | 'price'
     | 'help'
+    | 'confirm'
+    | 'cancel'
+    | 'correct'
     | 'yes'
     | 'no'
     | 'unknown';
   language: Language;
+  /** How certain the parser is of the intent — drives clarification logic */
+  confidence: 'high' | 'medium' | 'low';
   // listing fields
   product?: string;
   productOriginal?: string; // user's original spelling (e.g. "manioc")
   quantity?: number;
   unit?: string;
   price?: number;
+  priceMin?: number; // lower bound of a price range ("between 10000 and 15000")
+  priceMax?: number; // upper bound of a price range
   // user profile fields — extracted from free-form text
   name?: string; // "I'm Paul Biya" → "Paul Biya"
   location?: string; // "in Douala" or "à Bafoussam"
   role?: 'farmer' | 'buyer' | 'both'; // "I sell" → farmer
   availableAt?: string; // when produce is available (e.g. "2024-10-25" or "in 2 weeks")
+  // correction signals — "actually it's 20 bags not 10"
+  correctedField?: string; // e.g. "quantity", "name", "location"
+  correctedValue?: string; // the new value
   raw: string;
 }
 
@@ -58,40 +68,53 @@ export class AiService {
         messages: [
           {
             role: 'system',
-            content: `You are a message parser for an agricultural marketplace in Cameroon.
-Return ONLY valid JSON. No explanation.
+            content: `You are a message parser for AgroLink, an agricultural marketplace WhatsApp chatbot in Cameroon.
+Return ONLY valid JSON. No explanation. No markdown.
 
-Fields to extract:
-- intent: register | sell | buy | price | help | yes | no | unknown
+=== FIELDS TO EXTRACT ===
+- intent: register | sell | buy | price | help | confirm | cancel | correct | yes | no | unknown
 - language: english | french | pidgin
-- product: crop name in english lowercase (maïs→maize, tomate→tomatoes, manioc→cassava, igname→yam, arachide→groundnuts, piment→pepper, gombo→okra)
-- productOriginal: the exact word the user typed for the crop (null if none)
-- quantity: number or null
-- unit: bags/kg/tonnes/crates/bunches/litres/sacs — default "bags" if unclear
-- price: XAF number or null (e.g. "15000 XAF" → 15000, "15 mille" → 15000)
-- name: user's full name if they introduced themselves (e.g. "I'm Paul Biya" → "Paul Biya", "je suis Marie" → "Marie", null if not present)
-- location: city or region if mentioned (e.g. "in Douala", "à Bafoussam", "for Yaounde" → the city only, null if not present)
-- availableAt: extract when the produce will be available/ready (e.g. "in 2 weeks", "next month", "tomorrow", "October 20", "dans 2 semaines", "le mois prochain"). Return as a human readable string relative to now or a date. (null if not mentioned)
-- role: "farmer" if they sell/grow, "buyer" if they buy/need, null if not clear
-  - farmer signals: "I sell", "I grow", "I have", "je vends", "je cultive", "I get", "I dey sell", "na farmer"
-  - buyer signals: "I buy", "I need", "I want to buy", "j'achète", "je cherche", "I wan buy", "I dey find"
+- confidence: "high" | "medium" | "low"  — how certain you are of the intent
+- product: crop name in English lowercase (maïs→maize, tomate→tomatoes, manioc→cassava, igname→yam, arachide→groundnuts, piment→pepper, gombo→okra, macabo→macabo)
+- productOriginal: exact word the user typed for the crop (null if none)
+- quantity: numeric value (null if not present). "une tonne"→1, "dix sacs"→10, "plenty"→null
+- unit: bags|kg|tonnes|crates|bunches|litres|sacs — default "bags" if unclear
+- price: XAF number (null if absent). "15 mille"→15000, "15k"→15000, "15000 XAF"→15000
+- priceMin: lower bound if user gives a price range (null if not a range)
+- priceMax: upper bound if user gives a price range (null if not a range)
+- name: full name if user introduced themselves ("I'm Paul Biya"→"Paul Biya", "je suis Marie"→"Marie", null if absent)
+- location: city/region if mentioned — extract city only ("in Douala"→"Douala", "à Bafoussam"→"Bafoussam", null if absent)
+- availableAt: when produce will be ready — human-readable string (null if not mentioned)
+- role: "farmer" | "buyer" | "both" | null
+- correctedField: if user corrects a previous fact, which field (e.g. "name", "quantity", "location", "product") — null otherwise
+- correctedValue: the corrected value as a string — null otherwise
 
-Language rules:
-- french: bonjour, salut, oui, non, je, j'ai, vendre, acheter, sacs, combien, prix
-- pidgin: i get, i wan, i dey, na so, abeg, wetin, plenty, for sell, for buy, wey
+=== LANGUAGE SIGNALS ===
+- french: bonjour, salut, oui, non, je, j'ai, vendre, acheter, sacs, combien, prix, vous, êtes
+- pidgin: i get, i wan, i dey, na so, abeg, wetin, plenty, for sell, for buy, wey, na me, sabi, oga, dis, dat
+- Code-switching (mixed languages): set language to whichever has more markers
 
-Intent rules:
-- register: hi, hello, bonjour, salut, start, hey (AND no sell/buy signal)
-- yes: yes, oui, ok, okay, na so, d'accord, yep, correct
-- no: no, non, nope, no be dat, pas du tout
-- sell: any message about having/selling produce
-- buy: any message about wanting/needing produce
-- price: asking about price/cost
-- help: help, aide, options
+=== INTENT RULES ===
+- sell: any message containing produce + sell/have/grow signal → role: "farmer"
+- buy: any message containing produce + want/need/buy signal → role: "buyer"
+- register: hi/hello/bonjour/salut/start/hey with NO sell/buy signal → confidence: "high"
+- confirm: yes, oui, ok, okay, na so, d'accord, correct, sure, yep, exactly → confidence: "high"
+- cancel: cancel, annuler, stop, no more, forget it, never mind
+- correct: "actually", "I meant", "not X but Y", "no it's", "sorry I said", "I made a mistake" → set correctedField + correctedValue
+- price: asking about price/cost/market rate without sell/buy intent
+- help: help, aide, options, what can I do
+- yes/no: standalone affirmative/negative not tied to a new action
 
-IMPORTANT: If a message contains BOTH identity info AND a sell/buy intent (e.g. "Hi I'm Paul in Douala I want to sell maize"), set intent to "sell" or "buy" — NOT "register".
+=== CONFIDENCE RULES ===
+- high: clear sell/buy/confirm/no signal, or clear greeting only
+- medium: inferred intent, partial signals
+- low: guessing from very little text
 
-JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"quantity":null,"unit":"bags","price":null,"name":null,"location":null,"availableAt":null,"role":null}`,
+CRITICAL: If a message contains BOTH identity info AND a sell/buy intent, set intent to "sell" or "buy" — NOT "register". Extract name and location too.
+CRITICAL: Never invent data. If a field is unclear, set it to null.
+CRITICAL: A message with only a product name and no intent signal → intent "unknown", confidence "low".
+
+JSON format: {"intent":"","language":"","confidence":"high","product":null,"productOriginal":null,"quantity":null,"unit":"bags","price":null,"priceMin":null,"priceMax":null,"name":null,"location":null,"availableAt":null,"role":null,"correctedField":null,"correctedValue":null}`,
           },
           { role: 'user', content: message },
         ],
@@ -99,6 +122,8 @@ JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"q
 
       const text = completion.choices[0]?.message?.content ?? '{}';
       const parsed = JSON.parse(text.trim());
+      // Ensure confidence is always set (LLM may omit it)
+      if (!parsed.confidence) parsed.confidence = 'medium';
       return { ...parsed, raw: message };
     } catch (err) {
       this.logger.warn(`OpenAI parseIntent failed — using regex`);
@@ -166,6 +191,23 @@ JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"q
       ? locationMatch[1].trim().replace(/\b\w/g, (c) => c.toUpperCase())
       : undefined;
 
+    // ── Extract price range ("between X and Y", "X-Y") ────────
+    const rangeMatch = lower.match(
+      /(?:between|entre|de)\s+(\d[\d\s]*)\s+(?:and|et|à|-)\s+(\d[\d\s]*)/i,
+    );
+    const priceMin = rangeMatch
+      ? parseInt(rangeMatch[1].replace(/\s/g, ''), 10)
+      : undefined;
+    const priceMax = rangeMatch
+      ? parseInt(rangeMatch[2].replace(/\s/g, ''), 10)
+      : undefined;
+
+    // ── Correction signal ──────────────────────────────────────
+    const correctionMatch = lower.match(
+      /(?:actually|i meant|not \w+ but|no it'?s|sorry i said|i made a mistake|correction)/i,
+    );
+    const correctedField = correctionMatch ? 'unknown' : undefined;
+
     // ── Extract role from intent signals ──────────────────────
     const isFarmerSignal =
       /\b(sell|vend|i get|i have|i dey sell|wan sell|for sell|je cultive|je vends|agriculteur|farmer)\b/i.test(
@@ -184,20 +226,26 @@ JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"q
     if (
       /^(yes|oui|ok|okay|na so|yep|d'accord|yes na|correct|sure)$/i.test(lower)
     ) {
-      return { intent: 'yes', language, raw };
+      return { intent: 'yes', language, confidence: 'high', raw };
     }
     if (/^(no|non|nope|no be dat|non merci|pas du tout)$/i.test(lower)) {
-      return { intent: 'no', language, raw };
+      return { intent: 'no', language, confidence: 'high', raw };
+    }
+    if (/^(cancel|annuler|stop|forget it|never mind)$/i.test(lower)) {
+      return { intent: 'cancel', language, confidence: 'high', raw };
     }
     if (/^(help|aide|aidez|options)$/i.test(lower)) {
-      return { intent: 'help', language, raw };
+      return { intent: 'help', language, confidence: 'high', raw };
+    }
+    if (correctedField) {
+      return { intent: 'correct', language, confidence: 'medium', correctedField, raw };
     }
     if (
       /^(hi|hello|bonjour|salut|bonsoir|hey|start|begin)$/i.test(lower) &&
       !isFarmerSignal &&
       !isBuyerSignal
     ) {
-      return { intent: 'register', language, name, location, role, raw };
+      return { intent: 'register', language, confidence: 'high', name, location, role, raw };
     }
     if (isFarmerSignal) {
       const { product, productOriginal, quantity, unit } =
@@ -205,10 +253,13 @@ JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"q
       return {
         intent: 'sell',
         language,
+        confidence: 'high',
         product,
         productOriginal,
         quantity,
         unit,
+        priceMin,
+        priceMax,
         name,
         location,
         role: 'farmer',
@@ -221,10 +272,13 @@ JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"q
       return {
         intent: 'buy',
         language,
+        confidence: 'high',
         product,
         productOriginal,
         quantity,
         unit,
+        priceMin,
+        priceMax,
         name,
         location,
         role: 'buyer',
@@ -235,18 +289,19 @@ JSON format: {"intent":"","language":"","product":null,"productOriginal":null,"q
       /\b(price|prix|how much|combien|quel est le prix|cost)\b/i.test(lower)
     ) {
       const { product } = this.extractProductQty(lower);
-      return { intent: 'price', language, product, raw };
+      return { intent: 'price', language, confidence: 'medium', product, raw };
     }
     if (/^\d+$/.test(lower.trim())) {
       return {
         intent: 'unknown',
         language,
+        confidence: 'medium',
         price: parseInt(lower.trim(), 10),
         raw,
       };
     }
 
-    return { intent: 'unknown', language, name, location, role, raw };
+    return { intent: 'unknown', language, confidence: 'low', name, location, role, raw };
   }
 
   private extractProductQty(text: string): {

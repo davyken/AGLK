@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { RegistrationFlowService } from '../bot/registration.flow';
 import { ListingFlowService } from '../bot/listing.flow';
-import { AiService, Language } from '../ai/ai.service';
+import { AiService, Language, ParsedIntent } from '../ai/ai.service';
 
 export interface IncomingMessage {
   phone: string;
@@ -122,10 +122,9 @@ export class BotService {
       return this.handleRegisteredGreeting(user, lang, channel);
     }
 
-    // ── Sell commands ─────────────────────────────────────────
+    // ── Explicit keyword-prefix commands (fast path, no LLM) ─
     if (
       normalized.startsWith('SELL') ||
-      upper.startsWith('VENDRE') ||
       upper.startsWith('I GET') ||
       upper.startsWith('I WAN SELL') ||
       upper.startsWith('I DEY SELL') ||
@@ -136,10 +135,8 @@ export class BotService {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
-    // ── Buy commands ──────────────────────────────────────────
     if (
       normalized.startsWith('BUY') ||
-      upper.startsWith('ACHETER') ||
       upper.startsWith('ACH ') ||
       upper.startsWith('I WAN BUY') ||
       upper.startsWith('I DEY FIND') ||
@@ -150,7 +147,6 @@ export class BotService {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
-    // ── Offer ─────────────────────────────────────────────────
     if (normalized.startsWith('OFFER') || upper.startsWith('OFFRE ')) {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
@@ -158,36 +154,16 @@ export class BotService {
     // ── Role selection (during registration only) ─────────────
     if (normalized === '1' || normalized === '2') {
       if (!isRegistered) {
-        const reply = await this.registrationFlow.handle(
-          phone,
-          trimmed,
-          channel,
-        );
+        const reply = await this.registrationFlow.handle(phone, trimmed, channel);
         if (reply) return reply;
       }
     }
 
-    // ── YES / NO (context-sensitive) ──────────────────────────
-    const isYes = [
-      'YES',
-      'OUI',
-      'YES NA',
-      'NA SO',
-      'OK',
-      'OKAY',
-      "D'ACCORD",
-    ].includes(upper);
-    const isNo = [
-      'NO',
-      'NON',
-      'NO BE DAT',
-      'NON MERCI',
-      'PAS DU TOUT',
-      'NOPE',
-    ].includes(upper);
+    // ── YES / NO (context-sensitive fast path) ────────────────
+    const isYes = ['YES', 'OUI', 'YES NA', 'NA SO', 'OK', 'OKAY', "D'ACCORD"].includes(upper);
+    const isNo = ['NO', 'NON', 'NO BE DAT', 'NON MERCI', 'PAS DU TOUT', 'NOPE'].includes(upper);
 
     if (isYes || isNo) {
-      // Only route YES/NO to listing flow if there is an active pending state
       if (
         this.listingFlow.hasPendingFarmerResponse(phone) ||
         this.listingFlow.isInPriceState(phone)
@@ -196,35 +172,60 @@ export class BotService {
       }
     }
 
-    // ── AI intent parsing — last resort ───────────────────────
+    // ── AI intent parsing — handles all free-form natural language ──
     try {
       const parsed = await this.aiService.parseIntent(trimmed);
 
+      // Route sell/buy through handleWithParsed — avoids a second LLM call
       if (parsed.intent === 'sell')
-        return this.listingFlow.handle(phone, trimmed, channel);
+        return this.listingFlow.handleWithParsed(phone, trimmed, parsed, channel);
       if (parsed.intent === 'buy')
-        return this.listingFlow.handle(phone, trimmed, channel);
+        return this.listingFlow.handleWithParsed(phone, trimmed, parsed, channel);
       if (parsed.intent === 'price')
-        return this.listingFlow.handle(phone, trimmed, channel);
+        return this.listingFlow.handleWithParsed(phone, trimmed, parsed, channel);
+
       if (parsed.intent === 'help')
         return this.helpMessage(channel, lang, user?.name);
-      if (
-        parsed.intent === 'yes' &&
-        this.listingFlow.hasPendingFarmerResponse(phone)
-      )
-        return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
-      if (
-        parsed.intent === 'no' &&
-        this.listingFlow.hasPendingFarmerResponse(phone)
-      )
-        return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
+
+      if (parsed.intent === 'cancel') {
+        if (this.listingFlow.isInPriceState(phone))
+          return this.listingFlow.handle(phone, 'CANCEL', channel);
+        const msgs: Record<Language, string> = {
+          english: `Nothing to cancel. Type HELP for options.`,
+          french: `Rien à annuler. Tapez AIDE pour les options.`,
+          pidgin: `Nothing dey cancel. Type HELP.`,
+        };
+        return msgs[lang];
+      }
+
+      if (parsed.intent === 'confirm' || parsed.intent === 'yes') {
+        if (
+          this.listingFlow.hasPendingFarmerResponse(phone) ||
+          this.listingFlow.isInPriceState(phone)
+        )
+          return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
+      }
+
+      if (parsed.intent === 'no') {
+        if (this.listingFlow.hasPendingFarmerResponse(phone))
+          return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
+      }
+
+      // ── Correction intent — update a user profile field ────
+      if (parsed.intent === 'correct' && isRegistered) {
+        return this.handleCorrectionIntent(phone, trimmed, parsed, lang);
+      }
+
+      // ── Product mentioned but intent unclear — ask to clarify ──
+      if (parsed.product && parsed.intent === 'unknown' && parsed.confidence !== 'high') {
+        return await this.aiService.reply('clarify_intent', lang, {
+          product: parsed.product,
+        });
+      }
+
       if (parsed.intent === 'register') {
         if (!isRegistered) {
-          const reply = await this.registrationFlow.handle(
-            phone,
-            trimmed,
-            channel,
-          );
+          const reply = await this.registrationFlow.handle(phone, trimmed, channel);
           if (reply) return reply;
         }
         return this.helpMessage(channel, lang, user?.name);
@@ -237,7 +238,7 @@ export class BotService {
   }
 
   // ─── Greeting for a fully registered user ─────────────────────
-  // Instead of dumping the full help menu, give a short contextual reply.
+  // Ask a natural intent question — don't dump command syntax at them.
   private handleRegisteredGreeting(
     user: any,
     lang: Language,
@@ -246,42 +247,85 @@ export class BotService {
     const name = user?.name && user.name !== 'unknown' ? user.name : null;
     const role: string = user?.role ?? 'farmer';
     const isFarmer = role === 'farmer' || role === 'both';
-    // const isBuyer = role === 'buyer' || role === 'both';
+    const isBuyer = role === 'buyer' || role === 'both';
 
     if (lang === 'french') {
       const greeting = name ? `Bonjour *${name}* ! 👋` : `Bonjour ! 👋`;
-      const sellText = `Tapez *VENDRE [produit] [quantité]* pour créer une annonce.\nExemple: VENDRE maïs 10 sacs`;
-      const buyText = `Tapez *ACHETER [produit] [quantité]* pour trouver des vendeurs.\nExemple: ACHETER maïs 20 sacs`;
-      if (role === 'both') {
-        return `${greeting}\n\n${sellText}\n\n${buyText}\n\n_AIDE pour plus d'options._`;
-      }
-      return isFarmer
-        ? `${greeting}\n\n${sellText}\n\n_AIDE pour plus d'options._`
-        : `${greeting}\n\n${buyText}\n\n_AIDE pour plus d'options._`;
+      if (isFarmer && isBuyer)
+        return `${greeting} Content de vous revoir.\n\nVous voulez vendre votre récolte ou acheter quelque chose aujourd'hui?`;
+      if (isFarmer)
+        return `${greeting} Content de vous revoir.\n\nQuel produit voulez-vous vendre aujourd'hui?`;
+      return `${greeting} Content de vous revoir.\n\nQue cherchez-vous à acheter aujourd'hui?`;
     }
 
     if (lang === 'pidgin') {
       const greeting = name ? `How you dey, *${name}*! 👋` : `How you dey! 👋`;
-      const sellText = `Type *SELL [product] [qty]* to list your produce.\nExample: SELL maize 10 bags`;
-      const buyText = `Type *BUY [product] [qty]* to find sellers.\nExample: BUY maize 20 bags`;
-      if (role === 'both') {
-        return `${greeting}\n\n${sellText}\n\n${buyText}\n\n_Type HELP for more options._`;
-      }
-      return isFarmer
-        ? `${greeting}\n\n${sellText}\n\n_Type HELP for more options._`
-        : `${greeting}\n\n${buyText}\n\n_Type HELP for more options._`;
+      if (isFarmer && isBuyer)
+        return `${greeting} Welcome back.\n\nYou wan sell something or you wan buy today?`;
+      if (isFarmer)
+        return `${greeting} Welcome back.\n\nWetin you wan sell today?`;
+      return `${greeting} Welcome back.\n\nWetin you dey find today?`;
     }
 
     // English
     const greeting = name ? `Hey *${name}*! 👋` : `Hey! 👋`;
-    const sellText = `Type *SELL [product] [qty]* to list your produce.\nExample: SELL maize 10 bags`;
-    const buyText = `Type *BUY [product] [qty]* to find sellers.\nExample: BUY maize 20 bags`;
-    if (role === 'both') {
-      return `${greeting}\n\n${sellText}\n\n${buyText}\n\n_Type HELP for more options._`;
+    if (isFarmer && isBuyer)
+      return `${greeting} Good to have you back.\n\nWhat do you want to do today — sell your produce or find something to buy?`;
+    if (isFarmer)
+      return `${greeting} Good to have you back.\n\nWhat are you selling today?`;
+    return `${greeting} Good to have you back.\n\nWhat are you looking to buy today?`;
+  }
+
+  // ─── Handle correction intent ("actually my name is X") ──────
+  private async handleCorrectionIntent(
+    phone: string,
+    text: string,
+    parsed: ParsedIntent,
+    lang: Language,
+  ): Promise<string> {
+    // Try to determine which field is being corrected
+    const lower = text.toLowerCase();
+    let field: string | null = null;
+    let newValue: string | null = null;
+
+    // Name correction signals
+    if (/(?:name|nom|appelle)/i.test(lower) && parsed.name) {
+      field = 'name';
+      newValue = parsed.name;
     }
-    return isFarmer
-      ? `${greeting}\n\n${sellText}\n\n_Type HELP for more options._`
-      : `${greeting}\n\n${buyText}\n\n_Type HELP for more options._`;
+    // Location correction signals
+    else if (/(?:location|town|city|ville|town|place)/i.test(lower) && parsed.location) {
+      field = 'location';
+      newValue = parsed.location;
+    }
+    // Location inferred from parsed location even without explicit signal
+    else if (parsed.location && !parsed.name) {
+      field = 'location';
+      newValue = parsed.location;
+    }
+    // Name inferred from parsed name even without explicit signal
+    else if (parsed.name && !parsed.location) {
+      field = 'name';
+      newValue = parsed.name;
+    }
+    // Use correctedField if the LLM detected it
+    else if (parsed.correctedField && parsed.correctedField !== 'unknown' && parsed.correctedValue) {
+      field = parsed.correctedField;
+      newValue = parsed.correctedValue;
+    }
+
+    if (!field || !newValue) {
+      // Can't determine what to correct — fall through to unknown
+      return await this.aiService.reply('unknown_command', lang, {});
+    }
+
+    const updateDto: Record<string, string> = { [field]: newValue };
+    await this.usersService.update(phone, updateDto);
+
+    return await this.aiService.reply('field_corrected', lang, {
+      field,
+      newValue,
+    });
   }
 
   // ─── Language switch ──────────────────────────────────────────
