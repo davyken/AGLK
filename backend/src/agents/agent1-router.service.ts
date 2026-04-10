@@ -108,6 +108,7 @@ unit: bags | kg | tonnes | crates | bunches | litres
 price: numeric string (XAF)
 name: person's name if introduced
 
+
 === LANGUAGE DETECTION ===
 en     → English
 fr     → French (bonjour, je veux, vendre, acheter)
