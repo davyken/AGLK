@@ -189,6 +189,19 @@ export class BotService {
         if (user) await this.usersService.updateLanguage(phone, lang);
       }
 
+      // ── Passively absorb location from any message ─────────────
+      // If the classified message contains a location and the user profile
+      // doesn't have one yet, save it silently — no need to ask.
+      const freshUser = await this.usersService.findByPhone(phone);
+      if (
+        classified.location &&
+        (!freshUser?.location || freshUser.location === 'unknown')
+      ) {
+        this.usersService
+          .update(phone, { location: classified.location })
+          .catch(() => {});
+      }
+
       const primarySlot: IntentSlot = classified.intents[0] ?? { intent: 'UNKNOWN' };
       const hasMultipleActionIntents =
         classified.intents.filter((s) =>

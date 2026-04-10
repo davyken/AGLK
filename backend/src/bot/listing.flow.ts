@@ -344,6 +344,17 @@ export class ListingFlowService implements OnModuleInit {
 
     // Resolve final entity values — convState wins over raw parsed where non-null
     const mergedEntities = convState.entities;
+
+    // ── Silently enrich user profile with location if not yet set ─
+    // Never ask — just absorb whatever the user mentioned passively.
+    if (
+      mergedEntities.location &&
+      (!((user as any)?.location) || (user as any)?.location === 'unknown')
+    ) {
+      this.usersService
+        .update(phone, { location: mergedEntities.location })
+        .catch(() => {});
+    }
     const entities = {
       ...parsed,
       product: mergedEntities.product ?? parsed.product,
@@ -466,15 +477,6 @@ export class ListingFlowService implements OnModuleInit {
 
     const user = await this.usersService.findByPhone(phone);
 
-    if (!user || user.conversationState !== 'REGISTERED') {
-      const msgs: Record<Language, string> = {
-        english: `Say *Hi* to get started — registration only takes a minute! 👋`,
-        french: `Dites *Bonjour* pour commencer — l'inscription ne prend qu'une minute ! 👋`,
-        pidgin: `Say *Hi* make you register — e quick! 👋`,
-      };
-      return msgs[lang];
-    }
-
     // If price provided in initial input, skip suggestion and go directly to image
     const effectivePrice = price ?? this.parsePrice(text || '');
 
@@ -570,15 +572,7 @@ Example: 20000`,
     }
 
     const user = await this.usersService.findByPhone(phone);
-
-    if (!user || user.conversationState !== 'REGISTERED') {
-      const msgs: Record<Language, string> = {
-        english: `Say *Hi* to get started — registration only takes a minute! 👋`,
-        french: `Dites *Bonjour* pour commencer — l'inscription ne prend qu'une minute ! 👋`,
-        pidgin: `Say *Hi* make you register — e quick! 👋`,
-      };
-      return msgs[lang];
-    }
+    if (!user) return this.aiService.reply('unknown_command', lang, {});
 
     // ── No quantity → ask naturally (don't block the search) ──
     // We proceed with quantity=0 and ask after showing results
@@ -1335,6 +1329,15 @@ Example: 20000`,
         emoji,
       );
 
+      // ── Soft location ask if user has no location yet ────────────
+      // We never blocked on this during onboarding — ask gently now,
+      // after the listing is confirmed, so buyers can find them.
+      const noLocation =
+        !user?.location || user.location === 'unknown';
+      const locationNote = noLocation
+        ? this.buildLocationAsk(savedLang)
+        : '';
+
       // If no farmer image was uploaded AND we got a crop image → send it
       if (
         !imageUrl &&
@@ -1342,7 +1345,7 @@ Example: 20000`,
         cropImageUrl &&
         channel === 'whatsapp'
       ) {
-        await this.metaSender.send(phone, confirmMsg);
+        await this.metaSender.send(phone, confirmMsg + locationNote);
         await this.metaSender.sendImage(
           phone,
           cropImageUrl,
@@ -1351,7 +1354,7 @@ Example: 20000`,
         return '';
       }
 
-      return confirmMsg;
+      return confirmMsg + locationNote;
     } catch {
       await this.deletePendingState(phone);
       const msgs: Record<Language, string> = {
@@ -1844,6 +1847,18 @@ Example: 20000`,
       imageMediaId,
       lang,
     );
+  }
+
+  // ─── Soft location ask appended after a listing is confirmed ─────
+  // One gentle sentence — never blocking. User can just ignore it.
+  private buildLocationAsk(lang: Language): string {
+    if (lang === 'french') {
+      return `\n\n📍 _Dans quelle ville ou zone vous trouvez-vous ? Ça aidera les acheteurs proches à vous trouver plus facilement._`;
+    }
+    if (lang === 'pidgin') {
+      return `\n\n📍 _Which town or area you dey? E go help buyers near you find your listing faster._`;
+    }
+    return `\n\n📍 _Which town or area are you in? It'll help nearby buyers find your listing faster._`;
   }
 
   private normalizeCommand(text: string): string {
