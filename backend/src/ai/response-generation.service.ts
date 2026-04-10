@@ -386,19 +386,19 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
         pidgin: `🛒 Wetin you dey find? Separate with comma.`,
       },
       registered_farmer: {
-        english: `✅ *Registered as Farmer!*\n\nWelcome ${data.name} 👨‍🌾\nType: SELL maize 10 bags\n\nType HELP for options.`,
-        french: `✅ *Inscrit comme Agriculteur!*\n\nBienvenue ${data.name} 👨‍🌾\nTapez: VENDRE maïs 10 sacs`,
-        pidgin: `✅ *You don register as Farmer!*\n\nWelcome ${data.name} 👨‍🌾\nType: SELL maize 10 bags`,
+        english: `✅ *Welcome, ${data.name}!* 👨‍🌾\n\nYou're registered as a farmer. What would you like to list today?`,
+        french: `✅ *Bienvenue, ${data.name} !* 👨‍🌾\n\nVous êtes inscrit comme agriculteur. Qu'est-ce que vous souhaitez lister aujourd'hui?`,
+        pidgin: `✅ *Welcome, ${data.name}!* 👨‍🌾\n\nYou don register as farmer. Wetin you wan list today?`,
       },
       registered_buyer: {
-        english: `✅ *Registered as Buyer!*\n\nWelcome ${data.name} 🏪\nType: BUY maize 20 bags\n\nType HELP for options.`,
-        french: `✅ *Inscrit comme Acheteur!*\n\nBienvenue ${data.name} 🏪\nTapez: ACHETER maís 20 sacs`,
-        pidgin: `✅ *You don register as Buyer!*\n\nWelcome ${data.name} 🏪\nType: BUY corn 20 bags`,
+        english: `✅ *Welcome, ${data.name}!* 🏪\n\nYou're registered as a buyer. What produce are you looking for today?`,
+        french: `✅ *Bienvenue, ${data.name} !* 🏪\n\nVous êtes inscrit comme acheteur. Quels produits cherchez-vous aujourd'hui?`,
+        pidgin: `✅ *Welcome, ${data.name}!* 🏪\n\nYou don register as buyer. Wetin you dey find today?`,
       },
       registered_both: {
-        english: `✅ *Registered as Farmer & Buyer!*\n\nWelcome ${data.name} 👨‍🌾🏪\nList produce: SELL maize 10 bags\nBuy produce: BUY maize 20 bags\nYour listings won't be suggested to you.\nType HELP for options.`,
-        french: `✅ *Inscrit comme Agriculteur & Acheteur!*\n\nBienvenue ${data.name} 👨‍🌾🏪\nVendre: VENDRE maís 10 sacs\nAcheter: ACHETER maís 20 sacs\nVos annonces ne vous seront pas suggérées.`,
-        pidgin: `✅ *You don register as Farmer & Buyer!*\n\nWelcome ${data.name} 👨‍🌾🏪\nSell: SELL corn 10 bags\nBuy: BUY corn 20 bags\nYour listings no go show for you.`,
+        english: `✅ *Welcome, ${data.name}!* 👨‍🌾🏪\n\nYou're registered as both a farmer and buyer. Would you like to list produce or find something to buy today?`,
+        french: `✅ *Bienvenue, ${data.name} !* 👨‍🌾🏪\n\nVous êtes inscrit comme agriculteur et acheteur. Voulez-vous lister des produits ou acheter quelque chose aujourd'hui?`,
+        pidgin: `✅ *Welcome, ${data.name}!* 👨‍🌾🏪\n\nYou don register as farmer and buyer. You wan sell or buy today?`,
       },
       voice_received: {
         english: `🎤 Heard: *"${data.text}"*\n\nProcessing...`,
@@ -406,9 +406,9 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
         pidgin: `🎤 I hear: *"${data.text}"*\n\nI dey process am...`,
       },
       voice_failed: {
-        english: `❌ Couldn't process voice note.\nPlease type your message.`,
-        french: `❌ Message vocal non compris.\nVeuillez taper votre message.`,
-        pidgin: `❌ I no hear the voice.\nAbeg type your message.`,
+        english: `Couldn't catch that voice note — could you try again or type your message?`,
+        french: `Je n'ai pas compris le message vocal — pouvez-vous réessayer ou taper votre message?`,
+        pidgin: `I no hear the voice well — abeg try again or type your message.`,
       },
       price_suggestion: {
         english: `📊 *${data.product} Prices*\n\nMin: ${data.min}\nAvg: ${data.avg}\nMax: ${data.max}\n✨ Suggested: *${data.suggested}*\n\n1️⃣ Accept  2️⃣ Custom\n\nReply 1 or 2`,
@@ -506,9 +506,9 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
         pidgin: `✅ *Deal Don Set!*\n\nChat: ${data.link}\n\n📋 ${data.product} — ${data.quantity} ${data.unit} @ ${data.price}`,
       },
       unknown_command: {
-        english: `❓ Didn't understand that.\n\nTry:\n• SELL maize 10 bags\n• BUY maize 20 bags\n• HELP`,
-        french: `❓ Je n'ai pas compris.\n\nEssayez:\n• VENDRE maïs 10 sacs\n• ACHETER maïs 20 sacs\n• AIDE`,
-        pidgin: `❓ I no understand.\n\nTry:\n• SELL maize 10 bags\n• BUY maize 20 bags\n• HELP`,
+        english: `Hmm, I didn't catch that. Are you trying to sell produce, find something to buy, or check prices?`,
+        french: `Hmm, je n'ai pas compris. Vous voulez vendre, acheter ou voir les prix?`,
+        pidgin: `Hmm, I no understand. You wan sell, buy, or check price?`,
       },
       clarification_needed: {
         english: `🌐 Choose language / Choisissez la langue:\n\n1️⃣ English\n2️⃣ Français\n3️⃣ Pidgin`,
@@ -521,7 +521,7 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
     if (template) return template[lang] ?? template['english'];
 
     // Ultimate fallback
-    return `❓ Something went wrong. Type HELP for options.`;
+    return `Something went wrong — could you try again?`;
   }
 
   // ─────────────────────────────────────────────────────────────
