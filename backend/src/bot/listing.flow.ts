@@ -29,6 +29,7 @@ interface PendingState {
   price?: number;
   imageUrl?: string;
   imageMediaId?: string;
+  availableAt?: string;
   expiresAt?: number; // epoch ms — discard state after this time
   listings?: Array<{
     id: string;
@@ -183,6 +184,7 @@ export class ListingFlowService implements OnModuleInit {
         lang,
         parsed.price,
         text,
+        parsed.availableAt,
       );
     }
 
@@ -233,6 +235,7 @@ export class ListingFlowService implements OnModuleInit {
           lang,
           undefined,
           text,
+          undefined,
         );
     }
 
@@ -262,6 +265,7 @@ export class ListingFlowService implements OnModuleInit {
     lang: Language,
     price?: number,
     text?: string,
+    availableAt?: string,
   ): Promise<string> {
     // displayName = what user sees (preserves French/Pidgin product names)
     const displayName = productDisplay || product;
@@ -280,15 +284,16 @@ export class ListingFlowService implements OnModuleInit {
         userPhone: phone,
         userRole: 'farmer',
         language: lang,
+        availableAt,
       });
       const msgs: Record<Language, string> = {
-        english: `${smartEmoji} Got it — you want to sell *${this.cap(displayName)}*.
+        english: `${smartEmoji} Got it — you want to sell *${this.cap(displayName)}*${availableAt ? ` (ready ${availableAt})` : ''}.
 
 How many ${smartUnit} do you have?`,
-        french: `${smartEmoji} Compris — vous voulez vendre *${this.cap(displayName)}*.
+        french: `${smartEmoji} Compris — vous voulez vendre *${this.cap(displayName)}*${availableAt ? ` (prêt ${availableAt})` : ''}.
 
 Combien de ${smartUnit} avez-vous?`,
-        pidgin: `${smartEmoji} Okay — you wan sell *${this.cap(displayName)}*.
+        pidgin: `${smartEmoji} Okay — you wan sell *${this.cap(displayName)}*${availableAt ? ` (ready ${availableAt})` : ''}.
 
 How many ${smartUnit} you get?`,
       };
@@ -346,7 +351,7 @@ How many ${smartUnit} you get?`,
     await this.setPendingState(phone, {
       type: 'sell',
       product,
-      productDisplay: displayName, // preserved for messages
+      productDisplay: displayName, 
       quantity,
       unit,
       userPhone: phone,

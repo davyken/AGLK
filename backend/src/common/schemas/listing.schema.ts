@@ -64,6 +64,9 @@ export class Listing {
 
   @Prop({ enum: ['sms', 'whatsapp'], required: true })
   channel: string;
+
+  @Prop({ default: null })
+  availableAt: string;
 }
 
 export const ListingSchema = SchemaFactory.createForClass(Listing);
