@@ -47,7 +47,8 @@ export class SpeechToTextService {
           body: JSON.stringify({
             file: base64Audio,
             model: 'whisper-1',
-            language: 'en',
+            prompt:
+              'Agricultural marketplace terms: maize, bags, sell, buy, farmer, buyer, price, quantity, tomato, cassava, plantain, cameroon, pidgin, french.',
             response_format: 'text',
           }),
         },

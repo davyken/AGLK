@@ -1,6 +1,7 @@
 import { Module, Global } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { SpeechToTextService } from './speech-to-text.service';
+import { TextToSpeechService } from './text-to-speech.service';
 import { TranslationService } from './translation.service';
 import { LanguageDetectionService } from './language-detection.service';
 import { ResponseGenerationService } from './response-generation.service';
@@ -19,6 +20,7 @@ import { UsersModule } from '../users/users.module';
     ConversationService,
     AiService,
     SpeechToTextService,
+    TextToSpeechService,
     TranslationService,
   ],
   exports: [
@@ -27,6 +29,7 @@ import { UsersModule } from '../users/users.module';
     ConversationService,
     AiService,
     SpeechToTextService,
+    TextToSpeechService,
     TranslationService,
   ],
 })
