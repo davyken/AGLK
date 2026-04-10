@@ -843,8 +843,39 @@ ${filterSummary}
     });
   }
 
+  // ─── Detect natural-language cancellation or intent shift ───
+  // Returns 'cancel', 'sell', 'buy', or null.
+  private detectCancelOrShift(text: string): 'cancel' | 'sell' | 'buy' | null {
+    const lower = text.toLowerCase();
+
+    const cancelSignals = [
+      'not interested', 'no longer', 'never mind', 'nevermind',
+      'forget it', 'don\'t want', "don't want", 'changed my mind',
+      'no thanks', 'no thank you', 'stop', 'quit', 'leave it',
+      'plus intéressé', 'laisse tomber', 'plus maintenant',
+      'je ne veux plus', 'ça ne m\'intéresse plus',
+      'i no wan', 'i don\'t want', 'abeg stop', 'no more',
+      'cancel', 'annuler', 'not anymore', 'disregard',
+    ];
+    if (cancelSignals.some((s) => lower.includes(s))) return 'cancel';
+
+    const sellShift = [
+      'want to sell', 'i want to sell', 'actually sell', 'let me sell',
+      'je veux vendre', 'i wan sell', 'i dey sell',
+    ];
+    if (sellShift.some((s) => lower.includes(s))) return 'sell';
+
+    const buyShift = [
+      'want to buy', 'i want to buy', 'actually buy', 'let me buy',
+      'je veux acheter', 'i wan buy', 'i dey find',
+    ];
+    if (buyShift.some((s) => lower.includes(s))) return 'buy';
+
+    return null;
+  }
+
   // ─── Handle pending state responses ──────────────────────
-private async handlePendingState(
+  private async handlePendingState(
     phone: string,
     response: string,
     channel: 'sms' | 'whatsapp',
@@ -868,17 +899,24 @@ private async handlePendingState(
     // Use saved language from pending state
     const savedLang = pending.language ?? lang;
 
-    if (
-      response.toUpperCase() === 'CANCEL' ||
-      response.toUpperCase() === 'ANNULER'
-    ) {
+    // ── Natural-language cancel / intent-shift detection ────
+    // Intercept before rigid number/keyword routing so that
+    // "I'm no longer interested" doesn't get answered with "Pick a number".
+    const shift = this.detectCancelOrShift(response);
+    if (shift === 'cancel' || response.toUpperCase() === 'CANCEL' || response.toUpperCase() === 'ANNULER') {
       await this.deletePendingState(phone);
       const msgs: Record<Language, string> = {
-        english: `No problem, cancelled. What would you like to do instead — sell or buy?`,
-        french: `Pas de problème, annulé. Que voulez-vous faire à la place — vendre ou acheter?`,
-        pidgin: `Okay, cancelled. You wan sell or buy instead?`,
+        english: `No problem 👍 I've stopped that. Let me know if you want to sell something or find produce to buy.`,
+        french: `Pas de problème 👍 J'ai arrêté ça. Dites-moi si vous voulez vendre ou acheter quelque chose.`,
+        pidgin: `No problem 👍 I don stop am. Tell me if you wan sell or buy something.`,
       };
       return msgs[savedLang];
+    }
+
+    if (shift === 'sell' || shift === 'buy') {
+      // Clear the old pending state and re-route as a fresh intent
+      await this.deletePendingState(phone);
+      return this.handle(phone, response, channel);
     }
 
     if (pending.type === 'sell')
@@ -1282,16 +1320,31 @@ Example: 20000`,
     lang: Language,
   ): Promise<string> {
     const selection = parseInt(response.trim(), 10);
+    const count = pending.listings?.length || 0;
 
-    if (
-      isNaN(selection) ||
-      selection < 1 ||
-      selection > (pending.listings?.length || 0)
-    ) {
+    if (isNaN(selection) || selection < 1 || selection > count) {
+      // If the response looks like a question or statement, acknowledge it
+      // rather than blindly repeating the prompt.
+      const lower = response.toLowerCase().trim();
+      const isQuestion = lower.endsWith('?') || lower.startsWith('what') ||
+        lower.startsWith('who') || lower.startsWith('how') ||
+        lower.startsWith('pourquoi') || lower.startsWith('comment') ||
+        lower.startsWith('wetin') || lower.startsWith('how much');
+
+      if (isQuestion) {
+        const msgs: Record<Language, string> = {
+          english: `Happy to help! Each farmer listed above has their price and location. Just send the number (1–${count}) of the one you'd like to contact.`,
+          french: `Avec plaisir ! Chaque agriculteur ci-dessus a son prix et sa localisation. Envoyez le numéro (1–${count}) de celui que vous souhaitez contacter.`,
+          pidgin: `No wahala! Each farmer up there get price and location. Send number (1–${count}) of di one you want.`,
+        };
+        return msgs[lang];
+      }
+
+      // Non-numeric, non-question input — gentle re-prompt
       const msgs: Record<Language, string> = {
-        english: `Pick a number between 1 and ${pending.listings?.length} to select a farmer.`,
-        french: `Choisissez un numéro entre 1 et ${pending.listings?.length} pour sélectionner un agriculteur.`,
-        pidgin: `Send number between 1 and ${pending.listings?.length} to pick farmer.`,
+        english: `Just send the number of the farmer you want — for example, *1* for the first one listed.`,
+        french: `Envoyez simplement le numéro de l'agriculteur que vous voulez — par exemple *1* pour le premier.`,
+        pidgin: `Just send di number of di farmer you want — like *1* for di first one.`,
       };
       return msgs[lang];
     }
@@ -1396,6 +1449,18 @@ Example: 20000`,
     // ── Farmer is typing their counter-offer price ────────────
     if (pending.awaitingCounterPrice) {
       return this.handleFarmerCounterPrice(phone, response, pending, lang);
+    }
+
+    // ── Natural-language cancel / disinterest ─────────────────
+    const shift = this.detectCancelOrShift(response);
+    if (shift === 'cancel') {
+      await this.deleteFarmerResponse(phone);
+      const msgs: Record<Language, string> = {
+        english: `No problem 👍 I've dropped that request. Let me know whenever you're ready to continue.`,
+        french: `Pas de problème 👍 J'ai annulé cette demande. Faites-moi signe quand vous serez prêt.`,
+        pidgin: `No problem 👍 I don cancel am. Tell me when you ready.`,
+      };
+      return msgs[lang];
     }
 
     const input = response.trim().toUpperCase();

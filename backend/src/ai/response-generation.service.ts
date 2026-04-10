@@ -148,6 +148,12 @@ RULES:
 - NEVER ask for information already given in the brief
 - NEVER say "I cannot" or "I don't know" — redirect constructively
 - If data is absent from the brief, ask for it; do not guess
+- NEVER show commands like "SELL maize 10 bags" — use natural language examples instead
+- NEVER send a help menu automatically — only when the user explicitly asks
+- If user input is ambiguous, ask ONE clarifying question (not a menu)
+- If user cancels or changes intent mid-flow, acknowledge and adapt gracefully
+- NEVER repeat "Pick a number" robotically — vary the phrasing if needed
+- When user's intent is unclear, ask: "Are you trying to sell, buy, or check prices?"
 
 IMPORTANT: Respond ONLY with the message text — no explanations, no quotes around the response.`;
 
@@ -208,11 +214,11 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
 
       ask_needs: `Ask the buyer which products they want to buy. Tell them to list separated by commas. Example: maize, tomatoes, plantain.`,
 
-      registered_farmer: `Registration complete! Welcome ${d.name} as a farmer. Tell them they can now list their produce by typing: SELL maize 10 bags. Tell them to type HELP for all options.`,
+      registered_farmer: `Registration complete! Welcome ${d.name} as a farmer. Ask them what produce they would like to list today — use natural, friendly language. Do NOT show command syntax.`,
 
-      registered_buyer: `Registration complete! Welcome ${d.name} as a buyer. Tell them they can now search for produce by typing: BUY maize 20 bags. Tell them to type HELP for all options.`,
+      registered_buyer: `Registration complete! Welcome ${d.name} as a buyer. Ask them what produce they are looking for today — use natural, friendly language. Do NOT show command syntax.`,
 
-      registered_both: `Registration complete! Welcome ${d.name} as both a farmer and buyer. You can list produce with: SELL maize 10 bags. You can search for produce with: BUY maize 20 bags. Your listings will not be suggested back to you. Type HELP for all options.`,
+      registered_both: `Registration complete! Welcome ${d.name} as both a farmer and buyer. Ask whether they want to list produce or find something to buy today — use natural, friendly language. Mention that their own listings will not appear in their search results. Do NOT show command syntax.`,
 
       // ── Errors during registration ─────────────────────────
       reg_invalid_role: `User gave an invalid role selection. Remind them to reply 1 for Farmer, 2 for Buyer, or 3 for Both. Be gentle and helpful.`,
@@ -240,7 +246,7 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
       // ── Sell flow errors ──────────────────────────────────
       sell_needs_quantity: `User wants to sell ${d.product} but didn't specify how many ${d.unit}. Ask how many ${d.unit} they have available.`,
 
-      sell_invalid_format: `Invalid sell command format. Show the correct format: SELL maize 10 bags`,
+      sell_invalid_format: `User wants to sell but didn't give enough details. Ask them naturally what produce they have and how much — e.g. "What are you selling, and how much do you have?"`,
 
       sell_not_registered: `User is not yet registered. Tell them to register first by replying Hi or Hello.`,
 
@@ -252,20 +258,20 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
 
       sell_ask_image: `Listing almost done! Ask if they want to add a photo of their produce. Tell them to send an image now or reply SKIP if they don't want to add one.`,
 
-      sell_cancelled: `Sell listing has been cancelled. Tell the user and suggest they type HELP for other options.`,
+      sell_cancelled: `Sell listing has been cancelled. Confirm to the user and ask what they'd like to do next.`,
 
       sell_failed: `Failed to create the listing due to a system error. Apologise and ask the user to try again.`,
 
       // ── Buy flow errors ───────────────────────────────────
-      buy_invalid_format: `Invalid buy command format. Show the correct format: BUY maize 20 bags`,
+      buy_invalid_format: `User wants to buy but didn't give enough details. Ask them naturally what produce they are looking for and how much — e.g. "What are you looking to buy, and how much do you need?"`,
 
-      buy_not_registered: `User is not yet registered. Tell them to register first by replying Hi or Hello.`,
+      buy_not_registered: `User is not yet registered. Tell them to say Hi to get started — it only takes a minute.`,
 
-      buy_only_buyers: `Only buyers can search listings. This user is registered as ${d.role}. Explain politely.`,
+      buy_only_buyers: `Only buyers can search listings. This user is registered as ${d.role}. Explain politely and offer to update their profile.`,
 
       buy_no_listings: `No farmers are currently selling ${d.product}. Tell the user their request has been saved and they will be notified when a farmer lists this product.`,
 
-      buy_no_listings_filtered: `No listings found for ${d.product} with those filters. Suggest they try again without filters: BUY ${d.product} ${d.quantity} bags`,
+      buy_no_listings_filtered: `No listings found for ${d.product} with those filters. Ask if they'd like to search without the location or price filter.`,
 
       buy_invalid_selection: `Invalid selection number. Tell the user to reply with a number between 1 and ${d.max}.`,
 

@@ -92,9 +92,9 @@ export class BotService {
         return this.listingFlow.handle(phone, 'CANCEL', channel);
       }
       const msgs: Record<Language, string> = {
-        english: `Nothing to cancel. Type HELP for options.`,
-        french: `Rien à annuler. Tapez AIDE pour les options.`,
-        pidgin: `Nothing dey cancel. Type HELP.`,
+        english: `No problem 👍 There's nothing active to cancel right now. What would you like to do?`,
+        french: `Pas de problème 👍 Il n'y a rien d'actif à annuler. Que voulez-vous faire?`,
+        pidgin: `No problem 👍 Nothing dey active to cancel. Wetin you wan do?`,
       };
       return msgs[lang];
     }
@@ -202,9 +202,9 @@ export class BotService {
         if (this.listingFlow.isInPriceState(phone))
           return this.listingFlow.handle(phone, 'CANCEL', channel);
         const msgs: Record<Language, string> = {
-          english: `Nothing to cancel. Type HELP for options.`,
-          french: `Rien à annuler. Tapez AIDE pour les options.`,
-          pidgin: `Nothing dey cancel. Type HELP.`,
+          english: `No problem 👍 There's nothing active to cancel right now. What would you like to do?`,
+          french: `Pas de problème 👍 Il n'y a rien d'actif à annuler. Que voulez-vous faire?`,
+          pidgin: `No problem 👍 Nothing dey active to cancel. Wetin you wan do?`,
         };
         return msgs[lang];
       }
@@ -390,49 +390,52 @@ export class BotService {
 
     if (channel === 'sms') {
       const sms: Record<Language, string> = {
-        english: `AgroLink${nameGreet}:\nSELL maize 10 bags\nBUY maize 20 bags\nLANGUAGE - change\nHELP - this menu`,
-        french: `AgroLink${nameGreet}:\nVENDRE maïs 10 sacs\nACHETER maïs 20 sacs\nLANGUE - changer\nAIDE - ce menu`,
-        pidgin: `AgroLink${nameGreet}:\nSELL maize 10 bags\nBUY maize 20 bags\nLANGUAGE - change\nHELP - this menu`,
+        english: `AgroLink${nameGreet} — just tell me what you need:\n"I want to sell 10 bags of maize"\n"I'm looking for tomatoes in Yaounde"\n"What's the price of cassava?"`,
+        french: `AgroLink${nameGreet} — dites-moi simplement ce que vous voulez:\n"Je veux vendre 10 sacs de maïs"\n"Je cherche des tomates à Yaoundé"\n"Quel est le prix du manioc?"`,
+        pidgin: `AgroLink${nameGreet} — just tell me wetin you need:\n"I wan sell 10 bags maize"\n"I dey find tomatoes for Yaounde"\n"Wetin be price of cassava?"`,
       };
       return sms[lang];
     }
 
     const help: Record<Language, string> = {
       english: [
-        `📋 *AgroLink Help*${nameGreet}\n`,
-        `👨‍🌾 *Sell produce:*`,
-        `SELL maize 10 bags`,
-        `_Type the product, then quantity_\n`,
-        `🏪 *Buy produce:*`,
-        `BUY maize 20 bags`,
-        `BUY maize 20 bags @yaounde`,
-        `BUY maize 20 bags #10000-20000\n`,
-        `🌐 *Language:* LANGUAGE`,
-        `❓ *Help:* HELP`,
+        `👋 *Here's what I can do for you${nameGreet}:*\n`,
+        `👨‍🌾 *Selling produce?*`,
+        `_Just tell me naturally:_`,
+        `"I want to sell 10 bags of maize"`,
+        `"I have 50 kg of tomatoes for sale"\n`,
+        `🏪 *Looking to buy?*`,
+        `"I need 20 bags of maize in Yaounde"`,
+        `"I'm looking for cassava, budget 15,000 XAF"\n`,
+        `📊 *Check market prices:*`,
+        `"What's the current price of groundnuts?"\n`,
+        `🌐 *Change language:* just say "switch to French" or "parler français"`,
       ].join('\n'),
       french: [
-        `📋 *Aide AgroLink*${nameGreet}\n`,
-        `👨‍🌾 *Vendre:*`,
-        `VENDRE maïs 10 sacs`,
-        `_Produit puis quantité_\n`,
-        `🏪 *Acheter:*`,
-        `ACHETER maïs 20 sacs`,
-        `ACHETER maïs 20 sacs @yaounde`,
-        `ACHETER maïs 20 sacs #10000-20000\n`,
-        `🌐 *Langue:* LANGUE`,
-        `❓ *Aide:* AIDE`,
+        `👋 *Voici ce que je peux faire pour vous${nameGreet}:*\n`,
+        `👨‍🌾 *Vous voulez vendre?*`,
+        `_Dites-le simplement:_`,
+        `"Je veux vendre 10 sacs de maïs"`,
+        `"J'ai 50 kg de tomates à vendre"\n`,
+        `🏪 *Vous voulez acheter?*`,
+        `"Je cherche 20 sacs de maïs à Yaoundé"`,
+        `"Je veux du manioc, budget 15 000 XAF"\n`,
+        `📊 *Prix du marché:*`,
+        `"Quel est le prix actuel des arachides?"\n`,
+        `🌐 *Changer de langue:* dites "switch to English" ou "speak pidgin"`,
       ].join('\n'),
       pidgin: [
-        `📋 *AgroLink Help*${nameGreet}\n`,
-        `👨‍🌾 *Sell your thing:*`,
-        `SELL maize 10 bags`,
-        `_Product then number of bags_\n`,
-        `🏪 *Buy something:*`,
-        `BUY maize 20 bags`,
-        `BUY maize 20 bags @yaounde`,
-        `BUY maize 20 bags #10000-20000\n`,
-        `🌐 *Language:* LANGUAGE`,
-        `❓ *Help:* HELP`,
+        `👋 *Here's wetin I fit do for you${nameGreet}:*\n`,
+        `👨‍🌾 *You wan sell?*`,
+        `_Just talk am natural:_`,
+        `"I wan sell 10 bags maize"`,
+        `"I get 50 kg tomatoes for sale"\n`,
+        `🏪 *You dey find something?*`,
+        `"I need 20 bags maize for Yaounde"`,
+        `"I wan cassava, my money na 15,000 XAF"\n`,
+        `📊 *Check market price:*`,
+        `"Wetin be price of groundnut now?"\n`,
+        `🌐 *Change language:* just say "switch to French" or "speak English"`,
       ].join('\n'),
     };
     return help[lang];
