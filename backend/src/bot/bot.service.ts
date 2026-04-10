@@ -31,15 +31,26 @@ export class BotService {
     const isRegistered = user?.conversationState === 'REGISTERED';
 
     // ── Resolve language ──────────────────────────────────────
-    const detectedLang: Language = await this.aiService.detectLanguage(trimmed);
     const savedLang: Language = (user as any)?.language ?? 'english';
-    // Only override saved language if detection is confident (not plain English
-    // which is often a false positive for short messages).
-    const lang: Language =
-      detectedLang !== 'english' ? detectedLang : savedLang;
 
-    if (user && lang !== savedLang) {
-      await this.usersService.updateLanguage(phone, lang);
+    // Only re-detect language on messages that are long enough to be reliable.
+    // Short replies like "Henry", "Yes", "10" are ambiguous — the LLM often
+    // mis-classifies them (e.g. "Henry" → "french" because of "Henri").
+    // Rule: message must be ≥ 8 chars AND contain ≥ 2 whitespace-separated tokens.
+    const tokens = trimmed.split(/\s+/);
+    const longEnoughToDetect = trimmed.length >= 8 && tokens.length >= 2;
+
+    let lang: Language = savedLang;
+    if (longEnoughToDetect) {
+      const detectedLang: Language = await this.aiService.detectLanguage(trimmed);
+      // Only adopt the detected language when it is non-English (English is a
+      // frequent false positive) and the user hasn't established a session language yet.
+      if (detectedLang !== 'english' || !user) {
+        lang = detectedLang;
+      }
+      if (user && lang !== savedLang) {
+        await this.usersService.updateLanguage(phone, lang);
+      }
     }
 
     // ── Explicit language-switch commands ─────────────────────
@@ -242,7 +253,7 @@ export class BotService {
   private handleRegisteredGreeting(
     user: any,
     lang: Language,
-    channel: 'sms' | 'whatsapp',
+    _channel: 'sms' | 'whatsapp',
   ): string {
     const name = user?.name && user.name !== 'unknown' ? user.name : null;
     const role: string = user?.role ?? 'farmer';
@@ -332,7 +343,7 @@ export class BotService {
   private async handleLanguageSwitch(
     phone: string,
     newLang: Language,
-    currentLang: Language,
+    _currentLang: Language,
   ): Promise<string> {
     await this.usersService.updateLanguage(phone, newLang);
 
