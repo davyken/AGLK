@@ -127,8 +127,9 @@ export class BotController {
         const text = message?.text?.body ?? '';
         if (!text) return { status: 'empty_text' };
 
-        // Mark message as read immediately (shows blue checkmarks)
+        // Mark as read + show typing indicator while processing
         await this.metaSender.markAsRead(phone, message.id);
+        this.metaSender.sendTypingIndicator(phone, message.id).catch(() => {});
 
         const reply = await this.botService.handleMessage({
           phone,
@@ -136,10 +137,6 @@ export class BotController {
           channel: 'whatsapp',
         });
         if (reply) {
-          // Natural typing delay proportional to reply length
-          await new Promise((r) =>
-            setTimeout(r, MetaSenderService.typingDelay(reply.length)),
-          );
           await this.metaSender.send(phone, reply);
         }
         return { status: 'ok' };
@@ -149,10 +146,9 @@ export class BotController {
         const mediaId = message?.audio?.id;
         if (!mediaId) return { status: 'no_media_id' };
 
-        // Get media URL - skip the "voice_processing" text message
-        // User expects direct voice reply after their voice input
-        // Mark as read immediately
+        // Mark as read + show typing indicator while processing
         await this.metaSender.markAsRead(phone, message.id);
+        this.metaSender.sendTypingIndicator(phone, message.id).catch(() => {});
 
         // Step 1 — immediate acknowledgement (before the slow Whisper call)
         await this.metaSender.send(
@@ -206,8 +202,9 @@ export class BotController {
 
         if (!mediaId) return { status: 'no_image_id' };
 
-        // Mark as read immediately
+        // Mark as read + show typing indicator
         await this.metaSender.markAsRead(phone, message.id);
+        this.metaSender.sendTypingIndicator(phone, message.id).catch(() => {});
 
         if (!this.listingFlow.isInImageState(phone)) {
           if (caption) {

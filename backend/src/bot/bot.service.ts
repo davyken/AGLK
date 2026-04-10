@@ -190,14 +190,10 @@ export class BotService {
       }
 
       // ── Passively absorb location from any message ─────────────
-      // If the classified message contains a location and the user profile
-      // doesn't have one yet, save it silently — no need to ask.
-      const freshUser = await this.usersService.findByPhone(phone);
-      if (
-        classified.location &&
-        (!freshUser?.location || freshUser.location === 'unknown')
-      ) {
-        this.usersService
+      // Always update the stored location when the message contains one so that
+      // searches reflect the user's current location, not a stale saved value.
+      if (classified.location) {
+        await this.usersService
           .update(phone, { location: classified.location })
           .catch(() => {});
       }

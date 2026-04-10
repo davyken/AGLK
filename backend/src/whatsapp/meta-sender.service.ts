@@ -196,6 +196,38 @@ export class MetaSenderService {
   }
 
   /**
+   * Shows the "typing…" bubble in the user's WhatsApp chat while the bot is processing.
+   * Call this right after markAsRead and before the async processing work begins.
+   * Fire-and-forget — never await in the hot path.
+   *
+   * Uses the WhatsApp Cloud API typing indicator endpoint:
+   * POST /{phone-number-id}/messages  { status: "typing", message_id: ... }
+   */
+  async sendTypingIndicator(to: string, messageId: string): Promise<void> {
+    const phoneNumberId = this.config.get<string>('META_PHONE_NUMBER_ID');
+    const accessToken = this.config.get<string>('META_ACCESS_TOKEN');
+    const apiVersion = this.config.get<string>('META_API_VERSION') || 'v19.0';
+    const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
+
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          status: 'typing',
+          message_id: messageId,
+        }),
+      });
+    } catch {
+      // Non-critical — typing indicator is cosmetic
+    }
+  }
+
+  /**
    * Returns a delay in ms proportional to the reply length.
    * Simulates natural typing speed: ~600ms base + 15ms per character, capped at 3500ms.
    */
