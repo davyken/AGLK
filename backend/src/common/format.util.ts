@@ -1,3 +1,23 @@
+export function normalizePhone(
+  phone: string | null | undefined,
+): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('+')) {
+    return digits;
+  }
+  if (digits.length === 9 && /^[67]/.test(digits)) {
+    return `+237${digits}`;
+  }
+  if (digits.startsWith('237') && digits.length === 12) {
+    return `+${digits}`;
+  }
+  if (digits.length >= 8) {
+    return `+${digits}`;
+  }
+  return `+237${digits}`;
+}
+
 export function formatPrice(price: number): string {
   return price.toLocaleString() + ' XAF';
 }

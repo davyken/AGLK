@@ -8,6 +8,7 @@ import { MetaSenderService } from '../whatsapp/meta-sender.service';
 import { AiService, Language } from '../ai/ai.service';
 import { FilterParserService } from './filter-parser.service';
 import { CropMediaService } from './Crop media.service';
+import { normalizePhone } from '../common/format.util';
 
 /** Pending states expire after this many milliseconds (4 hours). */
 const PENDING_TTL_MS = 4 * 60 * 60 * 1_000;
@@ -437,9 +438,12 @@ Example: 20000`,
     }
 
     const matchingListings = await this.listingService.findByProduct(product);
+    const normalizedQueryPhone = normalizePhone(phone);
     const sellListings = matchingListings.filter(
       (l) =>
-        l.type === 'sell' && l.status === 'active' && l.userPhone !== phone,
+        l.type === 'sell' &&
+        l.status === 'active' &&
+        normalizePhone(l.userPhone) !== normalizedQueryPhone,
     );
 
     // No listings found → save buy request
@@ -564,7 +568,7 @@ Example: 20000`,
       return msgs[lang];
     }
 
-    if (user.role !== 'buyer') {
+    if (user.role !== 'buyer' && user.role !== 'both') {
       const msgs: Record<Language, string> = {
         english: `❌ Only buyers can search listings.`,
         french: `❌ Seuls les acheteurs peuvent chercher.`,
@@ -575,8 +579,12 @@ Example: 20000`,
 
     // ── Fetch listings with filters ────────────────────────
     const allListings = await this.listingService.findByProduct(parsed.product);
+    const normalizedQueryPhone = normalizePhone(phone);
     let sellListings = allListings.filter(
-      (l) => l.type === 'sell' && l.status === 'active',
+      (l) =>
+        l.type === 'sell' &&
+        l.status === 'active' &&
+        normalizePhone(l.userPhone) !== normalizedQueryPhone,
     );
 
     // Apply location filter
@@ -1455,7 +1463,7 @@ Example: 20000`,
     }
 
     const buyer = await this.usersService.findByPhone(phone);
-    if (!buyer || buyer.role !== 'buyer') {
+    if (!buyer || (buyer.role !== 'buyer' && buyer.role !== 'both')) {
       const msgs: Record<Language, string> = {
         english: `❌ Only buyers can make offers.`,
         french: `❌ Seuls les acheteurs peuvent faire des offres.`,
