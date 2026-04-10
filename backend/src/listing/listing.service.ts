@@ -170,6 +170,108 @@ export class ListingService {
       .exec();
   }
 
+  /**
+   * Search for sell listings with a product synonym fallback.
+   * Returns any active listing whose product matches one of the known synonyms.
+   */
+  async findByProductSynonyms(product: string): Promise<ListingDocument[]> {
+    const synonyms = this.getSynonyms(product);
+    if (synonyms.length === 0) return [];
+    const regexes = synonyms.map(
+      (s) => new RegExp(`^${this.escapeRegex(s)}$`, 'i'),
+    );
+    return this.listingModel
+      .find({ product: { $in: regexes }, type: 'sell', status: 'active' })
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  /**
+   * Four-tier fallback search for buy requests:
+   *  Tier 1 — exact product + exact location
+   *  Tier 2 — exact product + any location (nationwide)
+   *  Tier 3 — synonym products + any location
+   *  Tier 4 — empty (no matches anywhere)
+   *
+   * The `excludePhone` prevents returning the buyer's own listings.
+   */
+  async findWithFallback(
+    product: string,
+    location: string,
+    excludePhone: string,
+  ): Promise<{
+    tier: 1 | 2 | 3 | 4;
+    listings: ListingDocument[];
+    fallbackProduct?: string;
+  }> {
+    const ownFilter = (docs: ListingDocument[]) =>
+      docs.filter(
+        (l) =>
+          l.type === 'sell' &&
+          l.status === 'active' &&
+          l.userPhone !== excludePhone,
+      );
+
+    // Tier 1 — exact + location
+    if (location && location !== 'unknown') {
+      const t1 = ownFilter(await this.findByProductAndLocation(product, location));
+      if (t1.length > 0) return { tier: 1, listings: t1 };
+    }
+
+    // Tier 2 — exact + nationwide
+    const t2 = ownFilter(await this.findByProduct(product));
+    if (t2.length > 0) return { tier: 2, listings: t2 };
+
+    // Tier 3 — synonyms + nationwide
+    const synonymDocs = ownFilter(await this.findByProductSynonyms(product));
+    if (synonymDocs.length > 0) {
+      // Determine which synonym actually matched
+      const matchedProduct = synonymDocs[0].product;
+      return { tier: 3, listings: synonymDocs, fallbackProduct: matchedProduct };
+    }
+
+    // Tier 4 — nothing found
+    return { tier: 4, listings: [] };
+  }
+
+  // ─── Product synonym map ───────────────────────────────────────
+  private getSynonyms(product: string): string[] {
+    const SYNONYMS: Record<string, string[]> = {
+      maize: ['corn', 'mais', 'grain'],
+      corn: ['maize', 'mais'],
+      mais: ['maize', 'corn'],
+      cassava: ['manioc', 'tapioca'],
+      manioc: ['cassava'],
+      tomatoes: ['tomato', 'tomate', 'tomates'],
+      tomato: ['tomatoes', 'tomate'],
+      tomate: ['tomatoes', 'tomato'],
+      groundnuts: ['peanuts', 'arachide', 'arachides'],
+      peanuts: ['groundnuts', 'arachide'],
+      arachide: ['groundnuts', 'peanuts'],
+      yam: ['igname', 'ignames'],
+      igname: ['yam'],
+      plantain: ['banana', 'plantains'],
+      banana: ['plantain'],
+      pepper: ['piment', 'piments', 'peppers'],
+      piment: ['pepper', 'peppers'],
+      beans: ['haricot', 'haricots'],
+      haricot: ['beans'],
+      okra: ['gombo'],
+      gombo: ['okra'],
+      cabbage: ['chou', 'choux'],
+      chou: ['cabbage'],
+      onion: ['oignon', 'oignons', 'onions'],
+      oignon: ['onion', 'onions'],
+      garlic: ['ail'],
+      ail: ['garlic'],
+      cucumber: ['concombre', 'concombres'],
+      concombre: ['cucumber'],
+      eggplant: ['aubergine', 'aubergines'],
+      aubergine: ['eggplant'],
+    };
+    return SYNONYMS[product.toLowerCase()] ?? [];
+  }
+
   async findWithFilters(
     product: string,
     options: {

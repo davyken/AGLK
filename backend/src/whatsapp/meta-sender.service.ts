@@ -167,6 +167,42 @@ export class MetaSenderService {
     }
   }
 
+  /**
+   * Marks an incoming message as read — shows double blue checkmarks to the user.
+   * Call this immediately after receiving a message, before processing.
+   */
+  async markAsRead(to: string, messageId: string): Promise<void> {
+    const phoneNumberId = this.config.get<string>('META_PHONE_NUMBER_ID');
+    const accessToken = this.config.get<string>('META_ACCESS_TOKEN');
+    const apiVersion = this.config.get<string>('META_API_VERSION') || 'v19.0';
+    const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
+
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          status: 'read',
+          message_id: messageId,
+        }),
+      });
+    } catch {
+      // Non-critical — don't log noise for read receipts
+    }
+  }
+
+  /**
+   * Returns a delay in ms proportional to the reply length.
+   * Simulates natural typing speed: ~600ms base + 15ms per character, capped at 3500ms.
+   */
+  static typingDelay(replyLength: number): number {
+    return Math.min(600 + replyLength * 15, 3500);
+  }
+
   async sendImageByMediaId(
     to: string,
     mediaId: string,
