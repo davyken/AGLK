@@ -67,6 +67,12 @@ export class LanguageDetectionService {
       return { language: 'unknown', confidence: 0, method: 'trivial' };
     }
 
+    // Code-switching fast path: count explicit markers from each language.
+    // When a message mixes languages (e.g. "Bonjour, I wan sell maize"),
+    // pick the one with the most markers rather than calling the LLM.
+    const codeSwitchResult = this.detectCodeSwitching(trimmed);
+    if (codeSwitchResult) return codeSwitchResult;
+
     // Fast path: high-confidence French via diacritics — no LLM needed
     const statistical = this.detectStatistical(trimmed);
     if (
@@ -85,6 +91,43 @@ export class LanguageDetectionService {
       );
       return statistical;
     }
+  }
+
+  /**
+   * Detect when a message mixes multiple languages (code-switching).
+   * Counts explicit lexical markers from each language and picks the dominant one.
+   * Returns null if only one language's markers are present (standard case).
+   */
+  private detectCodeSwitching(text: string): DetectionResult | null {
+    const lower = text.toLowerCase();
+
+    const frenchMarkers = [
+      'bonjour', 'salut', 'bonsoir', 'oui', 'non', 'je', "j'ai", 'vous',
+      'vendre', 'acheter', 'combien', 'prix', 'sacs', 'merci', 'avec',
+      'pour', 'dans', 'est', 'très', 'aussi', 'mais', 'bien', 'même',
+    ];
+    const pidginMarkers = [
+      'i get', 'i wan', 'i dey', 'na so', 'abeg', 'wetin', 'for sell',
+      'for buy', 'wey', 'na me', 'sabi', 'oga', 'dis', 'dat', 'fit',
+      'don', 'wan', 'dey', 'dem', 'am', 'am o',
+    ];
+
+    const frenchScore = frenchMarkers.filter((m) => lower.includes(m)).length;
+    const pidginScore = pidginMarkers.filter((m) => lower.includes(m)).length;
+
+    // Only a code-switching situation if BOTH have at least one marker
+    if (frenchScore === 0 || pidginScore === 0) return null;
+
+    // Dominant language wins; confidence reflects how uneven the split is
+    const total = frenchScore + pidginScore;
+    const dominant: Language = frenchScore >= pidginScore ? 'french' : 'pidgin';
+    const dominantScore = Math.max(frenchScore, pidginScore);
+    const confidence = Math.min(0.5 + (dominantScore / total) * 0.45, 0.95);
+
+    this.logger.debug(
+      `Code-switching detected — french:${frenchScore} pidgin:${pidginScore} → ${dominant}`,
+    );
+    return { language: dominant, confidence, method: 'statistical' };
   }
 
   /**

@@ -109,6 +109,12 @@ export class BotController {
         const mediaId = message?.audio?.id;
         if (!mediaId) return { status: 'no_media_id' };
 
+        // Step 1 — immediate acknowledgement (before the slow Whisper call)
+        await this.metaSender.send(
+          phone,
+          await this.aiService.reply('voice_processing', lang, {}),
+        );
+
         const mediaUrl = await this.getMediaUrl(mediaId, accessToken);
         if (!mediaUrl) {
           await this.metaSender.send(
@@ -131,6 +137,11 @@ export class BotController {
 
         this.logger.log(`Voice transcribed [${phone}]: "${transcribed}"`);
 
+        if (user && detectedLang !== lang) {
+          await this.usersService.updateLanguage(phone, detectedLang);
+        }
+
+        // Step 2 — show what was heard, then process
         await this.sendReply(
           phone,
           await this.aiService.reply('voice_received', detectedLang, {
@@ -138,10 +149,6 @@ export class BotController {
           }),
           'whatsapp',
         );
-
-        if (user && detectedLang !== lang) {
-          await this.usersService.updateLanguage(phone, detectedLang);
-        }
 
         const reply = await this.botService.handleMessage({
           phone,
