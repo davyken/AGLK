@@ -5,7 +5,13 @@ import { CreateListingDto } from '../listing/dto';
 import { PriceService } from '../price/price.service';
 import { MatchingService } from '../listing/matching.service';
 import { MetaSenderService } from '../whatsapp/meta-sender.service';
-import { AiService, Language, ParsedIntent } from '../ai/ai.service';
+import {
+  AiService,
+  Language,
+  ParsedIntent,
+  ClassifiedMessage,
+  ConversationState,
+} from '../ai/ai.service';
 import { FilterParserService } from './filter-parser.service';
 import { CropMediaService } from './Crop media.service';
 import { normalizePhone } from '../common/format.util';
@@ -269,6 +275,7 @@ export class ListingFlowService implements OnModuleInit {
     text: string,
     parsed: ParsedIntent,
     channel: 'sms' | 'whatsapp',
+    classified?: ClassifiedMessage,
   ): Promise<string> {
     const user = await this.usersService.findByPhone(phone);
     const lang: Language = (user as any)?.language ?? 'english';
@@ -278,34 +285,106 @@ export class ListingFlowService implements OnModuleInit {
       return this.handlePendingState(phone, text.trim(), channel, lang);
     }
 
-    if (parsed.intent === 'sell') {
+    // ── Conversation state merge ──────────────────────────────────
+    // Build a ClassifiedMessage from parsed if caller didn't supply one.
+    const effectiveClassified: ClassifiedMessage = classified ?? {
+      intents: parsed.intents ?? [
+        {
+          intent: (parsed.intent.toUpperCase() as any),
+          product: parsed.product,
+          quantity: parsed.quantity,
+          unit: parsed.unit,
+          location: parsed.location,
+          price: parsed.price,
+          priceMin: parsed.priceMin,
+          priceMax: parsed.priceMax,
+          timeframe: parsed.availableAt,
+        },
+      ],
+      language: parsed.language,
+      confidence: parsed.confidence,
+      name: parsed.name,
+      location: parsed.location,
+      raw: parsed.raw,
+    };
+
+    // Run focused entity extraction when confidence is not high or product is missing,
+    // then merge everything into a single ConversationState.
+    const needsExtraction =
+      (parsed.intent === 'sell' || parsed.intent === 'buy') &&
+      (parsed.confidence !== 'high' || !parsed.product);
+
+    let convState: ConversationState;
+    if (needsExtraction) {
+      try {
+        const extracted = await this.aiService.extractEntities(text);
+        convState = this.aiService.mergeConversationState(
+          null,
+          effectiveClassified,
+          extracted,
+        );
+      } catch {
+        // extractEntities failed — merge with empty extracted values
+        convState = this.aiService.mergeConversationState(null, effectiveClassified, {
+          product: null, productNormalized: null, quantity: null, unit: null,
+          location: null, price: null, priceMin: null, priceMax: null, timeframe: null,
+        });
+      }
+    } else {
+      convState = this.aiService.mergeConversationState(null, effectiveClassified, {
+        product: null, productNormalized: null, quantity: null, unit: null,
+        location: null, price: null, priceMin: null, priceMax: null, timeframe: null,
+      });
+    }
+
+    // ── Missing required fields → ask naturally instead of erroring ─
+    if (convState.status === 'missing_info') {
+      return this.aiService.generateConversationalResponse(convState, text, lang);
+    }
+
+    // Resolve final entity values — convState wins over raw parsed where non-null
+    const mergedEntities = convState.entities;
+    const entities = {
+      ...parsed,
+      product: mergedEntities.product ?? parsed.product,
+      productOriginal: (parsed as any).productOriginal ?? mergedEntities.product ?? parsed.product,
+      quantity: mergedEntities.quantity ?? parsed.quantity,
+      unit: mergedEntities.unit ?? parsed.unit,
+      location: mergedEntities.location ?? parsed.location,
+      price: mergedEntities.price ?? parsed.price,
+      priceMin: mergedEntities.priceMin ?? parsed.priceMin,
+      priceMax: mergedEntities.priceMax ?? parsed.priceMax,
+      availableAt: mergedEntities.timeframe ?? parsed.availableAt,
+    };
+
+    if (entities.intent === 'sell') {
       const unit =
-        parsed.unit && parsed.unit !== 'bags'
-          ? parsed.unit
-          : this.aiService.defaultUnitForProduct(parsed.product ?? '');
+        entities.unit && entities.unit !== 'bags'
+          ? entities.unit
+          : this.aiService.defaultUnitForProduct(entities.product ?? '');
       return this.handleSellIntent(
         phone,
-        parsed.product ?? '',
-        (parsed as any).productOriginal ?? parsed.product ?? '',
-        parsed.quantity ?? 0,
+        entities.product ?? '',
+        (entities as any).productOriginal ?? entities.product ?? '',
+        entities.quantity ?? 0,
         unit,
         channel,
         lang,
-        parsed.price,
+        entities.price,
         text,
-        parsed.availableAt,
+        entities.availableAt,
       );
     }
 
-    if (parsed.intent === 'buy') {
+    if (entities.intent === 'buy') {
       // If buyer provided a price range, acknowledge then search
-      if (parsed.priceMin && parsed.priceMax) {
+      if (entities.priceMin && entities.priceMax) {
         const ack = await this.aiService.reply('buy_with_price_range', lang, {
-          product: parsed.product ?? '',
-          quantity: String(parsed.quantity ?? 0),
-          unit: parsed.unit ?? 'bags',
-          priceMin: String(parsed.priceMin),
-          priceMax: String(parsed.priceMax),
+          product: entities.product ?? '',
+          quantity: String(entities.quantity ?? 0),
+          unit: entities.unit ?? 'bags',
+          priceMin: String(entities.priceMin),
+          priceMax: String(entities.priceMax),
         });
         this.metaSender.send(phone, ack).catch(() => {});
       }
@@ -316,13 +395,13 @@ export class ListingFlowService implements OnModuleInit {
           return this.handleBuyIntentWithFilters(phone, filtered, text, channel, lang);
       }
       const unit =
-        parsed.unit && parsed.unit !== 'bags'
-          ? parsed.unit
-          : this.aiService.defaultUnitForProduct(parsed.product ?? '');
+        entities.unit && entities.unit !== 'bags'
+          ? entities.unit
+          : this.aiService.defaultUnitForProduct(entities.product ?? '');
       return this.handleBuyIntent(
         phone,
-        parsed.product ?? '',
-        parsed.quantity ?? 0,
+        entities.product ?? '',
+        entities.quantity ?? 0,
         unit,
         channel,
         lang,
@@ -373,7 +452,7 @@ export class ListingFlowService implements OnModuleInit {
         quantity: 0,
         unit: smartUnit,
         userPhone: phone,
-        userRole: 'farmer',
+        userRole: 'user',
         language: lang,
         availableAt,
       });
@@ -396,15 +475,6 @@ export class ListingFlowService implements OnModuleInit {
       return msgs[lang];
     }
 
-    if (user.role !== 'farmer' && user.role !== 'both') {
-      const msgs: Record<Language, string> = {
-        english: `Your account is set up as a *buyer*. To sell produce, let me know and I'll update your profile.`,
-        french: `Votre compte est configuré comme *acheteur*. Pour vendre, dites-le moi et je mettrai votre profil à jour.`,
-        pidgin: `Your account na *buyer*. To sell, tell me make I update your profile.`,
-      };
-      return msgs[lang];
-    }
-
     // If price provided in initial input, skip suggestion and go directly to image
     const effectivePrice = price ?? this.parsePrice(text || '');
 
@@ -417,7 +487,7 @@ export class ListingFlowService implements OnModuleInit {
         unit,
         price: effectivePrice,
         userPhone: phone,
-        userRole: user.role,
+        userRole: 'user',
         language: lang,
       });
       return this.askForImage(lang);
@@ -431,7 +501,7 @@ export class ListingFlowService implements OnModuleInit {
       quantity,
       unit,
       userPhone: phone,
-      userRole: user.role,
+      userRole: 'user',
       language: lang,
     });
 
@@ -503,18 +573,9 @@ Example: 20000`,
 
     if (!user || user.conversationState !== 'REGISTERED') {
       const msgs: Record<Language, string> = {
-        english: `Say *Hi* to register first — it only takes a minute! 👋`,
-        french: `Dites *Bonjour* pour vous inscrire d'abord — ça prend une minute ! 👋`,
-        pidgin: `Say *Hi* make you register first — e fast! 👋`,
-      };
-      return msgs[lang];
-    }
-
-    if (user.role !== 'buyer' && user.role !== 'both') {
-      const msgs: Record<Language, string> = {
-        english: `Your account is registered as a *farmer*. To buy produce, update your role by saying "I am also a buyer".`,
-        french: `Votre compte est enregistré comme *agriculteur*. Pour acheter, dites "Je suis aussi acheteur".`,
-        pidgin: `Your account na *farmer*. To buy, say "I dey also buy".`,
+        english: `Say *Hi* to get started — registration only takes a minute! 👋`,
+        french: `Dites *Bonjour* pour commencer — l'inscription ne prend qu'une minute ! 👋`,
+        pidgin: `Say *Hi* make you register — e quick! 👋`,
       };
       return msgs[lang];
     }
@@ -584,7 +645,7 @@ Example: 20000`,
       quantity,
       unit,
       userPhone: phone,
-      userRole: user.role,
+      userRole: 'user',
       language: lang,
       listings: top.map((l) => ({
         id: l._id.toString(),
@@ -674,15 +735,6 @@ Example: 20000`,
       return msgs[lang];
     }
 
-    if (user.role !== 'buyer' && user.role !== 'both') {
-      const msgs: Record<Language, string> = {
-        english: `Your account is set up as a *farmer*. To search listings, let me know and I'll update your profile.`,
-        french: `Votre compte est configuré comme *agriculteur*. Pour chercher, dites-le moi.`,
-        pidgin: `Your account na *farmer*. To find produce, tell me make I update your profile.`,
-      };
-      return msgs[lang];
-    }
-
     // ── Fetch listings with filters ────────────────────────
     const allListings = await this.listingService.findByProduct(parsed.product);
     const normalizedQueryPhone = normalizePhone(phone);
@@ -735,7 +787,7 @@ Example: 20000`,
       quantity: parsed.quantity,
       unit: parsed.unit,
       userPhone: phone,
-      userRole: user.role,
+      userRole: 'user',
       language: lang,
       listings: top.map((l) => ({
         id: l._id.toString(),
@@ -1573,7 +1625,7 @@ Example: 20000`,
         sellerListingId: pending.sellerListingId,
         buyerListingId: pending.buyerListingId,
         userPhone: buyer.phone,
-        userRole: 'buyer',
+        userRole: 'user',
         language: buyerLang,
       });
 
@@ -1741,11 +1793,11 @@ Example: 20000`,
     }
 
     const buyer = await this.usersService.findByPhone(phone);
-    if (!buyer || (buyer.role !== 'buyer' && buyer.role !== 'both')) {
+    if (!buyer || buyer.conversationState !== 'REGISTERED') {
       const msgs: Record<Language, string> = {
-        english: `Only buyers can make offers. Would you like to update your profile to include buying?`,
-        french: `Seuls les acheteurs peuvent faire des offres. Voulez-vous mettre à jour votre profil pour inclure l'achat?`,
-        pidgin: `Only buyer fit make offer. You want update your profile to include buying?`,
+        english: `Say *Hi* to get started — registration only takes a minute! 👋`,
+        french: `Dites *Bonjour* pour commencer — l'inscription ne prend qu'une minute ! 👋`,
+        pidgin: `Say *Hi* make you register — e quick! 👋`,
       };
       return msgs[lang];
     }

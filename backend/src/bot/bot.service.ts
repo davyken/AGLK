@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { RegistrationFlowService } from '../bot/registration.flow';
 import { ListingFlowService } from '../bot/listing.flow';
-import { AiService, Language, ParsedIntent } from '../ai/ai.service';
+import { AiService, Language, ParsedIntent, ClassifiedMessage, IntentSlot } from '../ai/ai.service';
 
 export interface IncomingMessage {
   phone: string;
@@ -162,14 +162,6 @@ export class BotService {
       return this.listingFlow.handle(phone, trimmed, channel);
     }
 
-    // ── Role selection (during registration only) ─────────────
-    if (normalized === '1' || normalized === '2') {
-      if (!isRegistered) {
-        const reply = await this.registrationFlow.handle(phone, trimmed, channel);
-        if (reply) return reply;
-      }
-    }
-
     // ── YES / NO (context-sensitive fast path) ────────────────
     const isYes = ['YES', 'OUI', 'YES NA', 'NA SO', 'OK', 'OKAY', "D'ACCORD"].includes(upper);
     const isNo = ['NO', 'NON', 'NO BE DAT', 'NON MERCI', 'PAS DU TOUT', 'NOPE'].includes(upper);
@@ -183,22 +175,28 @@ export class BotService {
       }
     }
 
-    // ── AI intent parsing — handles all free-form natural language ──
+    // ── Multi-intent classification ───────────────────────────────
+    // classifyIntents is the primary entry point — it returns ALL intents
+    // in the message. For multi-intent messages (e.g. sell+buy), we handle
+    // the first intent now and queue the rest via a follow-up message.
     try {
-      const parsed = await this.aiService.parseIntent(trimmed);
+      const classified: ClassifiedMessage =
+        await this.aiService.classifyIntents(trimmed);
 
-      // Route sell/buy through handleWithParsed — avoids a second LLM call
-      if (parsed.intent === 'sell')
-        return this.listingFlow.handleWithParsed(phone, trimmed, parsed, channel);
-      if (parsed.intent === 'buy')
-        return this.listingFlow.handleWithParsed(phone, trimmed, parsed, channel);
-      if (parsed.intent === 'price')
-        return this.listingFlow.handleWithParsed(phone, trimmed, parsed, channel);
+      // Update language from classification result
+      if (classified.language !== savedLang) {
+        lang = classified.language;
+        if (user) await this.usersService.updateLanguage(phone, lang);
+      }
 
-      if (parsed.intent === 'help')
-        return this.helpMessage(channel, lang, user?.name);
+      const primarySlot: IntentSlot = classified.intents[0] ?? { intent: 'UNKNOWN' };
+      const hasMultipleActionIntents =
+        classified.intents.filter((s) =>
+          s.intent === 'SELL' || s.intent === 'BUY',
+        ).length > 1;
 
-      if (parsed.intent === 'cancel') {
+      // ── CANCEL ────────────────────────────────────────────────
+      if (primarySlot.intent === 'CANCEL') {
         if (this.listingFlow.isInPriceState(phone))
           return this.listingFlow.handle(phone, 'CANCEL', channel);
         const msgs: Record<Language, string> = {
@@ -208,6 +206,67 @@ export class BotService {
         };
         return msgs[lang];
       }
+
+      // ── GREETING ─────────────────────────────────────────────
+      if (primarySlot.intent === 'GREETING' && !hasMultipleActionIntents) {
+        if (!isRegistered) {
+          const reply = await this.registrationFlow.handle(phone, trimmed, channel);
+          if (reply) return reply;
+        }
+        return this.handleRegisteredGreeting(user, lang, channel);
+      }
+
+      // ── SELL ─────────────────────────────────────────────────
+      if (primarySlot.intent === 'SELL') {
+        const parsed = await this.aiService.parseIntent(trimmed);
+        const reply = await this.listingFlow.handleWithParsed(
+          phone, trimmed, parsed, channel, classified,
+        );
+        // If there's a BUY slot too, append a prompt to handle it next
+        if (hasMultipleActionIntents) {
+          const buySlot = classified.intents.find((s) => s.intent === 'BUY');
+          if (buySlot) {
+            const followUp: Record<Language, string> = {
+              english: `\n\nAlso — what did you want to buy? Let me know the product and I'll search for it after.`,
+              french: `\n\nEgalement — qu'est-ce que vous vouliez acheter? Dites-moi le produit.`,
+              pidgin: `\n\nAlso — wetin you wan buy? Tell me the product and I go find am.`,
+            };
+            return reply + followUp[lang];
+          }
+        }
+        return reply;
+      }
+
+      // ── BUY ──────────────────────────────────────────────────
+      if (primarySlot.intent === 'BUY') {
+        const parsed = await this.aiService.parseIntent(trimmed);
+        return this.listingFlow.handleWithParsed(phone, trimmed, parsed, channel, classified);
+      }
+
+      // ── INQUIRY ──────────────────────────────────────────────
+      if (primarySlot.intent === 'INQUIRY') {
+        const parsed = await this.aiService.parseIntent(trimmed);
+        // Price inquiry
+        if (parsed.intent === 'price' || parsed.product) {
+          return this.listingFlow.handleWithParsed(phone, trimmed, parsed, channel, classified);
+        }
+        // General question — let the LLM respond naturally
+        return await this.aiService.reply('unknown_command', lang, {});
+      }
+
+      // ── UPDATE ────────────────────────────────────────────────
+      if (primarySlot.intent === 'UPDATE') {
+        const parsed = await this.aiService.parseIntent(trimmed);
+        if (parsed.intent === 'correct' && isRegistered) {
+          return this.handleCorrectionIntent(phone, trimmed, parsed, lang);
+        }
+      }
+
+      // ── UNKNOWN — check if it's a yes/no/help/correction ──────
+      const parsed = await this.aiService.parseIntent(trimmed);
+
+      if (parsed.intent === 'help')
+        return this.helpMessage(channel, lang, user?.name);
 
       if (parsed.intent === 'confirm' || parsed.intent === 'yes') {
         if (
@@ -222,12 +281,10 @@ export class BotService {
           return this.listingFlow.handleFarmerResponse(phone, trimmed, channel);
       }
 
-      // ── Correction intent — update a user profile field ────
       if (parsed.intent === 'correct' && isRegistered) {
         return this.handleCorrectionIntent(phone, trimmed, parsed, lang);
       }
 
-      // ── Product mentioned but intent unclear — ask to clarify ──
       if (parsed.product && parsed.intent === 'unknown' && parsed.confidence !== 'high') {
         return await this.aiService.reply('clarify_intent', lang, {
           product: parsed.product,
@@ -239,8 +296,9 @@ export class BotService {
           const reply = await this.registrationFlow.handle(phone, trimmed, channel);
           if (reply) return reply;
         }
-        return this.helpMessage(channel, lang, user?.name);
+        return this.handleRegisteredGreeting(user, lang, channel);
       }
+
     } catch {
       this.logger.warn('AI unavailable, falling back to direct matching');
     }
@@ -256,35 +314,19 @@ export class BotService {
     _channel: 'sms' | 'whatsapp',
   ): string {
     const name = user?.name && user.name !== 'unknown' ? user.name : null;
-    const role: string = user?.role ?? 'farmer';
-    const isFarmer = role === 'farmer' || role === 'both';
-    const isBuyer = role === 'buyer' || role === 'both';
 
     if (lang === 'french') {
       const greeting = name ? `Bonjour *${name}* ! 👋` : `Bonjour ! 👋`;
-      if (isFarmer && isBuyer)
-        return `${greeting} Content de vous revoir.\n\nVous voulez vendre votre récolte ou acheter quelque chose aujourd'hui?`;
-      if (isFarmer)
-        return `${greeting} Content de vous revoir.\n\nQuel produit voulez-vous vendre aujourd'hui?`;
-      return `${greeting} Content de vous revoir.\n\nQue cherchez-vous à acheter aujourd'hui?`;
+      return `${greeting} Content de vous revoir.\n\nVous voulez vendre des produits ou en acheter aujourd'hui?`;
     }
 
     if (lang === 'pidgin') {
       const greeting = name ? `How you dey, *${name}*! 👋` : `How you dey! 👋`;
-      if (isFarmer && isBuyer)
-        return `${greeting} Welcome back.\n\nYou wan sell something or you wan buy today?`;
-      if (isFarmer)
-        return `${greeting} Welcome back.\n\nWetin you wan sell today?`;
-      return `${greeting} Welcome back.\n\nWetin you dey find today?`;
+      return `${greeting} Welcome back.\n\nYou wan sell something or buy something today?`;
     }
 
-    // English
     const greeting = name ? `Hey *${name}*! 👋` : `Hey! 👋`;
-    if (isFarmer && isBuyer)
-      return `${greeting} Good to have you back.\n\nWhat do you want to do today — sell your produce or find something to buy?`;
-    if (isFarmer)
-      return `${greeting} Good to have you back.\n\nWhat are you selling today?`;
-    return `${greeting} Good to have you back.\n\nWhat are you looking to buy today?`;
+    return `${greeting} Good to have you back.\n\nWhat would you like to do today — sell something or buy?`;
   }
 
   // ─── Handle correction intent ("actually my name is X") ──────

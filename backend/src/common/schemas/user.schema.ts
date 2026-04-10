@@ -17,7 +17,9 @@ export class User {
   @Prop()
   password: string;
 
-  @Prop({ required: true, enum: ['farmer', 'buyer', 'admin', 'both'] })
+  // Role is no longer required — users are not locked into farmer/buyer.
+  // Kept for legacy compatibility; intent is resolved per-message.
+  @Prop({ enum: ['farmer', 'buyer', 'admin', 'both', 'user'], default: 'user' })
   role: string;
 
   @Prop({ required: true, trim: true })
@@ -53,17 +55,18 @@ export class User {
   @Prop({
     enum: [
       'START',
-      'AWAITING_ROLE',
       'AWAITING_NAME',
       'AWAITING_LOCATION',
-      'AWAITING_PRODUCES', // farmer
-      'AWAITING_BUSINESS', // buyer
-      'AWAITING_NEEDS', // buyer
       'REGISTERED',
+      // Legacy states kept so existing users in mid-registration aren't stuck
+      'AWAITING_ROLE',
+      'AWAITING_PRODUCES',
+      'AWAITING_BUSINESS',
+      'AWAITING_NEEDS',
       'AWAITING_PRICE',
       'AWAITING_CONFIRM',
       'AWAITING_LANGUAGE',
-      'AWAITING_COUNTER_PRICE', // farmer is typing counter-offer price
+      'AWAITING_COUNTER_PRICE',
     ],
     default: 'START',
   })
