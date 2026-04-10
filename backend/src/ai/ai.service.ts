@@ -37,7 +37,7 @@ export interface ParsedIntent {
   name?: string; // "I'm Paul Biya" → "Paul Biya"
   location?: string; // "in Douala" or "à Bafoussam"
   role?: 'farmer' | 'buyer' | 'both'; // "I sell" → farmer
-  availableAt?: string; // when produce is available (e.g. "2024-10-25" or "in 2 weeks")
+  availableAt?: string; // when produce is ready (e.g. "2024-10-25" or "in 2 weeks")
   // correction signals — "actually it's 20 bags not 10"
   correctedField?: string; // e.g. "quantity", "name", "location"
   correctedValue?: string; // the new value
@@ -100,7 +100,7 @@ Return ONLY valid JSON. No explanation. No markdown.
 - register: hi/hello/bonjour/salut/start/hey with NO sell/buy signal → confidence: "high"
 - confirm: yes, oui, ok, okay, na so, d'accord, correct, sure, yep, exactly → confidence: "high"
 - cancel: cancel, annuler, stop, no more, forget it, never mind
-- correct: "actually", "I meant", "not X but Y", "no it's", "sorry I said", "I made a mistake" → set correctedField + correctedValue
+- correct: "actually", "I meant", "not X but Y", "no it\'s", "sorry I said", "I made a mistake" → set correctedField + correctedValue
 - price: asking about price/cost/market rate without sell/buy intent
 - help: help, aide, options, what can I do
 - yes/no: standalone affirmative/negative not tied to a new action
@@ -141,6 +141,10 @@ JSON format: {"intent":"","language":"","confidence":"high","product":null,"prod
     return result.language === 'unknown' ? 'english' : result.language;
   }
 
+  /**
+   * Transcribe a voice note using Whisper with enhanced context for agricultural marketplace.
+   * Detects language and returns both transcription and detected language.
+   */
   async transcribeVoiceNote(
     mediaUrl: string,
     accessToken: string,
@@ -150,12 +154,43 @@ JSON format: {"intent":"","language":"","confidence":"high","product":null,"prod
     try {
       await this.downloadFile(mediaUrl, accessToken, tmpPath);
 
+      // Enhanced prompt with agricultural terms and Cameroon-specific context
+      // This helps Whisper understand the domain better
+      const prompt = `You are transcribing a WhatsApp voice message for an agricultural marketplace in Cameroon.
+
+IMPORTANT CONTEXT:
+- This is a marketplace connecting farmers and buyers
+- Products include: maize, cassava, tomatoes, plantain, groundnuts, yam, pepper, okra, beans, cocoa, coffee
+- Common terms: bags, sell, buy, price, farmer, buyer, quantity
+- Common locations in Cameroon: Douala, Yaoundé, Bafoussam, Buea, Bamenda, Limbe, Kribi
+- Languages: English, French, and Cameroonian Pidgin (e.g., "i get", "i wan", "i dey", "na so", "abeg", "wetin")
+- Currency: XAF (Central African CFA franc), prices often mentioned like "15k", "15000", "15 mille"
+- Units: bags, kg, tonnes, crates, bunches
+
+TRANSCRIPTION GUIDELINES:
+- Keep the original language (English, French, or Pidgin)
+- Use common agricultural terms in the original language
+- Preserve product names as spoken (e.g., "maïs" stays "maïs" in French, but "maize" in English/Pidgin)
+- Keep numbers as spoken
+- If unsure between English/Pidgin, lean towards Pidgin if contains "dey", "don", "wan", "na"
+`;
+
+      // Use the SDK's transcription method with enhanced prompt
       const transcription = await this.openai.audio.transcriptions.create({
         file: fs.createReadStream(tmpPath),
         model: 'whisper-1',
+        prompt: prompt, 
+        response_format: 'text',
       });
 
-      const text = transcription.text ?? '';
+      const text = (typeof transcription === 'string' ? transcription : '').trim();
+      
+      if (!text) {
+        this.logger.warn('Whisper returned empty transcription');
+        return { text: '', language: 'english' };
+      }
+
+      // Detect language from transcribed text for accurate response
       const language = this.detectLanguageSync(text);
 
       this.logger.log(`Whisper transcribed [${language}]: "${text}"`);
@@ -166,7 +201,13 @@ JSON format: {"intent":"","language":"","confidence":"high","product":null,"prod
       );
       return { text: '', language: 'english' };
     } finally {
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      if (fs.existsSync(tmpPath)) {
+        try {
+          fs.unlinkSync(tmpPath);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
     }
   }
 
@@ -202,13 +243,13 @@ JSON format: {"intent":"","language":"","confidence":"high","product":null,"prod
       ? parseInt(rangeMatch[2].replace(/\s/g, ''), 10)
       : undefined;
 
-    // ── Correction signal ──────────────────────────────────────
+    // ── Correction signal ─────────────────────────────────────
     const correctionMatch = lower.match(
       /(?:actually|i meant|not \w+ but|no it'?s|sorry i said|i made a mistake|correction)/i,
     );
     const correctedField = correctionMatch ? 'unknown' : undefined;
 
-    // ── Extract role from intent signals ──────────────────────
+    // ── Extract role from intent signals ─────────────────────
     const isFarmerSignal =
       /\b(sell|vend|i get|i have|i dey sell|wan sell|for sell|je cultive|je vends|agriculteur|farmer)\b/i.test(
         lower,
@@ -372,7 +413,7 @@ JSON format: {"intent":"","language":"","confidence":"high","product":null,"prod
       'ai',
     ];
     const frenchToEnglish: Record<string, string> = {
-      maïs: 'maize',
+      maíz: 'maize',
       mais: 'maize',
       tomate: 'tomatoes',
       tomates: 'tomatoes',

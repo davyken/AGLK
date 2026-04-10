@@ -54,7 +54,7 @@ export class BotController {
     phone: string,
     message: string,
     lang: Language,
-    sendText: boolean = true,
+    sendText: boolean = false,
   ): Promise<void> {
     // Generate voice response
     const audioMediaId = await this.textToSpeech.generateAndUpload(
@@ -63,7 +63,7 @@ export class BotController {
     );
 
     if (audioMediaId) {
-      // Send audio
+      // Send audio only - no text fallback needed for voice input
       await this.metaSender.sendAudio(phone, audioMediaId);
       this.logger.log(`Voice reply sent to ${phone} (media ID: ${audioMediaId})`);
     } else {
@@ -140,12 +140,8 @@ export class BotController {
         const mediaId = message?.audio?.id;
         if (!mediaId) return { status: 'no_media_id' };
 
-        // Step 1 — immediate acknowledgement (before the slow Whisper call)
-        await this.metaSender.send(
-          phone,
-          await this.aiService.reply('voice_processing', lang, {}),
-        );
-
+        // Get media URL - skip the "voice_processing" text message
+        // User expects direct voice reply after their voice input
         const mediaUrl = await this.getMediaUrl(mediaId, accessToken);
         if (!mediaUrl) {
           const failureMsg = await this.aiService.reply('voice_failed', lang, {});
@@ -153,50 +149,34 @@ export class BotController {
           return { status: 'media_url_failed' };
         }
 
+        // Transcribe voice note with enhanced context for agricultural terms
         const { text: transcribed, language: detectedLang } =
           await this.aiService.transcribeVoiceNote(mediaUrl, accessToken);
 
         if (!transcribed) {
-          const failureMsg = await this.aiService.reply('voice_failed', detectedLang, {});
-          await this.sendVoiceReply(phone, failureMsg, detectedLang, true);
+          const failureMsg = await this.aiService.reply('voice_failed', lang, {});
+          await this.sendVoiceReply(phone, failureMsg, lang, true);
           return { status: 'transcription_failed' };
         }
 
         this.logger.log(`Voice transcribed [${phone}]: "${transcribed}"`);
 
-        // Send confirmation that voice was received (as voice)
-        const confirmMsg = await this.aiService.reply('voice_received', detectedLang, {
-          text: transcribed,
-        });
-        await this.sendVoiceReply(phone, confirmMsg, detectedLang, true);
-
+        // Update user's language if detected language differs
         if (user && detectedLang !== lang) {
           await this.usersService.updateLanguage(phone, detectedLang);
         }
 
         // Process the transcribed text and get bot reply
-        if (user && detectedLang !== lang) {
-          await this.usersService.updateLanguage(phone, detectedLang);
-        }
-
-        // Step 2 — show what was heard, then process
-        await this.sendReply(
-          phone,
-          await this.aiService.reply('voice_received', detectedLang, {
-            text: transcribed,
-          }),
-          'whatsapp',
-        );
-
+        // Send reply as VOICE ONLY - no text confirmation needed
         const reply = await this.botService.handleMessage({
           phone,
           text: transcribed,
           channel: 'whatsapp',
         });
 
-        // Send bot reply as voice (since user sent voice)
+        // Send bot reply as voice only (since user sent voice)
         if (reply) {
-          await this.sendVoiceReply(phone, reply, detectedLang, true);
+          await this.sendVoiceReply(phone, reply, detectedLang, false);
         }
 
         return { status: 'ok' };
