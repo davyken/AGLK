@@ -33,8 +33,6 @@ export class RegistrationFlowService {
     }
 
     // ── Returning mid-registration user ───────────────────────────
-    // Use their saved language. Only re-detect on long messages (≥8 chars,
-    // ≥2 words) so that short replies like "Henry" or "10" don't flip the language.
     const savedLang: Language = (user as any).language ?? 'english';
     const tokens = text.trim().split(/\s+/);
     const longEnough = text.trim().length >= 8 && tokens.length >= 2;
@@ -53,8 +51,8 @@ export class RegistrationFlowService {
   }
 
   // ─── New user: extract-first onboarding ───────────────────────
-  // Parses name, role, location, and intent from the very first message.
-  // Only asks for fields that were NOT already provided.
+  // Extracts name and location from the first message. Only asks for
+  // what's missing. No role question — intent is resolved per message.
   private async handleNewUser(
     phone: string,
     text: string,
@@ -63,137 +61,67 @@ export class RegistrationFlowService {
   ): Promise<string> {
     const parsed = await this.aiService.parseIntent(text);
 
-    // Build initial user record with whatever we already know
     const updates: Record<string, any> = {
       name: parsed.name ?? 'unknown',
-      role: parsed.role ?? 'farmer', // required field — default until confirmed
-      location: 'unknown',
+      role: 'user',
+      location: parsed.location ?? 'unknown',
     };
-    if (parsed.location) updates.location = parsed.location;
 
-    // If the user already mentioned a product (e.g. "I want to buy cabbage"),
-    // save it as an initial need/produce so we never ask for it again.
-    if (parsed.product) {
-      if (parsed.role === 'buyer') {
-        updates.needs = [parsed.product];
-      } else if (parsed.role === 'farmer') {
-        updates.produces = [parsed.product];
-      }
-    }
-
-    // Determine which state to start at (skip anything we already have).
-    // Pass the product so buyers who already specified what they want
-    // skip straight to REGISTERED instead of AWAITING_BUSINESS/NEEDS.
     const nextState = this.determineFirstMissingState(
-      parsed.role ?? null,
       parsed.name ?? null,
       parsed.location ?? null,
-      parsed.product ?? null,
     );
     updates.conversationState = nextState;
 
     await this.usersService.createStub(phone, channel, lang);
-    if (Object.keys(updates).length) {
-      await this.usersService.update(phone, updates);
-    }
+    await this.usersService.update(phone, updates);
 
     return this.generateFirstResponse(parsed, lang, nextState);
   }
 
-  // ─── Determine which state comes first given what we know ─────
+  // ─── Determine which field to ask for next ─────────────────────
   private determineFirstMissingState(
-    role: 'farmer' | 'buyer' | 'both' | null,
     name: string | null,
     location: string | null,
-    product: string | null = null,
   ): string {
-    if (!role) return 'AWAITING_ROLE';
-    if (!name) return 'AWAITING_NAME';
-    if (!location) return 'AWAITING_LOCATION';
-
-    // Buyer with a product already specified → registration complete.
-    // Business name is optional — we never force it.
-    if (role === 'buyer' && product) return 'REGISTERED';
-
-    if (role === 'farmer' || role === 'both') return 'AWAITING_PRODUCES';
-
-    // Buyer without a product → ask what they need (skip optional business name)
-    return 'AWAITING_NEEDS';
+    if (!name || name === 'unknown') return 'AWAITING_NAME';
+    if (!location || location === 'unknown') return 'AWAITING_LOCATION';
+    return 'REGISTERED';
   }
 
   // ─── Generate the first bot message for a new user ────────────
-  // Acknowledges extracted entities, asks only for the first missing field.
-  // If all required fields are present (nextState = REGISTERED), confirms and welcomes.
   private async generateFirstResponse(
     parsed: Awaited<ReturnType<AiService['parseIntent']>>,
     lang: Language,
     nextState: string,
   ): Promise<string> {
     const hasName = !!parsed.name;
-    const hasRole = !!parsed.role;
     const hasLocation = !!parsed.location;
-    const hasProduct = !!parsed.product;
 
-    // ── All required fields present — registration complete ───────
+    // ── All required fields present → complete registration ───────
     if (nextState === 'REGISTERED') {
       return this.buildRegistrationComplete(parsed, lang);
     }
 
-    // ── Partial extraction: acknowledge what we know, ask for ONE missing field
-    if (hasName || hasRole || hasLocation || hasProduct) {
+    // ── Partial extraction: acknowledge what we know, ask for ONE thing ──
+    if (hasName || hasLocation || parsed.intent !== 'unknown') {
       const parts: string[] = [];
 
       if (lang === 'french') {
         if (hasName) parts.push(`Enchanté, *${parsed.name}* !`);
-        if (hasRole)
-          parts.push(`Vous êtes *${parsed.role === 'farmer' ? 'agriculteur' : 'acheteur'}*.`);
         if (hasLocation) parts.push(`Vous êtes à *${parsed.location}*.`);
-
-        if (nextState === 'AWAITING_ROLE')
-          parts.push(`Vous êtes agriculteur, acheteur, ou les deux ?\n\n1️⃣ Agriculteur\n2️⃣ Acheteur\n3️⃣ Les deux`);
-        else if (nextState === 'AWAITING_NAME')
-          parts.push(`Quel est votre nom complet ?`);
-        else if (nextState === 'AWAITING_LOCATION')
-          parts.push(`Dans quelle ville êtes-vous ?`);
-        else if (nextState === 'AWAITING_PRODUCES')
-          parts.push(`Quels produits cultivez-vous ? (ex: maïs, manioc, tomates)`);
-        else if (nextState === 'AWAITING_NEEDS')
-          parts.push(`Quels produits voulez-vous acheter ? (ex: maïs, tomates)`);
+        if (nextState === 'AWAITING_NAME') parts.push(`Comment vous appelez-vous ?`);
+        else if (nextState === 'AWAITING_LOCATION') parts.push(`Dans quelle ville êtes-vous ?`);
       } else if (lang === 'pidgin') {
         if (hasName) parts.push(`How you dey, *${parsed.name}*!`);
-        if (hasRole)
-          parts.push(`You be *${parsed.role === 'farmer' ? 'farmer' : 'buyer'}*.`);
-        if (hasLocation) parts.push(`You dey *${parsed.location}*.`);
-
-        if (nextState === 'AWAITING_ROLE')
-          parts.push(
-            `You be farmer, buyer, or both?\n\n1️⃣ Farmer\n2️⃣ Buyer\n3️⃣ For All`,
-          );
-        else if (nextState === 'AWAITING_NAME')
-          parts.push(`Wetin be your full name?`);
-        else if (nextState === 'AWAITING_LOCATION')
-          parts.push(`For which town you dey?`);
-        else if (nextState === 'AWAITING_PRODUCES')
-          parts.push(`Wetin you dey farm? (e.g. maize, cassava)`);
-        else if (nextState === 'AWAITING_NEEDS')
-          parts.push(`Wetin you wan buy? (e.g. maize, tomatoes)`);
+        if (hasLocation) parts.push(`You dey for *${parsed.location}*.`);
+        if (nextState === 'AWAITING_NAME') parts.push(`Wetin be your name?`);
+        else if (nextState === 'AWAITING_LOCATION') parts.push(`Which town you dey?`);
       } else {
-        // English
         if (hasName) parts.push(`Nice to meet you, *${parsed.name}*!`);
-        if (hasRole)
-          parts.push(`Got it — you're a *${parsed.role === 'farmer' ? 'farmer' : 'buyer'}*.`);
         if (hasLocation) parts.push(`You're in *${parsed.location}*.`);
-
-        if (nextState === 'AWAITING_ROLE')
-          parts.push(`Are you a *farmer*, *buyer*, or *both*?\n\n1️⃣ Farmer\n2️⃣ Buyer\n3️⃣ Both`);
-        else if (nextState === 'AWAITING_NAME')
-          parts.push(`What is your full name?`);
-        else if (nextState === 'AWAITING_LOCATION')
-          parts.push(`Which city or town are you in?`);
-        else if (nextState === 'AWAITING_PRODUCES')
-          parts.push(`What crops do you grow? (e.g. maize, cassava, tomatoes)`);
-        else if (nextState === 'AWAITING_NEEDS')
-          parts.push(`What are you looking to buy? (e.g. maize, tomatoes, cassava)`);
+        if (nextState === 'AWAITING_NAME') parts.push(`What's your name?`);
+        else if (nextState === 'AWAITING_LOCATION') parts.push(`Which city or town are you in?`);
       }
       return parts.join('\n');
     }
@@ -207,110 +135,42 @@ export class RegistrationFlowService {
     parsed: Awaited<ReturnType<AiService['parseIntent']>>,
     lang: Language,
   ): Promise<string> {
-    const role = parsed.role ?? 'buyer';
     const name = parsed.name ?? '';
     const location = parsed.location ?? '';
+    const intent = parsed.intent;
     const product = parsed.product ?? '';
 
-    if (lang === 'french') {
-      const roleLabel = role === 'farmer' ? 'agriculteur' : 'acheteur';
-      let msg = `✅ Bienvenue${name ? `, *${name}*` : ''} ! Vous êtes enregistré comme *${roleLabel}*${location ? ` à *${location}*` : ''}.`;
-      if (product) {
-        msg += role === 'buyer'
-          ? `\n\nJe cherche des agriculteurs qui vendent *${product}*...`
-          : `\n\nVous pouvez maintenant lister votre *${product}* avec *VENDRE ${product} [quantité]*.`;
+    // If the user came in with a clear intent, act on it immediately
+    if (intent === 'sell' || intent === 'buy') {
+      const action = intent === 'sell'
+        ? {
+            english: `Let me set up your listing`,
+            french: `Je prépare votre annonce`,
+            pidgin: `Make I set up your listing`,
+          }
+        : {
+            english: `Let me search for sellers`,
+            french: `Je cherche des vendeurs`,
+            pidgin: `Make I find sellers for you`,
+          };
+
+      if (lang === 'french') {
+        return `✅ Bienvenue${name ? `, *${name}*` : ''} !${location ? ` Vous êtes à *${location}*.` : ''}\n\n${action.french}${product ? ` de *${product}*` : ''}...`;
       }
-      return msg;
-    }
-
-    if (lang === 'pidgin') {
-      const roleLabel = role === 'farmer' ? 'farmer' : 'buyer';
-      let msg = `✅ Welcome${name ? `, *${name}*` : ''}! You don register as *${roleLabel}*${location ? ` for *${location}*` : ''}.`;
-      if (product) {
-        msg += role === 'buyer'
-          ? `\n\nI dey find farmers wey get *${product}* for you...`
-          : `\n\nYou fit list your *${product}* with *SELL ${product} [qty]*.`;
+      if (lang === 'pidgin') {
+        return `✅ Welcome${name ? `, *${name}*` : ''}!${location ? ` You dey *${location}*.` : ''}\n\n${action.pidgin}${product ? ` for *${product}*` : ''}...`;
       }
-      return msg;
+      return `✅ Welcome${name ? `, *${name}*` : ''}!${location ? ` You're in *${location}*.` : ''}\n\n${action.english}${product ? ` for *${product}*` : ''}...`;
     }
 
-    // English
-    const roleLabel = role === 'farmer' ? 'farmer' : 'buyer';
-    let msg = `✅ Welcome${name ? `, *${name}*` : ''}! You're registered as a *${roleLabel}*${location ? ` in *${location}*` : ''}.`;
-    if (product) {
-      msg += role === 'buyer'
-        ? `\n\nLet me find farmers selling *${product}* near you...`
-        : `\n\nYou can list your *${product}* with *SELL ${product} [quantity]*.`;
-    }
-    return msg;
-  }
-
-  // ─── Confirm extracted fields and ask for crops/business ──────
-  private async generatePartialConfirm(
-    parsed: Awaited<ReturnType<AiService['parseIntent']>>,
-    lang: Language,
-    nextState: string,
-  ): Promise<string> {
-    const role = parsed.role as string;
-    const roleLabel =
-      role === 'farmer'
-        ? lang === 'french'
-          ? 'agriculteur'
-          : lang === 'pidgin'
-            ? 'farmer'
-            : 'farmer'
-        : role === 'both'
-          ? lang === 'french'
-            ? 'agriculteur et acheteur'
-            : lang === 'pidgin'
-              ? 'farmer and buyer'
-              : 'farmer and buyer'
-          : lang === 'french'
-            ? 'acheteur'
-            : lang === 'pidgin'
-              ? 'buyer'
-              : 'buyer';
-
+    // Generic welcome — ask what they'd like to do
     if (lang === 'french') {
-      const confirm =
-        `Parfait${parsed.name ? `, *${parsed.name}*` : ''} !` +
-        (parsed.location
-          ? ` Vous êtes *${roleLabel}* à *${parsed.location}*.`
-          : ` Vous êtes *${roleLabel}*.`);
-
-      if (nextState === 'AWAITING_PRODUCES')
-        return `${confirm}\n\nQuels produits cultivez-vous ? (ex: maïs, manioc, tomates)`;
-      if (nextState === 'AWAITING_NEEDS')
-        return `${confirm}\n\nQuels produits voulez-vous acheter ? (ex: maïs, tomates, manioc)`;
-      return confirm;
+      return `✅ Bienvenue${name ? `, *${name}*` : ''} !${location ? ` Vous êtes à *${location}*.` : ''}\n\nVous voulez vendre des produits ou en acheter aujourd'hui ?`;
     }
-
     if (lang === 'pidgin') {
-      const confirm =
-        `No wahala${parsed.name ? `, *${parsed.name}*` : ''} !` +
-        (parsed.location
-          ? ` You be *${roleLabel}* for *${parsed.location}*.`
-          : ` You be *${roleLabel}*.`);
-
-      if (nextState === 'AWAITING_PRODUCES')
-        return `${confirm}\n\nWetin you dey farm? (e.g. maize, cassava, tomatoes)`;
-      if (nextState === 'AWAITING_NEEDS')
-        return `${confirm}\n\nWetin you wan buy? (e.g. maize, tomatoes, cassava)`;
-      return confirm;
+      return `✅ Welcome${name ? `, *${name}*` : ''}!${location ? ` You dey *${location}*.` : ''}\n\nYou wan sell something or buy something today?`;
     }
-
-    // English
-    const confirm =
-      `Great${parsed.name ? `, *${parsed.name}*` : ''}!` +
-      (parsed.location
-        ? ` You're a *${roleLabel}* in *${parsed.location}*.`
-        : ` You're a *${roleLabel}*.`);
-
-    if (nextState === 'AWAITING_PRODUCES')
-      return `${confirm}\n\nWhat crops do you grow? (e.g. maize, cassava, tomatoes)`;
-    if (nextState === 'AWAITING_NEEDS')
-      return `${confirm}\n\nWhat are you looking to buy? (e.g. maize, tomatoes, cassava)`;
-    return confirm;
+    return `✅ Welcome${name ? `, *${name}*` : ''}!${location ? ` You're in *${location}*.` : ''}\n\nWould you like to sell something or buy something today?`;
   }
 
   // ─── Resume from saved state ───────────────────────────────────
@@ -322,32 +182,32 @@ export class RegistrationFlowService {
   ): Promise<string> {
     const state: string = user.conversationState;
 
-    // Warm resume — if user re-greeted mid-registration, remind them where they are
-    const isGreeting =
-      /^(hi|hello|bonjour|salut|bonsoir|hey|start|begin)$/i.test(input);
-    if (isGreeting && state !== 'AWAITING_ROLE') {
+    // Warm resume — if user re-greeted mid-registration
+    const isGreeting = /^(hi|hello|bonjour|salut|bonsoir|hey|start|begin)$/i.test(input);
+    if (isGreeting && state !== 'AWAITING_NAME') {
       return this.buildWarmResumeMessage(user, lang);
     }
 
-    // At each step, first try to extract all remaining fields from this message.
-    // This lets someone send "I'm Paul in Douala" to fill two steps at once.
     const parsed = await this.aiService.parseIntent(input);
 
     switch (state) {
-      case 'AWAITING_ROLE':
-        return this.handleRole(phone, input, parsed, lang);
       case 'AWAITING_NAME':
         return this.handleName(phone, input, parsed, lang);
       case 'AWAITING_LOCATION':
-        return this.handleLocation(phone, input, parsed, user, lang);
+        return this.handleLocation(phone, input, parsed, lang);
+
+      // Legacy states — migrate users forward gracefully
+      case 'AWAITING_ROLE':
+        // No longer collecting roles — store 'user' and advance to name
+        await this.usersService.update(phone, { role: 'user', conversationState: 'AWAITING_NAME' });
+        return await this.aiService.reply('ask_name', lang, {});
       case 'AWAITING_PRODUCES':
-        return this.handleProduces(phone, input, lang);
       case 'AWAITING_BUSINESS':
-        // Legacy state — treat the reply as the business name but don't block on it.
-        // Move to AWAITING_NEEDS after storing (or skip it entirely).
-        return this.handleBusiness(phone, input, lang, user);
       case 'AWAITING_NEEDS':
-        return this.handleNeeds(phone, input, lang, user);
+        // Legacy states — complete registration immediately
+        await this.usersService.update(phone, { conversationState: 'REGISTERED' });
+        return await this.aiService.reply('registered_farmer', lang, { name: user.name ?? '' });
+
       default:
         return await this.aiService.reply('unknown_command', lang, {});
     }
@@ -358,7 +218,7 @@ export class RegistrationFlowService {
     const name = user.name && user.name !== 'unknown' ? user.name : null;
     const state: string = user.conversationState;
 
-    const stateLabels: Record<string, Record<Language, string>> = {
+    const missing: Record<string, Record<Language, string>> = {
       AWAITING_NAME: {
         english: 'your name',
         french: 'votre nom',
@@ -369,152 +229,45 @@ export class RegistrationFlowService {
         french: 'votre localité',
         pidgin: 'your town',
       },
-      AWAITING_PRODUCES: {
-        english: 'the crops you grow',
-        french: 'vos cultures',
-        pidgin: 'wetin you farm',
-      },
-      AWAITING_BUSINESS: {
-        english: 'what products you need',
-        french: 'les produits que vous cherchez',
-        pidgin: 'wetin you dey find',
-      },
-      AWAITING_NEEDS: {
-        english: 'which products you buy',
-        french: 'vos besoins en produits',
-        pidgin: 'wetin you dey find',
-      },
     };
 
-    const what = stateLabels[state]?.[lang] ?? 'a few details';
+    const what = missing[state]?.[lang] ?? 'one more detail';
 
     if (lang === 'french') {
       return `Bon retour${name ? `, *${name}*` : ''} ! Vous étiez en train de vous inscrire — il reste juste *${what}*.\n\nQu'est-ce que c'est ?`;
     }
     if (lang === 'pidgin') {
-      return `Welcome back${name ? `, *${name}*` : ''}! You dey register — we just need *${what}* from you. Go ahead!`;
+      return `Welcome back${name ? `, *${name}*` : ''}! We just need *${what}* from you. Go ahead!`;
     }
-    return `Welcome back${name ? `, *${name}*` : ''}! You were registering — just need *${what}* from you. Go ahead!`;
+    return `Welcome back${name ? `, *${name}*` : ''}! Just need *${what}* to finish — go ahead!`;
   }
 
-  // ─── Step 1: Role ──────────────────────────────────────────────
-  private async handleRole(
-    phone: string,
-    input: string,
-    parsed: Awaited<ReturnType<AiService['parseIntent']>>,
-    lang: Language,
-  ): Promise<string> {
-    const lower = input.toLowerCase();
-
-    const farmerKeywords = [
-      '1',
-      'farmer',
-      'agriculteur',
-      'sell',
-      'vend',
-      'farm',
-      'cultiv',
-      'grow',
-      'i get',
-      'i dey',
-    ];
-    const buyerKeywords = [
-      '2',
-      'buyer',
-      'acheteur',
-      'buy',
-      'achet',
-      'purchas',
-      'need',
-      'want',
-    ];
-    const bothKeywords = [
-      '3',
-      'both',
-      'les deux',
-      'all',
-      'i get am and i want am',
-    ];
-
-    const isFarmer =
-      parsed.role === 'farmer' || farmerKeywords.some((k) => lower.includes(k));
-    const isBuyer =
-      parsed.role === 'buyer' || buyerKeywords.some((k) => lower.includes(k));
-    const isBoth =
-      (parsed.role as string) === 'both' ||
-      lower === '3' ||
-      bothKeywords.some((k) => lower.includes(k));
-
-    if (!isFarmer && !isBuyer && !isBoth) {
-      const errors: Record<Language, string> = {
-        english: `Please reply *1* for Farmer, *2* for Buyer, or *3* for Both.`,
-        french: `Veuillez répondre *1* pour Agriculteur, *2* pour Acheteur, ou *3* pour Les deux.`,
-        pidgin: `Send *1* if you be Farmer, *2* if you be Buyer, *3* if you be both.`,
-      };
-      return errors[lang];
-    }
-
-    const role = isBoth ? 'both' : isBuyer && !isFarmer ? 'buyer' : 'farmer';
-
-    // Also store name/location if the user included them
-    const updates: Record<string, any> = {
-      role,
-      conversationState: parsed.name ? 'AWAITING_LOCATION' : 'AWAITING_NAME',
-    };
-    if (parsed.name) updates.name = parsed.name;
-    if (parsed.location) {
-      updates.location = parsed.location;
-      updates.conversationState =
-        role === 'farmer' ? 'AWAITING_PRODUCES' : 'AWAITING_NEEDS';
-    }
-
-    await this.usersService.update(phone, updates);
-
-    // Skip ahead based on what we just extracted
-    if (parsed.location) {
-      return role === 'farmer'
-        ? await this.askProduces(lang)
-        : await this.askNeeds(lang);
-    }
-    if (parsed.name) {
-      return await this.aiService.reply('ask_location', lang, {});
-    }
-    return await this.aiService.reply('ask_name', lang, {});
-  }
-
-  // ─── Step 2: Name ─────────────────────────────────────────────
+  // ─── Step 1: Name ─────────────────────────────────────────────
   private async handleName(
     phone: string,
     input: string,
     parsed: Awaited<ReturnType<AiService['parseIntent']>>,
     lang: Language,
   ): Promise<string> {
-    // Accept AI-extracted name or use raw input as name
     const name = parsed.name ?? input.trim();
 
     if (name.length < 2) {
       const errors: Record<Language, string> = {
-        english: `Please enter your real full name.`,
-        french: `Veuillez entrer votre vrai nom complet.`,
+        english: `Please enter your real name.`,
+        french: `Veuillez entrer votre vrai nom.`,
         pidgin: `Abeg put your real name.`,
       };
       return errors[lang];
     }
 
-    const user = await this.usersService.findByPhone(phone);
-    const role = user?.role ?? 'farmer';
-
     const updates: Record<string, any> = { name };
 
-    // If location was also in this message, store it too
+    // If location was also in this message, store it and register immediately
     if (parsed.location) {
       updates.location = parsed.location;
-      updates.conversationState =
-        role === 'farmer' ? 'AWAITING_PRODUCES' : 'AWAITING_NEEDS';
+      updates.conversationState = 'REGISTERED';
       await this.usersService.update(phone, updates);
-      return role === 'farmer'
-        ? await this.askProduces(lang)
-        : await this.askNeeds(lang);
+      return await this.buildRegistrationComplete(parsed, lang);
     }
 
     updates.conversationState = 'AWAITING_LOCATION';
@@ -522,15 +275,13 @@ export class RegistrationFlowService {
     return await this.aiService.reply('ask_location', lang, {});
   }
 
-  // ─── Step 3: Location ─────────────────────────────────────────
+  // ─── Step 2: Location ─────────────────────────────────────────
   private async handleLocation(
     phone: string,
     input: string,
     parsed: Awaited<ReturnType<AiService['parseIntent']>>,
-    user: any,
     lang: Language,
   ): Promise<string> {
-    // Prefer AI-extracted location, fall back to raw input
     const location = parsed.location ?? input.trim();
 
     if (location.length < 2) {
@@ -542,148 +293,11 @@ export class RegistrationFlowService {
       return errors[lang];
     }
 
-    const role = user?.role ?? 'farmer';
-    await this.usersService.update(phone, {
+    const userUpdated = await this.usersService.update(phone, {
       location,
-      conversationState:
-        role === 'farmer' || role === 'both'
-          ? 'AWAITING_PRODUCES'
-          : 'AWAITING_NEEDS',
-    });
-
-    return role === 'farmer' || role === 'both'
-      ? await this.askProduces(lang)
-      : await this.askNeeds(lang);
-  }
-
-  // ─── Step 4a: Farmer — Produces ───────────────────────────────
-  private async handleProduces(
-    phone: string,
-    input: string,
-    lang: Language,
-  ): Promise<string> {
-    const produces = input
-      .split(/[,،،;\/]/)
-      .map((p) => p.trim().toLowerCase())
-      .filter((p) => p.length > 1);
-
-    if (produces.length === 0) {
-      const errors: Record<Language, string> = {
-        english: `List at least one crop, separated by commas.\nExample: maize, cassava`,
-        french: `Listez au moins un produit, séparé par des virgules.\nExemple: maïs, manioc`,
-        pidgin: `List at least one thing wey you farm.\nExample: maize, cassava`,
-      };
-      return errors[lang];
-    }
-
-    const user = await this.usersService.findByPhone(phone);
-    const isBoth = user?.role === 'both';
-
-    if (isBoth) {
-      await this.usersService.update(phone, {
-        produces,
-        conversationState: 'AWAITING_NEEDS',
-      });
-      return await this.askNeeds(lang);
-    }
-
-    const userUpdated = await this.usersService.update(phone, {
-      produces,
       conversationState: 'REGISTERED',
     });
 
-    return await this.aiService.reply('registered_farmer', lang, {
-      name: userUpdated.name,
-    });
-  }
-
-  // ─── Step 4b: Buyer — Business (OPTIONAL) ────────────────────
-  // Business name is not required. Any non-trivial input is stored,
-  // SKIP / short reply moves straight to AWAITING_NEEDS.
-  private async handleBusiness(
-    phone: string,
-    input: string,
-    lang: Language,
-    user: any,
-  ): Promise<string> {
-    const isSkip = /^(skip|passer|no|non|nope|later|no thanks|pas maintenant)$/i.test(input.trim());
-    const updates: Record<string, any> = { conversationState: 'AWAITING_NEEDS' };
-
-    if (!isSkip && input.trim().length >= 2) {
-      updates.businessName = input.trim();
-    }
-
-    // If user already has needs saved (product from first message), skip AWAITING_NEEDS
-    const existingNeeds: string[] = user?.needs ?? [];
-    if (existingNeeds.length > 0) {
-      updates.conversationState = 'REGISTERED';
-      await this.usersService.update(phone, updates);
-      return await this.aiService.reply('registered_buyer', lang, { name: user?.name ?? '' });
-    }
-
-    await this.usersService.update(phone, updates);
-    return await this.aiService.reply('ask_needs', lang, {});
-  }
-
-  // ─── Step 5b: Buyer — Needs ───────────────────────────────────
-  // If the user already has needs persisted from turn 1, skip asking entirely.
-  private async handleNeeds(
-    phone: string,
-    input: string,
-    lang: Language,
-    user: any,
-  ): Promise<string> {
-    // If needs were already captured from the first message, complete registration
-    const existingNeeds: string[] = user?.needs ?? [];
-    const isSkip = /^(skip|passer|no|non|nope|later)$/i.test(input.trim());
-
-    let needs: string[] = existingNeeds;
-
-    if (!isSkip) {
-      const parsedNeeds = input
-        .split(/[,،;\/]/)
-        .map((n) => n.trim().toLowerCase())
-        .filter((n) => n.length > 1);
-
-      if (parsedNeeds.length > 0) {
-        // Merge new entries with any already saved
-        needs = [...new Set([...existingNeeds, ...parsedNeeds])];
-      }
-    }
-
-    if (needs.length === 0) {
-      const errors: Record<Language, string> = {
-        english: `What are you looking to buy? (e.g. maize, tomatoes)\nType *SKIP* to finish without listing products.`,
-        french: `Quels produits cherchez-vous ? (ex: maïs, tomates)\nTapez *PASSER* pour terminer sans liste.`,
-        pidgin: `Wetin you wan buy? (e.g. maize, tomatoes)\nType *SKIP* to finish.`,
-      };
-      return errors[lang];
-    }
-
-    const isBoth = user?.role === 'both';
-
-    if (isBoth) {
-      await this.usersService.update(phone, { needs, conversationState: 'REGISTERED' });
-      return await this.aiService.reply('registered_both', lang, { name: user?.name ?? '' });
-    }
-
-    const userUpdated = await this.usersService.update(phone, {
-      needs,
-      conversationState: 'REGISTERED',
-    });
-
-    return await this.aiService.reply('registered_buyer', lang, {
-      name: userUpdated.name,
-    });
-  }
-
-  // ─── Helpers ──────────────────────────────────────────────────
-
-  private async askProduces(lang: Language): Promise<string> {
-    return this.aiService.reply('ask_produces', lang, {});
-  }
-
-  private async askNeeds(lang: Language): Promise<string> {
-    return this.aiService.reply('ask_needs', lang, {});
+    return await this.buildRegistrationComplete({ ...parsed, name: userUpdated.name, location }, lang);
   }
 }

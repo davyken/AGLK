@@ -13,6 +13,7 @@ import { NotificationModule } from './notification/notification.module';
 import { PriceModule } from './price/price.module';
 import { SeedModule } from './seed/seed.module';
 import { AuthModule } from './auth/auth.module';
+import { AgentsModule } from './agents/agents.module';
 import { EventBusService } from './common/event-bus.service';
 
 @Module({
@@ -43,6 +44,7 @@ import { EventBusService } from './common/event-bus.service';
     NotificationModule,
     SeedModule,
     AuthModule,
+    AgentsModule,
   ],
   controllers: [AppController],
   providers: [AppService, EventBusService],

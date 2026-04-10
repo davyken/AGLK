@@ -25,12 +25,12 @@ export class UsersService {
     const user = new this.userModel({
       phone,
       name: 'unknown',
-      role: 'farmer',
+      role: 'user',
       location: 'unknown',
       preferredChannel: channel,
       lastChannelUsed: channel,
       language,
-      conversationState: 'AWAITING_ROLE',
+      conversationState: 'AWAITING_NAME',
     });
     return user.save();
   }
