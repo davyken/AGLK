@@ -155,7 +155,7 @@ export const dbOperationsTool = createTool({
             crop: string;
             quantity: number;
             unit: string;
-            agreedPriceXaf: number;
+            agreedPriceXaf: number; // caller-facing name; mapped to totalXaf below
             location: string;
           };
 
@@ -164,7 +164,15 @@ export const dbOperationsTool = createTool({
             break;
           }
 
-          const order = writeOrder({ ...data, status: 'pending' });
+          // FIX: The Order interface requires `totalXaf`, but the agent payload
+          // uses `agreedPriceXaf`. Destructure to rename at the boundary so
+          // neither the caller nor the store interface needs to change.
+          const { agreedPriceXaf, ...rest } = data;
+          const order = writeOrder({
+            ...rest,
+            totalXaf: agreedPriceXaf,
+            status: 'pending',
+          });
           result = ok<Order>(order);
           break;
         }
