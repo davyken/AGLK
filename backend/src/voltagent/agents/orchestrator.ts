@@ -120,7 +120,7 @@ Do not add any wrapping, JSON, or commentary.
 
 ## Domain context
 - Market: Cameroon (XAF currency)
-- Crops: maize, cassava, plantain, cocoyam, tomatoes, palm oil, njama njama, eru, okok, egusi, mbongo, kpem, bobolo
+- Crops: maize, cassava, plantain, cocoyam, tomatoes, palm oil, njama njama, eru, okok, egusi, mbongo, kpem, bobolo, beans
 - Regions: Littoral (Douala), Centre (Yaoundé), West (Bafoussam), Northwest (Bamenda), Southwest (Buea)
 - Users: low digital literacy — keep interactions simple and warm`;
 

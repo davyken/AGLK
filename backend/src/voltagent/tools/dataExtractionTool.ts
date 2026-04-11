@@ -78,6 +78,7 @@ maïs → maize | manioc → cassava | igname → yam | ananas → pineapple
 njama njama → njama njama | eru → eru | okok → okok | mbongo → mbongo
 egusi → egusi | kpem → kpem | bobolo → bobolo | palmier → palm oil
 plantain → plantain | tomate → tomatoes | arachide → groundnuts | soja → soybeans
+haricot → beans | haricots → beans | niébé → beans | beans → beans
 
 ## Unit normalisation
 "sac(s)" → bag | "régime(s)" → bunch | "bidon(s)" → jerrycan
