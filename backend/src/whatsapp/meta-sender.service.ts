@@ -200,10 +200,13 @@ export class MetaSenderService {
    * Call this right after markAsRead and before the async processing work begins.
    * Fire-and-forget — never await in the hot path.
    *
-   * Uses the WhatsApp Cloud API typing indicator endpoint:
-   * POST /{phone-number-id}/messages  { status: "typing", message_id: ... }
+   * WhatsApp Cloud API typing indicator (POST /{phone-number-id}/messages):
+   *   { messaging_product, to, status: "typing" }
+   *
+   * Key difference from markAsRead: typing is signalled TO a recipient phone number,
+   * not by referencing a specific message_id.
    */
-  async sendTypingIndicator(to: string, messageId: string): Promise<void> {
+  async sendTypingIndicator(to: string): Promise<void> {
     const phoneNumberId = this.config.get<string>('META_PHONE_NUMBER_ID');
     const accessToken = this.config.get<string>('META_ACCESS_TOKEN');
     const apiVersion = this.config.get<string>('META_API_VERSION') || 'v19.0';
@@ -218,8 +221,8 @@ export class MetaSenderService {
         },
         body: JSON.stringify({
           messaging_product: 'whatsapp',
+          to,
           status: 'typing',
-          message_id: messageId,
         }),
       });
     } catch {

@@ -129,7 +129,7 @@ export class BotController {
 
         // Mark as read + show typing indicator while processing
         await this.metaSender.markAsRead(phone, message.id);
-        this.metaSender.sendTypingIndicator(phone, message.id).catch(() => {});
+        this.metaSender.sendTypingIndicator(phone).catch(() => {});
 
         const reply = await this.botService.handleMessage({
           phone,
@@ -148,7 +148,7 @@ export class BotController {
 
         // Mark as read + show typing indicator while processing
         await this.metaSender.markAsRead(phone, message.id);
-        this.metaSender.sendTypingIndicator(phone, message.id).catch(() => {});
+        this.metaSender.sendTypingIndicator(phone).catch(() => {});
 
         // Step 1 — immediate acknowledgement (before the slow Whisper call)
         await this.metaSender.send(
@@ -204,7 +204,7 @@ export class BotController {
 
         // Mark as read + show typing indicator
         await this.metaSender.markAsRead(phone, message.id);
-        this.metaSender.sendTypingIndicator(phone, message.id).catch(() => {});
+        this.metaSender.sendTypingIndicator(phone).catch(() => {});
 
         if (!this.listingFlow.isInImageState(phone)) {
           if (caption) {
