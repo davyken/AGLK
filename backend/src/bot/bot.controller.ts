@@ -22,7 +22,7 @@ export class BotController {
   private readonly logger = new Logger(BotController.name);
 
   constructor(
-    private readonly botService:   BotService,
+    private readonly voltAgent:    VoltAgentService,
     private readonly metaSender:   MetaSenderService,
     private readonly aiService:    AiService,
     private readonly listingFlow:  ListingFlowService,
@@ -77,11 +77,7 @@ export class BotController {
         const text = message?.text?.body ?? '';
         if (!text) return { status: 'empty_text' };
 
-        const reply = await this.botService.handleMessage({
-          phone,
-          text,
-          channel: 'whatsapp',
-        });
+        const reply = await this.voltAgent.handle(text, phone);  // ✅
 
         if (reply) await this.metaSender.send(phone, reply);
         return { status: 'ok' };
@@ -105,7 +101,6 @@ export class BotController {
         // Get download URL from Meta
         const mediaUrl = await this.getMediaUrl(mediaId, accessToken);
         if (!mediaUrl) {
-          // ✅ await reply() — it returns Promise<string>
           await this.metaSender.send(
             phone,
             await this.aiService.reply('voice_failed', lang, {}),
@@ -118,7 +113,6 @@ export class BotController {
           await this.aiService.transcribeVoiceNote(mediaUrl, accessToken);
 
         if (!transcribed) {
-          // ✅ await reply()
           await this.metaSender.send(
             phone,
             await this.aiService.reply('voice_failed', detectedLang, {}),
@@ -133,7 +127,7 @@ export class BotController {
           await this.usersService.updateLanguage(phone, detectedLang);
         }
 
-        // Show user what was heard — ✅ await reply()
+        // Show user what was heard
         await this.metaSender.send(
           phone,
           await this.aiService.reply('voice_received', detectedLang, {
@@ -142,11 +136,7 @@ export class BotController {
         );
 
         // Process transcribed text exactly like a text message
-        const reply = await this.botService.handleMessage({
-          phone,
-          text:    transcribed,
-          channel: 'whatsapp',
-        });
+        const reply = await this.voltAgent.handle(transcribed, phone);  // ✅
 
         if (reply) await this.metaSender.send(phone, reply);
         return { status: 'ok' };
@@ -168,13 +158,9 @@ export class BotController {
           return { status: 'ok' };
         }
 
-        // Not expecting an image
+        // Not expecting an image — but has a caption, treat as text
         if (caption) {
-          const reply = await this.botService.handleMessage({
-            phone,
-            text:    caption,
-            channel: 'whatsapp',
-          });
+          const reply = await this.voltAgent.handle(caption, phone);  // ✅
           if (reply) await this.metaSender.send(phone, reply);
         } else {
           const msgs: Record<Language, string> = {
@@ -196,11 +182,7 @@ export class BotController {
         const buttonTitle = message?.interactive?.button_reply?.title ?? '';
         const text        = buttonId || buttonTitle;
 
-        const reply = await this.botService.handleMessage({
-          phone,
-          text,
-          channel: 'whatsapp',
-        });
+        const reply = await this.voltAgent.handle(text, phone);  // ✅
         if (reply) await this.metaSender.send(phone, reply);
         return { status: 'ok' };
       }
@@ -233,11 +215,7 @@ export class BotController {
       const text  = body?.text ?? body?.Body ?? '';
       if (!phone || !text) return { status: 'invalid_payload' };
 
-      const reply = await this.botService.handleMessage({
-        phone,
-        text,
-        channel: 'sms',
-      });
+      const reply = await this.voltAgent.handle(text, phone);  // ✅
 
       return { message: reply };
     } catch {
