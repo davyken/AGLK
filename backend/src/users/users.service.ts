@@ -119,9 +119,6 @@ export class UsersService {
     return user;
   }
 
-  // ── Pending state persistence ─────────────────────────────────
-  // Keeps the in-memory Map restart-safe by mirroring to MongoDB.
-
   async savePendingState(
     phone: string,
     state: Record<string, any>,
@@ -155,8 +152,6 @@ export class UsersService {
       .exec();
   }
 
-  /** Load all users that have non-null pendingState or pendingFarmerResponse.
-   *  Used by ListingFlowService.onModuleInit() to restore in-memory Maps. */
   async findUsersWithPendingData(): Promise<UserDocument[]> {
     return this.userModel
       .find({

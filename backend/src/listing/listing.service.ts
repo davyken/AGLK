@@ -171,10 +171,6 @@ export class ListingService {
       .exec();
   }
 
-  /**
-   * Search for sell listings with a product synonym fallback.
-   * Returns any active listing whose product matches one of the known synonyms.
-   */
   async findByProductSynonyms(product: string): Promise<ListingDocument[]> {
     const synonyms = this.getSynonyms(product);
     if (synonyms.length === 0) return [];
@@ -187,15 +183,6 @@ export class ListingService {
       .exec();
   }
 
-  /**
-   * Four-tier fallback search for buy requests:
-   *  Tier 1 — exact product + exact location
-   *  Tier 2 — exact product + any location (nationwide)
-   *  Tier 3 — synonym products + any location
-   *  Tier 4 — empty (no matches anywhere)
-   *
-   * The `excludePhone` prevents returning the buyer's own listings.
-   */
   async findWithFallback(
     product: string,
     location: string,
@@ -205,9 +192,6 @@ export class ListingService {
     listings: ListingDocument[];
     fallbackProduct?: string;
   }> {
-    // Normalize both sides — WhatsApp delivers phones as "237XXX" but
-    // normalizePhone() returns "+237XXX". Raw string comparison would
-    // never match, so the user's own listings would always slip through.
     const normalizedExclude = normalizePhone(excludePhone) ?? excludePhone;
     const ownFilter = (docs: ListingDocument[]) =>
       docs.filter(
@@ -217,29 +201,23 @@ export class ListingService {
           normalizePhone(l.userPhone) !== normalizedExclude,
       );
 
-    // Tier 1 — exact + location
     if (location && location !== 'unknown') {
       const t1 = ownFilter(await this.findByProductAndLocation(product, location));
       if (t1.length > 0) return { tier: 1, listings: t1 };
     }
 
-    // Tier 2 — exact + nationwide
     const t2 = ownFilter(await this.findByProduct(product));
     if (t2.length > 0) return { tier: 2, listings: t2 };
 
-    // Tier 3 — synonyms + nationwide
     const synonymDocs = ownFilter(await this.findByProductSynonyms(product));
     if (synonymDocs.length > 0) {
-      // Determine which synonym actually matched
       const matchedProduct = synonymDocs[0].product;
       return { tier: 3, listings: synonymDocs, fallbackProduct: matchedProduct };
     }
 
-    // Tier 4 — nothing found
     return { tier: 4, listings: [] };
   }
 
-  // ─── Product synonym map ───────────────────────────────────────
   private getSynonyms(product: string): string[] {
     const SYNONYMS: Record<string, string[]> = {
       maize: ['corn', 'mais', 'grain'],
@@ -329,7 +307,6 @@ export class ListingService {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  // ─── Update listing status ─────────────────────────────────
   async updateStatus(id: string, status: string): Promise<ListingDocument> {
     const listing = await this.listingModel
       .findByIdAndUpdate(id, { $set: { status } }, { returnDocument: 'after' })

@@ -30,9 +30,6 @@ export class BotController {
     private readonly config:       ConfigService,
   ) {}
 
-  // ─────────────────────────────────────────────────────────
-  // GET /bot/webhook — Meta one-time verification
-  // ─────────────────────────────────────────────────────────
   @Get('webhook')
   verify(
     @Query('hub.mode') mode: string,
@@ -47,9 +44,6 @@ export class BotController {
     return res.status(403).send('Forbidden');
   }
 
-  // ─────────────────────────────────────────────────────────
-  // POST /bot/webhook — All incoming WhatsApp messages
-  // ─────────────────────────────────────────────────────────
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
   async receiveWhatsApp(@Body() body: Record<string, any>) {
@@ -62,43 +56,33 @@ export class BotController {
       const messageId   = message.id   as string;
       const accessToken = this.config.get<string>('META_ACCESS_TOKEN')!;
 
-      // ── Load user for language ─────────────────────────────
       const user = await this.usersService.findByPhone(phone);
       const lang: Language = (user as any)?.language ?? 'english';
 
-      // ── Mark as read + typing — always, immediately ────────
       await this.metaSender.markAsRead(messageId);
       this.metaSender.sendTypingIndicator(phone).catch(() => {});
 
-      // ─────────────────────────────────────────────────────
-      // 1. TEXT
-      // ─────────────────────────────────────────────────────
       if (msgType === 'text') {
         const text = message?.text?.body ?? '';
         if (!text) return { status: 'empty_text' };
 
-        const reply = await this.voltAgent.handle(text, phone);  // ✅
+        const reply = await this.voltAgent.handle(text, phone);
 
         if (reply) await this.metaSender.send(phone, reply);
         return { status: 'ok' };
       }
 
-      // ─────────────────────────────────────────────────────
-      // 2. VOICE NOTE / AUDIO
-      // ─────────────────────────────────────────────────────
       if (msgType === 'audio') {
         const mediaId = message?.audio?.id;
         if (!mediaId) return { status: 'no_media_id' };
 
-        // Acknowledge immediately while Whisper runs (Whisper can take 3-5s)
         const ackMsgs: Record<Language, string> = {
-          english: `🎤 Got your voice note! Processing...`,
-          french:  `🎤 Message vocal reçu! Traitement en cours...`,
-          pidgin:  `🎤 Voice note don reach! I dey process am...`,
+          english: `Got your voice note! Processing...`,
+          french:  `Message vocal recu! Traitement en cours...`,
+          pidgin:  `Voice note don reach! I dey process am...`,
         };
         await this.metaSender.send(phone, ackMsgs[lang]);
 
-        // Get download URL from Meta
         const mediaUrl = await this.getMediaUrl(mediaId, accessToken);
         if (!mediaUrl) {
           await this.metaSender.send(
@@ -108,7 +92,6 @@ export class BotController {
           return { status: 'media_url_failed' };
         }
 
-        // Transcribe with OpenAI Whisper
         const { text: transcribed, language: detectedLang } =
           await this.aiService.transcribeVoiceNote(mediaUrl, accessToken);
 
@@ -122,12 +105,10 @@ export class BotController {
 
         this.logger.log(`Voice [${phone}] [${detectedLang}]: "${transcribed}"`);
 
-        // Persist language if it changed
         if (user && detectedLang !== lang) {
           await this.usersService.updateLanguage(phone, detectedLang);
         }
 
-        // Show user what was heard
         await this.metaSender.send(
           phone,
           await this.aiService.reply('voice_received', detectedLang, {
@@ -135,65 +116,52 @@ export class BotController {
           }),
         );
 
-        // Process transcribed text exactly like a text message
-        const reply = await this.voltAgent.handle(transcribed, phone);  // ✅
+        const reply = await this.voltAgent.handle(transcribed, phone);
 
         if (reply) await this.metaSender.send(phone, reply);
         return { status: 'ok' };
       }
 
-      // ─────────────────────────────────────────────────────
-      // 3. IMAGE — farmer uploading product photo
-      // ─────────────────────────────────────────────────────
       if (msgType === 'image') {
         const mediaId = message?.image?.id;
         const caption = message?.image?.caption ?? '';
 
         if (!mediaId) return { status: 'no_image_id' };
 
-        // Farmer is mid-listing and waiting to upload a photo
         if (this.listingFlow.isInImageState(phone)) {
           const reply = await this.listingFlow.handleImage(phone, null, mediaId);
           if (reply) await this.metaSender.send(phone, reply);
           return { status: 'ok' };
         }
 
-        // Not expecting an image — but has a caption, treat as text
         if (caption) {
-          const reply = await this.voltAgent.handle(caption, phone);  // ✅
+          const reply = await this.voltAgent.handle(caption, phone);
           if (reply) await this.metaSender.send(phone, reply);
         } else {
           const msgs: Record<Language, string> = {
-            english: `📷 Photo received!\n\nTo attach a photo to your listing:\n1. Send: SELL maize 10 bags\n2. Then send your photo`,
-            french:  `📷 Photo reçue!\n\nPour ajouter une photo à votre annonce:\n1. Envoyez: VENDRE maïs 10 sacs\n2. Puis envoyez votre photo`,
-            pidgin:  `📷 Photo don reach!\n\nFor attach photo to listing:\n1. Send: SELL maize 10 bags\n2. Then send the photo`,
+            english: `Photo received!\n\nTo attach a photo to your listing:\n1. Send: SELL maize 10 bags\n2. Then send your photo`,
+            french:  `Photo recue!\n\nPour ajouter une photo a votre annonce:\n1. Envoyez: VENDRE mais 10 sacs\n2. Puis envoyez votre photo`,
+            pidgin:  `Photo don reach!\n\nFor attach photo to listing:\n1. Send: SELL maize 10 bags\n2. Then send the photo`,
           };
           await this.metaSender.send(phone, msgs[lang]);
         }
         return { status: 'image_not_expected' };
       }
 
-      // ─────────────────────────────────────────────────────
-      // 4. INTERACTIVE BUTTON REPLY
-      // Fires when user taps a WhatsApp button
-      // ─────────────────────────────────────────────────────
       if (msgType === 'interactive') {
         const buttonId    = message?.interactive?.button_reply?.id    ?? '';
         const buttonTitle = message?.interactive?.button_reply?.title ?? '';
         const text        = buttonId || buttonTitle;
 
-        const reply = await this.voltAgent.handle(text, phone);  // ✅
+        const reply = await this.voltAgent.handle(text, phone);
         if (reply) await this.metaSender.send(phone, reply);
         return { status: 'ok' };
       }
 
-      // ─────────────────────────────────────────────────────
-      // 5. UNSUPPORTED TYPE
-      // ─────────────────────────────────────────────────────
       const unsupported: Record<Language, string> = {
-        english: `❓ I can handle text, voice notes, and photos.\n\nType HELP for options.`,
-        french:  `❓ Je traite les textes, messages vocaux et photos.\n\nTapez AIDE pour les options.`,
-        pidgin:  `❓ I fit handle text, voice and photo.\n\nType HELP for options.`,
+        english: `I can handle text, voice notes, and photos.\n\nType HELP for options.`,
+        french:  `Je traite les textes, messages vocaux et photos.\n\nTapez AIDE pour les options.`,
+        pidgin:  `I fit handle text, voice and photo.\n\nType HELP for options.`,
       };
       await this.metaSender.send(phone, unsupported[lang]);
       return { status: 'unsupported_type' };
@@ -204,9 +172,6 @@ export class BotController {
     }
   }
 
-  // ─────────────────────────────────────────────────────────
-  // POST /bot/sms — Incoming SMS
-  // ─────────────────────────────────────────────────────────
   @Post('sms')
   @HttpCode(HttpStatus.OK)
   async receiveSms(@Body() body: Record<string, any>) {
@@ -215,7 +180,7 @@ export class BotController {
       const text  = body?.text ?? body?.Body ?? '';
       if (!phone || !text) return { status: 'invalid_payload' };
 
-      const reply = await this.voltAgent.handle(text, phone);  // ✅
+      const reply = await this.voltAgent.handle(text, phone);
 
       return { message: reply };
     } catch {
@@ -223,9 +188,6 @@ export class BotController {
     }
   }
 
-  // ─────────────────────────────────────────────────────────
-  // PRIVATE: fetch media download URL from Meta
-  // ─────────────────────────────────────────────────────────
   private async getMediaUrl(
     mediaId:     string,
     accessToken: string,

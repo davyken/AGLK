@@ -9,10 +9,8 @@ import { ResponseGenerationService } from './response-generation.service';
 
 export type { Language } from './language-detection.service';
 
-// ─── Entity extraction result ──────────────────────────────────────
 export interface ExtractedEntities {
   product: string | null;
-  /** Normalised English name (e.g. "manioc" → "cassava") */
   productNormalized: string | null;
   quantity: number | null;
   unit: string | null;
@@ -23,7 +21,6 @@ export interface ExtractedEntities {
   timeframe: string | null;
 }
 
-// ─── Conversation state (merged from prior state + new intents + entities) ──
 export interface ConversationStateEntities {
   product?: string | null;
   quantity?: number | null;
@@ -36,16 +33,12 @@ export interface ConversationStateEntities {
 }
 
 export interface ConversationState {
-  /** The currently active intent, e.g. BUY or SELL. Null when idle/cancelled. */
   active_intent: IntentLabel | null;
   entities: ConversationStateEntities;
-  /** Required fields that are still missing for the active intent */
   missing_fields: string[];
-  /** ready = all required fields present; missing_info = waiting for more; cancelled = user cancelled; idle = no active task */
   status: 'ready' | 'missing_info' | 'cancelled' | 'idle';
 }
 
-// ─── Multi-intent classification types ─────────────────────────────
 export type IntentLabel =
   | 'BUY'
   | 'SELL'
@@ -55,7 +48,6 @@ export type IntentLabel =
   | 'GREETING'
   | 'UNKNOWN';
 
-/** One intent slot extracted from a multi-intent message */
 export interface IntentSlot {
   intent: IntentLabel;
   product?: string;
@@ -68,17 +60,15 @@ export interface IntentSlot {
   timeframe?: string;
 }
 
-/** Full multi-intent classification result */
 export interface ClassifiedMessage {
   intents: IntentSlot[];
   language: Language;
   confidence: 'high' | 'medium' | 'low';
   name?: string;
-  location?: string; // global location (applies to all intents if not per-slot)
+  location?: string;
   raw: string;
 }
 
-// ─── Legacy single-intent type (still used internally for routing) ──
 export interface ParsedIntent {
   intent:
     | 'register'
@@ -92,27 +82,22 @@ export interface ParsedIntent {
     | 'yes'
     | 'no'
     | 'unknown';
-  /** All intents detected — populated when >1 found (e.g. sell+buy) */
   intents?: IntentSlot[];
   language: Language;
-  /** How certain the parser is of the intent — drives clarification logic */
   confidence: 'high' | 'medium' | 'low';
-  // listing fields
   product?: string;
-  productOriginal?: string; // user's original spelling (e.g. "manioc")
+  productOriginal?: string;
   quantity?: number;
   unit?: string;
   price?: number;
-  priceMin?: number; // lower bound of a price range ("between 10000 and 15000")
-  priceMax?: number; // upper bound of a price range
-  // user profile fields — extracted from free-form text
-  name?: string; // "I'm Paul Biya" → "Paul Biya"
-  location?: string; // "in Douala" or "à Bafoussam"
-  role?: 'farmer' | 'buyer' | 'both'; // kept for backward compat
-  availableAt?: string; // when produce is ready (e.g. "2024-10-25" or "in 2 weeks")
-  // correction signals — "actually it's 20 bags not 10"
-  correctedField?: string; // e.g. "quantity", "name", "location"
-  correctedValue?: string; // the new value
+  priceMin?: number;
+  priceMax?: number;
+  name?: string;
+  location?: string;
+  role?: 'farmer' | 'buyer' | 'both';
+  availableAt?: string;
+  correctedField?: string;
+  correctedValue?: string;
   raw: string;
 }
 
@@ -170,9 +155,9 @@ Return ONLY valid JSON. No explanation. No markdown.
 - sell: any message containing produce + sell/have/grow signal → role: "farmer"
 - buy: any message containing produce + want/need/buy signal → role: "buyer"
 - register: hi/hello/bonjour/salut/start/hey with NO sell/buy signal → confidence: "high"
-- confirm: yes, oui, ok, okay, na so, d'accord, correct, sure, yep, exactly → confidence: "high"
+- confirm: yes, oui, ok, okay, na so, daccord, correct, sure, yep, exactly → confidence: "high"
 - cancel: cancel, annuler, stop, no more, forget it, never mind
-- correct: "actually", "I meant", "not X but Y", "no it\'s", "sorry I said", "I made a mistake" → set correctedField + correctedValue
+- correct: "actually", "I meant", "not X but Y", "no it's", "sorry I said", "I made a mistake" → set correctedField + correctedValue
 - price: asking about price/cost/market rate without sell/buy intent
 - help: help, aide, options, what can I do
 - yes/no: standalone affirmative/negative not tied to a new action
@@ -196,10 +181,6 @@ JSON format: {"intent":"","language":"","confidence":"high","product":null,"prod
       const parsed = JSON.parse(text.trim());
       if (!parsed.confidence) parsed.confidence = 'medium';
 
-      // Detect dual-intent (sell AND buy in one message) and populate intents[].
-      // Both slots receive the same extracted entities from the single LLM pass.
-      // Downstream code is responsible for disambiguating if the two intents
-      // refer to different products (which would require a second extraction pass).
       const hasSell = /\b(sell|vend|wan sell|dey sell|for sell)\b/i.test(message);
       const hasBuy = /\b(buy|achet|wan buy|dey find|looking for|je cherche)\b/i.test(message);
       if (hasSell && hasBuy) {
@@ -225,16 +206,6 @@ JSON format: {"intent":"","language":"","confidence":"high","product":null,"prod
     }
   }
 
-  /**
-   * Focused entity extractor — pulls only structured data from a message.
-   * Does NOT classify intent; use classifyIntents() for that.
-   * Call this when you already know the intent and just need the fields.
-   *
-   * Rules (enforced at prompt level):
-   *  - Extracts ONLY what is explicitly stated
-   *  - Never infers or hallucinates missing values
-   *  - Returns null for any field not present in the message
-   */
   async extractEntities(message: string): Promise<ExtractedEntities> {
     try {
       const completion = await this.openai.chat.completions.create({
@@ -275,7 +246,6 @@ Return ONLY valid JSON. No explanation. No markdown.
       const text = completion.choices[0]?.message?.content ?? '{}';
       const parsed = JSON.parse(text.trim()) as ExtractedEntities;
 
-      // Guarantee all fields exist (LLM may omit null fields)
       return {
         product: parsed.product ?? null,
         productNormalized: parsed.productNormalized ?? null,
@@ -293,12 +263,10 @@ Return ONLY valid JSON. No explanation. No markdown.
     }
   }
 
-  /** Regex fallback for extractEntities when LLM is unavailable */
   private extractEntitiesFallback(message: string): ExtractedEntities {
     const lower = message.toLowerCase().trim();
     const { product, productOriginal, quantity, unit } = this.extractProductQty(lower);
 
-    // Location: "in X", "at X", "à X", "for X (city)"
     const locationMatch = lower.match(
       /(?:\bin\b|\bat\b|\bfrom\b|\bà\b)\s+([a-z][a-z\s]{1,20}?)(?:\s|$|,|\.|and)/i,
     );
@@ -306,7 +274,6 @@ Return ONLY valid JSON. No explanation. No markdown.
       ? locationMatch[1].trim().replace(/\b\w/g, (c) => c.toUpperCase())
       : null;
 
-    // Single price: 15000, 15k, 15 mille
     const priceRangeMatch = lower.match(
       /(?:between|entre|de)\s+(\d[\d\s]*)\s+(?:and|et|à|-)\s+(\d[\d\s]*)/i,
     );
@@ -326,7 +293,6 @@ Return ONLY valid JSON. No explanation. No markdown.
       if (num > 100) price = lower.includes('mille') ? num * 1000 : lower.includes('k') ? num * 1000 : num;
     }
 
-    // Timeframe: "next week", "tomorrow", "in 2 days", "next month"
     const timeframeMatch = lower.match(
       /\b(tomorrow|next week|next month|today|in \d+ days?|in \d+ weeks?|demain|la semaine prochaine|le mois prochain)\b/i,
     );
@@ -345,11 +311,6 @@ Return ONLY valid JSON. No explanation. No markdown.
     };
   }
 
-  /**
-   * Multi-intent classifier — detects one or more intents from a single message.
-   * Handles cases like "I want to sell maize and also buy tomatoes" → [SELL, BUY].
-   * Use this as the primary entry point; falls back to parseIntent for routing.
-   */
   async classifyIntents(message: string): Promise<ClassifiedMessage> {
     try {
       const completion = await this.openai.chat.completions.create({
@@ -427,7 +388,6 @@ UNKNOWN  → unclear intent
     }
   }
 
-  /** Regex-based fallback for classifyIntents when LLM is unavailable */
   private classifyIntentsFallback(message: string): ClassifiedMessage {
     const lower = message.toLowerCase().trim();
     const language = this.detectLanguageSync(lower);
@@ -493,10 +453,6 @@ UNKNOWN  → unclear intent
     return result.language === 'unknown' ? 'english' : result.language;
   }
 
-  /**
-   * Transcribe a voice note using Whisper with enhanced context for agricultural marketplace.
-   * Detects language and returns both transcription and detected language.
-   */
   async transcribeVoiceNote(
     mediaUrl: string,
     accessToken: string,
@@ -506,28 +462,23 @@ UNKNOWN  → unclear intent
     try {
       await this.downloadFile(mediaUrl, accessToken, tmpPath);
 
-      // Enhanced prompt with agricultural terms and Cameroon-specific context
-      // This helps Whisper understand the domain better
       const prompt = `You are transcribing a WhatsApp voice message for an agricultural marketplace in Cameroon.
 
 IMPORTANT CONTEXT:
 - This is a marketplace connecting farmers and buyers
 - Products include: maize, cassava, tomatoes, plantain, groundnuts, yam, pepper, okra, beans, cocoa, coffee
 - Common terms: bags, sell, buy, price, farmer, buyer, quantity
-- Common locations in Cameroon: Douala, Yaoundé, Bafoussam, Buea, Bamenda, Limbe, Kribi
-- Languages: English, French, and Cameroonian Pidgin (e.g., "i get", "i wan", "i dey", "na so", "abeg", "wetin")
-- Currency: XAF (Central African CFA franc), prices often mentioned like "15k", "15000", "15 mille"
+- Common locations in Cameroon: Douala, Yaoundé, Bafoussam, Bamenda, Limbe, Kribi
+- Languages: English, French, and Cameroonian Pidgin
+- Currency: XAF, prices often mentioned like "15k", "15000", "15 mille"
 - Units: bags, kg, tonnes, crates, bunches
 
 TRANSCRIPTION GUIDELINES:
 - Keep the original language (English, French, or Pidgin)
 - Use common agricultural terms in the original language
-- Preserve product names as spoken (e.g., "maïs" stays "maïs" in French, but "maize" in English/Pidgin)
-- Keep numbers as spoken
-- If unsure between English/Pidgin, lean towards Pidgin if contains "dey", "don", "wan", "na"
-`;
+- Preserve product names as spoken
+- Keep numbers as spoken`;
 
-      // Use the SDK's transcription method with enhanced prompt
       const transcription = await this.openai.audio.transcriptions.create({
         file: fs.createReadStream(tmpPath),
         model: 'whisper-1',
@@ -542,7 +493,6 @@ TRANSCRIPTION GUIDELINES:
         return { text: '', language: 'english' };
       }
 
-      // Detect language from transcribed text for accurate response
       const language = this.detectLanguageSync(text);
 
       this.logger.log(`Whisper transcribed [${language}]: "${text}"`);
@@ -553,9 +503,7 @@ TRANSCRIPTION GUIDELINES:
       );
       return { text: '', language: 'english' };
     } finally {
-      fs.promises.unlink(tmpPath).catch(() => {
-        // Ignore cleanup errors — file may not exist if download failed
-      });
+      fs.promises.unlink(tmpPath).catch(() => {});
     }
   }
 
@@ -564,7 +512,6 @@ TRANSCRIPTION GUIDELINES:
     const lower = message.toLowerCase().trim();
     const language = this.detectLanguageSync(lower);
 
-    // ── Extract name (I'm X / je suis X / na me X) ────────────
     const nameMatch = lower.match(
       /(?:i[''']?m|my name is|je suis|je m'appelle|na me)\s+([a-záàâäéèêëíîïóôùûüç][a-záàâäéèêëíîïóôùûüç\s]{1,40}?)(?:\s+(?:in|from|at|à|de|for|and|,|$))/i,
     );
@@ -572,7 +519,6 @@ TRANSCRIPTION GUIDELINES:
       ? nameMatch[1].trim().replace(/\b\w/g, (c) => c.toUpperCase())
       : undefined;
 
-    // ── Extract location (in X / à X / for X / from X) ────────
     const locationMatch = lower.match(
       /(?:\bin\b|\bfrom\b|\bat\b|\bà\b|\bde\b|\bfor\b)\s+([a-záàâäéèêëíîïóôùûüç][a-záàâäéèêëíîïóôùûüç\s]{1,30}?)(?:\s+(?:and|,|$|\.|i |je ))/i,
     );
@@ -580,7 +526,6 @@ TRANSCRIPTION GUIDELINES:
       ? locationMatch[1].trim().replace(/\b\w/g, (c) => c.toUpperCase())
       : undefined;
 
-    // ── Extract price range ("between X and Y", "X-Y") ────────
     const rangeMatch = lower.match(
       /(?:between|entre|de)\s+(\d[\d\s]*)\s+(?:and|et|à|-)\s+(\d[\d\s]*)/i,
     );
@@ -591,7 +536,6 @@ TRANSCRIPTION GUIDELINES:
       ? parseInt(rangeMatch[2].replace(/\s/g, ''), 10)
       : undefined;
 
-    // ── Correction signal ─────────────────────────────────────
     const correctionMatch = lower.match(
       /(?:actually|i meant|not \w+ but|no it'?s|sorry i said|i made a mistake|correction)/i,
     );
@@ -605,7 +549,6 @@ TRANSCRIPTION GUIDELINES:
       else correctedField = 'unknown';
     }
 
-    // ── Extract role from intent signals ─────────────────────
     const isFarmerSignal =
       /\b(sell|vend|i get|i have|i dey sell|wan sell|for sell|je cultive|je vends|agriculteur|farmer)\b/i.test(
         lower,
@@ -708,96 +651,26 @@ TRANSCRIPTION GUIDELINES:
     unit: string;
   } {
     const unitWords = [
-      'bags',
-      'bag',
-      'sacs',
-      'sac',
-      'kg',
-      'kilogrammes',
-      'kilogramme',
-      'tonnes',
-      'tonne',
-      'crates',
-      'crate',
-      'cageots',
-      'cageot',
-      'régimes',
-      'régime',
-      'bunches',
-      'bunch',
-      'litres',
-      'litre',
-      'pieces',
-      'piece',
-      'pièces',
-      'pièce',
+      'bags', 'bag', 'sacs', 'sac', 'kg', 'kilogrammes', 'kilogramme',
+      'tonnes', 'tonne', 'crates', 'crate', 'cageots', 'cageot',
+      'régimes', 'régime', 'bunches', 'bunch', 'litres', 'litre',
+      'pieces', 'piece', 'pièces', 'pièce',
     ];
     const stopWords = [
-      'sell',
-      'buy',
-      'vendre',
-      'acheter',
-      'i',
-      'get',
-      'wan',
-      'dey',
-      'for',
-      'have',
-      'je',
-      'du',
-      "j'ai",
-      'la',
-      'le',
-      'les',
-      'des',
-      'want',
-      'need',
-      'plenty',
-      'some',
-      'available',
-      'fresh',
-      'good',
-      'quality',
-      'fraîches',
-      'fraîche',
-      'à',
-      'vente',
-      'cherche',
-      'besoin',
-      'veux',
-      'voudrais',
-      'ai',
+      'sell', 'buy', 'vendre', 'acheter', 'i', 'get', 'wan', 'dey', 'for', 'have',
+      'je', 'du', "j'ai", 'la', 'le', 'les', 'des', 'want', 'need', 'plenty',
+      'some', 'available', 'fresh', 'good', 'quality', 'fraîches', 'fraîche',
+      'à', 'vente', 'cherche', 'besoin', 'veux', 'voudrais', 'ai',
     ];
     const frenchToEnglish: Record<string, string> = {
-      maíz: 'maize',
-      mais: 'maize',
-      tomate: 'tomatoes',
-      tomates: 'tomatoes',
-      manioc: 'cassava',
-      igname: 'yam',
-      ignames: 'yam',
-      plantain: 'plantain',
-      plantains: 'plantain',
-      gombo: 'okra',
-      haricot: 'beans',
-      haricots: 'beans',
-      arachide: 'groundnuts',
-      arachides: 'groundnuts',
-      poisson: 'fish',
-      poulet: 'chicken',
-      macabo: 'macabo',
-      njama: 'njama njama',
-      palmier: 'palm oil',
-      palme: 'palm oil',
-      concombre: 'cucumber',
-      concombres: 'cucumber',
-      aubergine: 'eggplant',
-      aubergines: 'eggplant',
-      piment: 'pepper',
-      piments: 'pepper',
-      oignon: 'onion',
-      oignons: 'onion',
-      ail: 'garlic',
+      maíz: 'maize', mais: 'maize', tomate: 'tomatoes', tomates: 'tomatoes',
+      manioc: 'cassava', igname: 'yam', ignames: 'yam', plantain: 'plantain',
+      plantains: 'plantain', gombo: 'okra', haricot: 'beans', haricots: 'beans',
+      arachide: 'groundnuts', arachides: 'groundnuts', poisson: 'fish',
+      poulet: 'chicken', macabo: 'macabo', njama: 'njama njama',
+      palmier: 'palm oil', palme: 'palm oil', concombre: 'cucumber',
+      concombres: 'cucumber', aubergine: 'eggplant', aubergines: 'eggplant',
+      piment: 'pepper', piments: 'pepper', oignon: 'onion', oignons: 'onion', ail: 'garlic',
     };
 
     const parts = text.toLowerCase().split(/\s+/);
@@ -838,28 +711,14 @@ TRANSCRIPTION GUIDELINES:
     const lower = product.toLowerCase();
 
     const byCrate = [
-      'tomatoes',
-      'tomato',
-      'pepper',
-      'piment',
-      'eggplant',
-      'aubergine',
-      'cucumber',
-      'concombre',
-      'okra',
-      'gombo',
+      'tomatoes', 'tomato', 'pepper', 'piment', 'eggplant', 'aubergine',
+      'cucumber', 'concombre', 'okra', 'gombo',
     ];
     if (byCrate.some((p) => lower.includes(p))) return 'crates';
 
     const byKg = [
-      'garlic',
-      'ail',
-      'onion',
-      'oignon',
-      'ginger',
-      'gingembre',
-      'groundnuts',
-      'arachide',
+      'garlic', 'ail', 'onion', 'oignon', 'ginger', 'gingembre',
+      'groundnuts', 'arachide',
     ];
     if (byKg.some((p) => lower.includes(p))) return 'kg';
 
@@ -885,7 +744,6 @@ TRANSCRIPTION GUIDELINES:
 
       https
         .get(url, { headers: { Authorization: `Bearer ${accessToken}` } }, (res) => {
-          // Follow HTTP 301/302/307/308 redirects up to redirectsLeft times
           if (
             res.statusCode &&
             res.statusCode >= 300 &&
@@ -925,24 +783,11 @@ TRANSCRIPTION GUIDELINES:
     });
   }
 
-  /**
-   * Conversation state manager — merges prior state, newly classified intents,
-   * and newly extracted entities into a single updated ConversationState.
-   *
-   * Rules:
-   *  - Do NOT overwrite existing data unless explicitly changed
-   *  - Allow intent switching (SELL → BUY, etc.)
-   *  - CANCEL intent resets the active task
-   *  - BUY / SELL require: product. quantity and location are optional.
-   *  - status = 'ready' when all required fields are present
-   *  - Supports multiple parallel intents (first actionable intent wins as active)
-   */
   mergeConversationState(
     previous: ConversationState | null,
     classified: ClassifiedMessage,
     extracted: ExtractedEntities,
   ): ConversationState {
-    // ── Cancel detected → reset ─────────────────────────────────────
     const hasCancelIntent = classified.intents.some((s) => s.intent === 'CANCEL');
     if (hasCancelIntent) {
       return {
@@ -953,26 +798,19 @@ TRANSCRIPTION GUIDELINES:
       };
     }
 
-    // ── Find the primary actionable intent ──────────────────────────
     const actionableOrder: IntentLabel[] = ['SELL', 'BUY', 'UPDATE', 'INQUIRY'];
     const primarySlot = classified.intents.find((s) =>
       actionableOrder.includes(s.intent),
     );
     const newIntent: IntentLabel | null = primarySlot?.intent ?? null;
 
-    // ── Determine active intent (allow switching) ───────────────────
-    // A new SELL/BUY/UPDATE replaces the old one; GREETING/UNKNOWN keeps the old
     const nonSwitchingIntents: (IntentLabel | null)[] = ['GREETING', 'UNKNOWN', null];
     const activeIntent: IntentLabel | null = nonSwitchingIntents.includes(newIntent)
       ? (previous?.active_intent ?? null)
       : newIntent;
 
-    // ── Merge entities — new non-null values override old ──────────
     const prev = previous?.entities ?? {};
 
-    // Slot-level entities (from the primary intent slot) take priority,
-    // then the focused extractor, then whatever was in the classified global fields,
-    // then prior state — never overwrite with null.
     const merged: ConversationStateEntities = {
       product:
         extracted.productNormalized ??
@@ -1018,14 +856,11 @@ TRANSCRIPTION GUIDELINES:
         null,
     };
 
-    // ── Determine missing required fields ───────────────────────────
-    // BUY and SELL only strictly require product; quantity/location are helpful but optional
     const missing: string[] = [];
     if (activeIntent === 'BUY' || activeIntent === 'SELL') {
       if (!merged.product) missing.push('product');
     }
 
-    // ── Determine status ────────────────────────────────────────────
     let status: ConversationState['status'];
     if (!activeIntent) {
       status = 'idle';
@@ -1043,16 +878,6 @@ TRANSCRIPTION GUIDELINES:
     };
   }
 
-  /**
-   * Generates a natural, human-like reply from a ConversationState + the raw user message.
-   * Follows the rules:
-   *  - Conversational and concise; no commands or menus
-   *  - Never repeats questions for data already in state
-   *  - Missing required fields → ask naturally (one question at a time)
-   *  - Ready state → confirm and proceed
-   *  - Cancelled → acknowledge and stop
-   *  - Falls back to deterministic templates when LLM is unavailable
-   */
   async generateConversationalResponse(
     state: ConversationState,
     userMessage: string,
@@ -1079,25 +904,25 @@ Generate a natural, human-like response based on the conversation state and user
 5. If status is "ready" → confirm you understood and say you are proceeding
 6. If status is "cancelled" → acknowledge warmly and stop
 7. If status is "idle" or "missing_info" → ask a gentle clarifying question
-8. Maintain the user's language: english | french | pidgin (see state.language from context)
+8. Maintain the user's language: english | french | pidgin
 9. Use emojis sparingly — one per message is fine
 
 === EXAMPLES ===
 status=ready, intent=BUY, product=maize, quantity=10:
-"Great 👍 I found a few maize sellers near Mokolo. Let me show you the best options."
+"Great I found a few maize sellers near Mokolo. Let me show you the best options."
 
 status=missing_info, missing=["product"]:
 "Got it! What product are you looking for?"
 
 status=cancelled:
-"No problem 👍 I've stopped that. Just let me know when you need something."
+"No problem I've stopped that. Just let me know when you need something."
 
 status=ready, intent=SELL, product=tomatoes, quantity=5, unit=crates:
 "Perfect — 5 crates of tomatoes. I'll post that listing for you now."
 
 === LANGUAGE VARIANTS ===
 french example (status=missing_info): "D'accord ! Quel produit vous cherchez ?"
-pidgin example (status=ready, BUY): "Alright 👍 I go find maize sellers for you now."
+pidgin example (status=ready, BUY): "Alright I go find maize sellers for you now."
 
 Return ONLY the plain text response. No JSON. No markdown.`,
           },
@@ -1118,7 +943,6 @@ Return ONLY the plain text response. No JSON. No markdown.`,
     }
   }
 
-  /** Deterministic fallback for generateConversationalResponse */
   private generateConversationalResponseFallback(
     state: ConversationState,
     lang: Language,
@@ -1128,16 +952,14 @@ Return ONLY the plain text response. No JSON. No markdown.`,
     const qty = entities.quantity;
     const unit = entities.unit ?? 'bags';
 
-    // ── Cancelled ─────────────────────────────────────────────────
     if (status === 'cancelled') {
       return {
-        english: `No problem 👍 I've stopped that. Just let me know when you need something.`,
-        french: `Pas de problème 👍 C'est annulé. Faites-moi signe quand vous avez besoin de quelque chose.`,
-        pidgin: `No wahala 👍 I don stop am. Just tell me when you need something.`,
+        english: `No problem I've stopped that. Just let me know when you need something.`,
+        french: `Pas de problème C'est annulé. Faites-moi signe quand vous avez besoin de quelque chose.`,
+        pidgin: `No wahala I don stop am. Just tell me when you need something.`,
       }[lang];
     }
 
-    // ── Missing product ────────────────────────────────────────────
     if (missing_fields.includes('product')) {
       if (active_intent === 'BUY') {
         return {
@@ -1155,27 +977,24 @@ Return ONLY the plain text response. No JSON. No markdown.`,
       }
     }
 
-    // ── Ready — BUY ───────────────────────────────────────────────
     if (status === 'ready' && active_intent === 'BUY') {
       const qtyStr = qty ? `${qty} ${unit} of ` : '';
       return {
-        english: `Got it 👍 Searching for ${qtyStr}${product} sellers now…`,
-        french: `Compris 👍 Je cherche des vendeurs de ${qtyStr}${product}…`,
-        pidgin: `Alright 👍 I go find ${qtyStr}${product} sellers now…`,
+        english: `Got it Searching for ${qtyStr}${product} sellers now…`,
+        french: `Compris Je cherche des vendeurs de ${qtyStr}${product}…`,
+        pidgin: `Alright I go find ${qtyStr}${product} sellers now…`,
       }[lang];
     }
 
-    // ── Ready — SELL ──────────────────────────────────────────────
     if (status === 'ready' && active_intent === 'SELL') {
       const qtyStr = qty ? `${qty} ${unit} of ` : '';
       return {
-        english: `Perfect 👍 Posting your listing for ${qtyStr}${product} now…`,
-        french: `Parfait 👍 Je publie votre annonce pour ${qtyStr}${product}…`,
-        pidgin: `Correct 👍 I go post your listing for ${qtyStr}${product} now…`,
+        english: `Perfect Posting your listing for ${qtyStr}${product} now…`,
+        french: `Parfait Je publie votre annonce pour ${qtyStr}${product}…`,
+        pidgin: `Correct I go post your listing for ${qtyStr}${product} now…`,
       }[lang];
     }
 
-    // ── Idle / fallthrough ─────────────────────────────────────────
     return {
       english: `I'm not sure I fully got that. Are you trying to buy or sell something?`,
       french: `Je ne suis pas sûr de bien comprendre. Vous voulez acheter ou vendre quelque chose ?`,
@@ -1183,11 +1002,11 @@ Return ONLY the plain text response. No JSON. No markdown.`,
     }[lang];
   }
 
-async reply(
-  key:  string,
-  lang: Language,
-  data: Record<string, string | number> = {},
-): Promise<string> {
-  return await this.responseGen.generate(key, lang, data);
-}
+  async reply(
+    key:  string,
+    lang: Language,
+    data: Record<string, string | number> = {},
+  ): Promise<string> {
+    return await this.responseGen.generate(key, lang, data);
+  }
 }

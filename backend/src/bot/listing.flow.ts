@@ -16,7 +16,6 @@ import { FilterParserService } from './filter-parser.service';
 import { CropMediaService } from './Crop media.service';
 import { normalizePhone } from '../common/format.util';
 
-/** Pending states expire after this many milliseconds (4 hours). */
 const PENDING_TTL_MS = 4 * 60 * 60 * 1_000;
 
 interface PendingState {
@@ -28,7 +27,7 @@ interface PendingState {
     | 'buy'
     | 'awaiting_location';
   product: string;
-  productDisplay?: string; // original name user typed e.g. "manioc"
+  productDisplay?: string;
   quantity: number;
   unit: string;
   userPhone: string;
@@ -38,7 +37,7 @@ interface PendingState {
   imageUrl?: string;
   imageMediaId?: string;
   availableAt?: string;
-  expiresAt?: number; // epoch ms — discard state after this time
+  expiresAt?: number;
   listings?: Array<{
     id: string;
     userPhone: string;
@@ -49,7 +48,6 @@ interface PendingState {
     imageUrl?: string;
     imageMediaId?: string;
   }>;
-  // counter-offer fields (buyer awaiting farmer counter)
   farmerPhone?: string;
   counterPrice?: number;
   sellerListingId?: string;
@@ -65,7 +63,7 @@ interface PendingFarmerResponse {
   unit: string;
   price: number;
   language: Language;
-  awaitingCounterPrice?: boolean; // true while farmer is entering counter-offer price
+  awaitingCounterPrice?: boolean;
   expiresAt?: number;
 }
 
@@ -85,9 +83,6 @@ export class ListingFlowService implements OnModuleInit {
     private readonly cropMedia: CropMediaService,
   ) {}
 
-  // ─── Restore in-memory Maps from DB on startup ─────────────
-  // This makes the bot resilient to server restarts — pending states
-  // that were saved to MongoDB are loaded back into the process Maps.
   async onModuleInit(): Promise<void> {
     const now = Date.now();
     try {
@@ -96,7 +91,6 @@ export class ListingFlowService implements OnModuleInit {
         const ps = (user as any).pendingState;
         if (ps) {
           if (ps.expiresAt && ps.expiresAt < now) {
-            // Expired draft — clear it and notify the user proactively
             await this.usersService.clearPendingState(user.phone);
             const lang: Language = (user as any).language ?? 'english';
             const msg = await this.aiService.reply('listing_expired', lang, {
@@ -120,11 +114,9 @@ export class ListingFlowService implements OnModuleInit {
         }
       }
     } catch {
-      // Non-fatal: in-memory Maps start empty — users will re-initiate flows
     }
   }
 
-  // ─── Pending state helpers (in-memory + DB) ─────────────────
   private async setPendingState(
     phone: string,
     state: PendingState,
@@ -163,25 +155,20 @@ export class ListingFlowService implements OnModuleInit {
     await this.usersService.clearPendingFarmerResponse(phone).catch(() => {});
   }
 
-  // ─── Main entry point ─────────────────────────────────────
   async handle(
     phone: string,
     text: string,
     channel: 'sms' | 'whatsapp',
   ): Promise<string> {
-    // ── Get user language from DB (default english) ────────
     const user = await this.usersService.findByPhone(phone);
     const lang: Language = (user as any)?.language ?? 'english';
 
-    // ── If there is a pending state → resume it ────────────
     if (pendingStates.has(phone)) {
       return this.handlePendingState(phone, text.trim(), channel, lang);
     }
 
-    // ── Use AI to parse intent from ANY language input ─────
     const parsed = await this.aiService.parseIntent(text);
 
-    // Normalize French/Pidgin commands to structured intent
     if (parsed.intent === 'sell') {
       const unit =
         parsed.unit && parsed.unit !== 'bags'
@@ -231,7 +218,6 @@ export class ListingFlowService implements OnModuleInit {
       return this.handlePriceQuery(parsed.product ?? '', lang, channel);
     }
 
-    // ── Fallback: try classic command parsing ──────────────
     const normalized = this.normalizeCommand(text);
     const upper = normalized.toUpperCase();
 
@@ -253,7 +239,6 @@ export class ListingFlowService implements OnModuleInit {
     }
 
     if (upper.startsWith('BUY')) {
-      // Use filterParser so @location and #price filters work
       const p = this.filterParser.parse(normalized);
       if (p)
         return this.handleBuyIntentWithFilters(phone, p, text, channel, lang);
@@ -267,10 +252,6 @@ export class ListingFlowService implements OnModuleInit {
     return await this.aiService.reply('unknown_command', lang, {});
   }
 
-  /**
-   * Entry point used when the caller already has a parsed intent.
-   * Skips the second aiService.parseIntent() call to save latency and API cost.
-   */
   async handleWithParsed(
     phone: string,
     text: string,
@@ -281,13 +262,10 @@ export class ListingFlowService implements OnModuleInit {
     const user = await this.usersService.findByPhone(phone);
     const lang: Language = (user as any)?.language ?? 'english';
 
-    // Pending state always takes priority
     if (pendingStates.has(phone)) {
       return this.handlePendingState(phone, text.trim(), channel, lang);
     }
 
-    // ── Conversation state merge ──────────────────────────────────
-    // Build a ClassifiedMessage from parsed if caller didn't supply one.
     const effectiveClassified: ClassifiedMessage = classified ?? {
       intents: parsed.intents ?? [
         {
@@ -309,8 +287,6 @@ export class ListingFlowService implements OnModuleInit {
       raw: parsed.raw,
     };
 
-    // Run focused entity extraction when confidence is not high or product is missing,
-    // then merge everything into a single ConversationState.
     const needsExtraction =
       (parsed.intent === 'sell' || parsed.intent === 'buy') &&
       (parsed.confidence !== 'high' || !parsed.product);
@@ -325,7 +301,6 @@ export class ListingFlowService implements OnModuleInit {
           extracted,
         );
       } catch {
-        // extractEntities failed — merge with empty extracted values
         convState = this.aiService.mergeConversationState(null, effectiveClassified, {
           product: null, productNormalized: null, quantity: null, unit: null,
           location: null, price: null, priceMin: null, priceMax: null, timeframe: null,
@@ -338,17 +313,12 @@ export class ListingFlowService implements OnModuleInit {
       });
     }
 
-    // ── Missing required fields → ask naturally instead of erroring ─
     if (convState.status === 'missing_info') {
       return this.aiService.generateConversationalResponse(convState, text, lang);
     }
 
-    // Resolve final entity values — convState wins over raw parsed where non-null
     const mergedEntities = convState.entities;
 
-    // ── Silently enrich user profile with location from any message ─
-    // Always update — user may have moved cities. Await so intent
-    // handlers downstream see the fresh value.
     if (mergedEntities.location) {
       await this.usersService
         .update(phone, { location: mergedEntities.location })
@@ -388,7 +358,6 @@ export class ListingFlowService implements OnModuleInit {
     }
 
     if (entities.intent === 'buy') {
-      // If buyer provided a price range, acknowledge then search
       if (entities.priceMin && entities.priceMax) {
         const ack = await this.aiService.reply('buy_with_price_range', lang, {
           product: entities.product ?? '',
@@ -424,7 +393,6 @@ export class ListingFlowService implements OnModuleInit {
       return this.handlePriceQuery(parsed.product ?? '', lang, channel);
     }
 
-    // Fall back to full handle() for anything else
     return this.handle(phone, text, channel);
   }
 
@@ -441,12 +409,10 @@ export class ListingFlowService implements OnModuleInit {
     availableAt?: string,
     messageLocation?: string,
   ): Promise<string> {
-    // displayName = what user sees (preserves French/Pidgin product names)
     const displayName = productDisplay || product;
     const smartEmoji = this.cropMedia.getEmoji(product);
     const smartUnit = unit || this.aiService.defaultUnitForProduct(product);
 
-    // ── No product → ask naturally what they're selling ───────
     if (!product) {
       const msgs: Record<Language, string> = {
         english: `What are you selling? (e.g. maize, cassava, tomatoes)`,
@@ -456,7 +422,6 @@ export class ListingFlowService implements OnModuleInit {
       return msgs[lang];
     }
 
-    // ── Product detected but NO quantity → ask for it naturally ──
     if (!quantity || quantity <= 0) {
       await this.setPendingState(phone, {
         type: 'sell',
@@ -479,16 +444,13 @@ export class ListingFlowService implements OnModuleInit {
 
     const user = await this.usersService.findByPhone(phone);
 
-    // Update role to farmer if not already set
     if ((user as any)?.role !== 'farmer') {
       this.usersService.update(phone, { role: 'farmer' }).catch(() => {});
     }
 
-    // If price provided in initial input, check if it fits market range — if so skip suggestion
     const effectivePrice = price ?? this.extractPriceFromText(text || '', quantity);
 
     if (effectivePrice && effectivePrice > 0) {
-      // Always accept the user's stated price — no need to re-ask
       await this.setPendingState(phone, {
         type: 'sell_waiting_image',
         product,
@@ -503,7 +465,6 @@ export class ListingFlowService implements OnModuleInit {
       return this.askForImage(lang);
     }
 
-    // Store pending state with language and display name
     await this.setPendingState(phone, {
       type: 'sell',
       product,
@@ -519,36 +480,15 @@ export class ListingFlowService implements OnModuleInit {
 
     if (!priceData) {
       const msgs: Record<Language, string> = {
-        english: `${smartEmoji} *Listing: ${this.cap(displayName)}*
-
-Qty: ${quantity} ${unit}
-
-💰 No market price available.
-Please enter your price.
-
-Example: 20000`,
-        french: `${smartEmoji} *Annonce: ${this.cap(displayName)}*
-
-Qté: ${quantity} ${unit}
-
-💰 Pas de prix disponible.
-Entrez votre prix.
-
-Exemple: 20000`,
-        pidgin: `${smartEmoji} *Listing: ${this.cap(displayName)}*
-
-Qty: ${quantity} ${unit}
-
-💰 No price data.
-Send your price.
-
-Example: 20000`,
+        english: `${smartEmoji} *Listing: ${this.cap(displayName)}*\n\nQty: ${quantity} ${unit}\n\nNo market price available.\nPlease enter your price.\n\nExample: 20000`,
+        french: `${smartEmoji} *Annonce: ${this.cap(displayName)}*\n\nQté: ${quantity} ${unit}\n\nPas de prix disponible.\nEntrez votre prix.\n\nExemple: 20000`,
+        pidgin: `${smartEmoji} *Listing: ${this.cap(displayName)}*\n\nQty: ${quantity} ${unit}\n\nNo price data.\nSend your price.\n\nExample: 20000`,
       };
       return msgs[lang];
     }
 
     return await this.aiService.reply('price_suggestion', lang, {
-      product: this.cap(displayName), // show "Manioc" not "Cassava" in French
+      product: this.cap(displayName),
       min: this.fmt(priceData.low),
       avg: this.fmt(priceData.avg),
       max: this.fmt(priceData.high),
@@ -560,7 +500,6 @@ Example: 20000`,
     return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
   }
 
-  // ─── Buy Intent ───────────────────────────────────────────
   private async handleBuyIntent(
     phone: string,
     product: string,
@@ -570,11 +509,10 @@ Example: 20000`,
     lang: Language,
     messageLocation?: string,
   ): Promise<string> {
-    // ── No product → ask naturally ─────────────────────────
     if (!product) {
       const msgs: Record<Language, string> = {
         english: `What are you looking to buy? (e.g. maize, tomatoes, cassava)`,
-        french: `Quels produits cherchez-vous ? (ex: maïs, tomates, manioc)`,
+        french: `Quels produits cherchez-vous ? (ex: maíz, tomates, manioc)`,
         pidgin: `Wetin you dey find? (e.g. maize, tomatoes, cassava)`,
       };
       return msgs[lang];
@@ -583,18 +521,13 @@ Example: 20000`,
     const user = await this.usersService.findByPhone(phone);
     if (!user) return this.aiService.reply('unknown_command', lang, {});
 
-    // Update role to buyer if not already set
     if ((user as any).role !== 'buyer') {
       this.usersService.update(phone, { role: 'buyer' }).catch(() => {});
     }
 
-    // ── No quantity → ask naturally (don't block the search) ──
-    // We proceed with quantity=0 and ask after showing results
     const effectiveQty = quantity > 0 ? quantity : 0;
     const smartUnit = unit || this.aiService.defaultUnitForProduct(product);
 
-    // ── Tiered fallback search ─────────────────────────────
-    // Use message location if provided (freshest), else fall back to profile
     const searchLocation = messageLocation || user.location || '';
     const { tier, listings: sellListings, fallbackProduct } =
       await this.listingService.findWithFallback(
@@ -603,7 +536,6 @@ Example: 20000`,
         normalizePhone(phone) ?? phone,
       );
 
-    // ── Tier 4: nothing anywhere → save request + guide forward ──
     if (tier === 4 || sellListings.length === 0) {
       const dto: CreateListingDto = {
         type: 'buy',
@@ -620,14 +552,13 @@ Example: 20000`,
       });
 
       const msgs: Record<Language, string> = {
-        english: `No farmers are currently selling *${this.cap(product)}* on Agrolink.\n\n✅ Your request is saved — we'll notify you the moment a farmer lists it.`,
-        french: `Aucun agriculteur ne vend *${this.cap(product)}* sur Agrolink actuellement.\n\n✅ Votre demande est enregistrée — nous vous notifierons dès qu'un agriculteur le listez.`,
-        pidgin: `No farmer dey sell *${this.cap(product)}* on Agrolink now.\n\n✅ We don save your request — we go tell you when farmer list am.`,
+        english: `No farmers are currently selling *${this.cap(product)}* on Agrolink.\n\nYour request is saved — we'll notify you the moment a farmer lists it.`,
+        french: `Aucun agriculteur ne vend *${this.cap(product)}* sur Agrolink actuellement.\n\nVotre demande est enregistrée — nous vous notifierons dès qu'un agriculteur le listez.`,
+        pidgin: `No farmer dey sell *${this.cap(product)}* on Agrolink now.\n\nWe don save your request — we go tell you when farmer list am.`,
       };
       return msgs[lang];
     }
 
-    // ── Tier 2/3: no local results — note the fallback transparently ──
     let fallbackNote = '';
     if (tier === 2) {
       const locationName = user.location && user.location !== 'unknown' ? user.location : null;
@@ -646,7 +577,6 @@ Example: 20000`,
         : `\n_No *${this.cap(product)}* available — showing *${this.cap(fallbackProduct)}* sellers (similar product):_\n`;
     }
 
-    // ── Listings found → show top 5 ───────────────────────
     const top = sellListings.slice(0, 5);
 
     await this.setPendingState(phone, {
@@ -669,23 +599,22 @@ Example: 20000`,
       })),
     });
 
-    // Build listing header — use fallbackProduct name when tier 3
     const displayProduct = tier === 3 && fallbackProduct ? fallbackProduct : product;
     const headers: Record<Language, string> = {
-      english: `🔍 *Found ${sellListings.length} farmer(s) with ${this.cap(displayProduct)}*\n\n`,
-      french: `🔍 *${sellListings.length} agriculteur(s) avec ${this.cap(displayProduct)}*\n\n`,
-      pidgin: `🔍 *${sellListings.length} farmer(s) get ${this.cap(displayProduct)}*\n\n`,
+      english: `Found ${sellListings.length} farmer(s) with ${this.cap(displayProduct)}\n\n`,
+      french: `${sellListings.length} agriculteur(s) avec ${this.cap(displayProduct)}\n\n`,
+      pidgin: `${sellListings.length} farmer(s) get ${this.cap(displayProduct)}\n\n`,
     };
 
     let message = fallbackNote + headers[lang];
 
     top.forEach((listing, i) => {
-      message += `${i + 1}️⃣ ${listing.userName}\n`;
-      message += `   📦 ${listing.quantity} ${listing.unit}\n`;
-      message += `   💰 ${this.fmt(listing.price || 0)}\n`;
-      message += `   📍 ${listing.userLocation}\n`;
+      message += `${i + 1} ${listing.userName}\n`;
+      message += `   ${listing.quantity} ${listing.unit}\n`;
+      message += `   ${this.fmt(listing.price || 0)}\n`;
+      message += `   ${listing.userLocation}\n`;
       if (listing.imageUrl || listing.imageMediaId) {
-        message += `   📷 Photo available\n`;
+        message += `   Photo available\n`;
       }
       message += `\n`;
     });
@@ -699,7 +628,6 @@ Example: 20000`,
 
     await this.metaSender.send(phone, message);
 
-    // Send images if any
     for (const listing of top) {
       if (listing.imageMediaId) {
         await this.metaSender.sendImageByMediaId(
@@ -719,7 +647,6 @@ Example: 20000`,
     return '';
   }
 
-  // ─── Buy with filters (@location #price) ────────────────
   private async handleBuyIntentWithFilters(
     phone: string,
     parsed: {
@@ -738,14 +665,13 @@ Example: 20000`,
 
     if (!user || user.conversationState !== 'REGISTERED') {
       const msgs: Record<Language, string> = {
-        english: `Say *Hi* to get started — registration only takes a minute! 👋`,
-        french: `Dites *Bonjour* pour commencer — l'inscription ne prend qu'une minute ! 👋`,
-        pidgin: `Say *Hi* make you register — e quick! 👋`,
+        english: `Say Hi to get started — registration only takes a minute!`,
+        french: `Dites Bonjour pour commencer — l'inscription ne prend qu'une minute !`,
+        pidgin: `Say Hi make you register — e quick!`,
       };
       return msgs[lang];
     }
 
-    // ── Fetch listings with filters ────────────────────────
     const allListings = await this.listingService.findByProduct(parsed.product);
     const normalizedQueryPhone = normalizePhone(phone);
     let sellListings = allListings.filter(
@@ -755,7 +681,6 @@ Example: 20000`,
         normalizePhone(l.userPhone) !== normalizedQueryPhone,
     );
 
-    // Apply location filter
     if (parsed.location) {
       const locLower = parsed.location.toLowerCase();
       sellListings = sellListings.filter((l) =>
@@ -763,7 +688,6 @@ Example: 20000`,
       );
     }
 
-    // Apply price filter
     if (parsed.minPrice) {
       sellListings = sellListings.filter(
         (l) => (l.price || 0) >= parsed.minPrice!,
@@ -775,20 +699,17 @@ Example: 20000`,
       );
     }
 
-    // ── Build filter summary to show user ─────────────────
     const filterSummary = this.filterParser.buildFilterSummary(parsed, lang);
 
-    // ── No results with filters ───────────────────────────
     if (sellListings.length === 0) {
       const msgs: Record<Language, string> = {
-        english: `🔍 No listings for *${this.cap(parsed.product)}* matching your filters:\n${filterSummary}\n\nWant me to search without the location or price filter?`,
-        french: `🔍 Aucune annonce pour *${this.cap(parsed.product)}* avec vos filtres:\n${filterSummary}\n\nVoulez-vous que je cherche sans le filtre de lieu ou de prix?`,
-        pidgin: `🔍 No listing for *${this.cap(parsed.product)}* with your filter:\n${filterSummary}\n\nYou want make I search without filter?`,
+        english: `No listings for *${this.cap(parsed.product)}* matching your filters:\n${filterSummary}\n\nWant me to search without the location or price filter?`,
+        french: `Aucune annonce pour *${this.cap(parsed.product)}* avec vos filtres:\n${filterSummary}\n\nVoulez-vous que je cherche sans le filtre de lieu ou de prix?`,
+        pidgin: `No listing for *${this.cap(parsed.product)}* with your filter:\n${filterSummary}\n\nYou want make I search without filter?`,
       };
       return msgs[lang];
     }
 
-    // ── Show filtered results ─────────────────────────────
     const top = sellListings.slice(0, 5);
 
     await this.setPendingState(phone, {
@@ -812,36 +733,21 @@ Example: 20000`,
     });
 
     const headers: Record<Language, string> = {
-      english: `🔍 *${sellListings.length} result(s) for ${this.cap(parsed.product)}*
-${filterSummary}
-
-`,
-      french: `🔍 *${sellListings.length} résultat(s) pour ${this.cap(parsed.product)}*
-${filterSummary}
-
-`,
-      pidgin: `🔍 *${sellListings.length} result(s) for ${this.cap(parsed.product)}*
-${filterSummary}
-
-`,
+      english: `${sellListings.length} result(s) for ${this.cap(parsed.product)}*\n${filterSummary}\n\n`,
+      french: `${sellListings.length} résultat(s) pour ${this.cap(parsed.product)}*\n${filterSummary}\n\n`,
+      pidgin: `${sellListings.length} result(s) for ${this.cap(parsed.product)}*\n${filterSummary}\n\n`,
     };
 
     let message = headers[lang];
 
     top.forEach((listing, i) => {
-      message += `${i + 1}️⃣ ${listing.userName}
-`;
-      message += `   📦 ${listing.quantity} ${listing.unit}
-`;
-      message += `   💰 ${this.fmt(listing.price || 0)}
-`;
-      message += `   📍 ${listing.userLocation}
-`;
+      message += `${i + 1} ${listing.userName}\n`;
+      message += `   ${listing.quantity} ${listing.unit}\n`;
+      message += `   ${this.fmt(listing.price || 0)}\n`;
+      message += `   ${listing.userLocation}\n`;
       if (listing.imageUrl || listing.imageMediaId)
-        message += `   📷 Photo available
-`;
-      message += `
-`;
+        message += `   Photo available\n`;
+      message += `\n`;
     });
 
     const footers: Record<Language, string> = {
@@ -871,7 +777,6 @@ ${filterSummary}
     return '';
   }
 
-  // ─── Price Query ──────────────────────────────────────────
   private async handlePriceQuery(
     product: string,
     lang: Language,
@@ -879,9 +784,9 @@ ${filterSummary}
   ): Promise<string> {
     if (!product) {
       const msgs: Record<Language, string> = {
-        english: `❓ Which product price are you checking? (e.g. maize, cassava, tomatoes)`,
-        french: `❓ Quel produit vous intéresse ? (ex : maïs, manioc, tomates)`,
-        pidgin: `❓ Which product price you wan check? (e.g. maize, cassava, tomatoes)`,
+        english: `Which product price are you checking? (e.g. maize, cassava, tomatoes)`,
+        french: `Quel produit vous interesse ? (ex : maïs, manioc, tomates)`,
+        pidgin: `Which product price you wan check? (e.g. maize, cassava, tomatoes)`,
       };
       return msgs[lang];
     }
@@ -890,7 +795,7 @@ ${filterSummary}
     if (!priceData) {
       const msgs: Record<Language, string> = {
         english: `I don't have current price data for ${this.cap(product)} yet. Check back soon — we're tracking markets daily.`,
-        french: `Je n'ai pas encore de données de prix pour ${this.cap(product)}. Revenez bientôt — nous suivons les marchés quotidiennement.`,
+        french: `Je n'ai pas encore de donnees de prix pour ${this.cap(product)}. Revenez vite — nous suivons les marchands quotidiennement.`,
         pidgin: `No price data for ${this.cap(product)} yet. Check back soon — we dey track market every day.`,
       };
       return msgs[lang];
@@ -905,11 +810,6 @@ ${filterSummary}
     });
   }
 
-  // ─── Detect natural-language cancellation or intent shift ───
-  // Returns 'cancel', 'sell', 'buy', or null.
-  // Pass pendingType to enable context-aware detection:
-  //   if in buy flow and "sell X" detected → return 'sell'
-  //   if in sell flow and "buy X" detected → return 'buy'
   private detectCancelOrShift(
     text: string,
     pendingType?: PendingState['type'],
@@ -920,8 +820,8 @@ ${filterSummary}
       'not interested', 'no longer', 'never mind', 'nevermind',
       'forget it', 'don\'t want', "don't want", 'changed my mind',
       'no thanks', 'no thank you', 'stop', 'quit', 'leave it',
-      'plus intéressé', 'laisse tomber', 'plus maintenant',
-      'je ne veux plus', 'ça ne m\'intéresse plus',
+      'plus interesse', 'laisse domestique', 'plus maintenant',
+      'je ne veux plus', 'ca ne m\'interesse plus',
       'i no wan', 'i don\'t want', 'abeg stop', 'no more',
       'cancel', 'annuler', 'not anymore', 'disregard',
     ];
@@ -939,9 +839,6 @@ ${filterSummary}
     ];
     if (buyShift.some((s) => lower.includes(s))) return 'buy';
 
-    // ── Context-aware: short "sell X" / "buy X" commands ────────────────
-    // Only trigger when user is actively in the opposite flow to avoid
-    // accidentally interpreting a price like "sell 5000" as an intent shift.
     const inBuyFlow = pendingType === 'buy_select' || pendingType === 'buy';
     const inSellFlow = pendingType === 'sell' || pendingType === 'sell_waiting_image';
 
@@ -951,7 +848,6 @@ ${filterSummary}
     return null;
   }
 
-  // ─── Handle pending state responses ──────────────────────
   private async handlePendingState(
     phone: string,
     response: string,
@@ -962,36 +858,30 @@ ${filterSummary}
     if (!pending)
       return await this.aiService.reply('unknown_command', lang, {});
 
-    // ── TTL check — discard expired state ───────────────────
     if (pending.expiresAt && pending.expiresAt < Date.now()) {
       await this.deletePendingState(phone);
       const expired: Record<Language, string> = {
         english: `Your previous listing session expired. Do you want to sell something or find something to buy?`,
-        french: `Votre session précédente a expiré. Voulez-vous vendre quelque chose ou acheter?`,
+        french: `Votre session precedente a expire. Voulez-vous vendre quelque chose ou acheter?`,
         pidgin: `Your last session don expire. You wan sell or you wan buy today?`,
       };
       return expired[lang];
     }
 
-    // Use saved language from pending state
     const savedLang = pending.language ?? lang;
 
-    // ── Natural-language cancel / intent-shift detection ────
-    // Intercept before rigid number/keyword routing so that
-    // "I'm no longer interested" doesn't get answered with "Pick a number".
     const shift = this.detectCancelOrShift(response, pending.type);
     if (shift === 'cancel' || response.toUpperCase() === 'CANCEL' || response.toUpperCase() === 'ANNULER') {
       await this.deletePendingState(phone);
       const msgs: Record<Language, string> = {
-        english: `No problem 👍 I've stopped that. Let me know if you want to sell something or find produce to buy.`,
-        french: `Pas de problème 👍 J'ai arrêté ça. Dites-moi si vous voulez vendre ou acheter quelque chose.`,
-        pidgin: `No problem 👍 I don stop am. Tell me if you wan sell or buy something.`,
+        english: `No problem I've stopped that. Let me know if you want to sell something or find produce to buy.`,
+        french: `Pas de probleme J'ai arrete ca. Dites-moi si vous voulez vendre ou acheter quelque chose.`,
+        pidgin: `No problem I don stop am. Tell me if you wan sell or buy something.`,
       };
       return msgs[savedLang];
     }
 
     if (shift === 'sell' || shift === 'buy') {
-      // Clear the old pending state and re-route as a fresh intent
       await this.deletePendingState(phone);
       return this.handle(phone, response, channel);
     }
@@ -1028,7 +918,6 @@ ${filterSummary}
     return await this.aiService.reply('unknown_command', savedLang, {});
   }
 
-  // ─── Buy pending: waiting for quantity ────────────
   private async handleBuyPending(
     phone: string,
     response: string,
@@ -1038,7 +927,6 @@ ${filterSummary}
   ): Promise<string> {
     const input = response.trim().toLowerCase();
 
-    // Extract number from natural language
     const numberMatch = response.match(/\d+/);
     const qty = numberMatch ? parseInt(numberMatch[0], 10) : 0;
 
@@ -1052,10 +940,8 @@ ${filterSummary}
       return msgs[lang];
     }
 
-    // Update with new quantity and proceed to search listings
     await this.setPendingState(phone, { ...pending, quantity: qty });
 
-    // Now search for listings
     const matchingListings = await this.listingService.findByProduct(pending.product);
     const normalizedQueryPhone = normalizePhone(phone);
     const sellListings = matchingListings.filter(
@@ -1083,9 +969,9 @@ ${filterSummary}
       await this.deletePendingState(phone);
 
       const msgs: Record<Language, string> = {
-        english: `🔍 No listings for ${this.cap(pending.product)} yet.\n\nYour request (${qty} ${pending.unit}) is saved.\nWe'll notify you when available.`,
-        french: `🔍 Aucune annonce pour ${this.cap(pending.product)}.\n\nVotre demande (${qty} ${pending.unit}) est enregistrée.`,
-        pidgin: `🔍 No ${this.cap(pending.product)} yet.\n\nWe save your request (${qty} ${pending.unit}).`,
+        english: `No listings for ${this.cap(pending.product)} yet.\n\nYour request (${qty} ${pending.unit}) is saved.\nWe'll notify you when available.`,
+        french: `Aucune annonce pour ${this.cap(pending.product)}.\n\nVotre demande (${qty} ${pending.unit}) est enregistree.`,
+        pidgin: `No ${this.cap(pending.product)} yet.\n\nWe save your request (${qty} ${pending.unit}).`,
       };
       return msgs[lang];
     }
@@ -1112,34 +998,33 @@ ${filterSummary}
     });
 
     const headers: Record<Language, string> = {
-      english: `🔍 *Found ${sellListings.length} farmer(s) with ${this.cap(pending.product)}*\n\n`,
-      french: `🔍 *${sellListings.length} agriculteur(s) avec ${this.cap(pending.product)}*\n\n`,
-      pidgin: `🔍 *${sellListings.length} farmer(s) get ${this.cap(pending.product)}*\n\n`,
+      english: `Found ${sellListings.length} farmer(s) with ${this.cap(pending.product)}\n\n`,
+      french: `${sellListings.length} agriculteur(s) avec ${this.cap(pending.product)}\n\n`,
+      pidgin: `${sellListings.length} farmer(s) get ${this.cap(pending.product)}\n\n`,
     };
 
     let message = headers[lang];
 
     top.forEach((listing, i) => {
-      message += `${i + 1}️⃣ ${listing.userName}\n`;
-      message += `   📦 ${listing.quantity} ${listing.unit}\n`;
-      message += `   💰 ${this.fmt(listing.price || 0)}\n`;
-      message += `   📍 ${listing.userLocation}\n`;
+      message += `${i + 1} ${listing.userName}\n`;
+      message += `   ${listing.quantity} ${listing.unit}\n`;
+      message += `   ${this.fmt(listing.price || 0)}\n`;
+      message += `   ${listing.userLocation}\n`;
       if (listing.imageUrl || listing.imageMediaId) {
-        message += `   📷 Photo available\n`;
+        message += `   Photo available\n`;
       }
       message += `\n`;
     });
 
     const footers: Record<Language, string> = {
       english: `Reply with number (1-${top.length}) to select.`,
-      french: `Répondez avec le numéro (1-${top.length}) pour choisir.`,
+      french: `Repondez avec le numero (1-${top.length}) pour choisir.`,
       pidgin: `Send number (1-${top.length}) to pick one.`,
     };
     message += footers[lang];
 
     await this.metaSender.send(phone, message);
 
-    // Send images
     for (const listing of top) {
       if (listing.imageMediaId) {
         await this.metaSender.sendImageByMediaId(phone, listing.imageMediaId, listing.product);
@@ -1151,7 +1036,6 @@ ${filterSummary}
     return '';
   }
 
-  // ─── Sell pending: waiting for quantity OR price ────────────
   private async handleSellPending(
     phone: string,
     response: string,
@@ -1161,19 +1045,14 @@ ${filterSummary}
   ): Promise<string> {
     const input = response.trim().toLowerCase();
 
-    // ── Quantity was missing → user is now sending it ──────
     if (pending.quantity === 0) {
-      // ── Extract number from natural language ──────────────
-      // Handles: "20", "I have 20 bags", "j'ai 20 sacs",
-      //          "about 20", "20 bags", "around 15 kg"
       const numberMatch = response.match(/\d+/);
       const qty = numberMatch ? parseInt(numberMatch[0], 10) : 0;
 
-      // Also detect if user specified a different unit in their reply
       const unitMatch = response
         .toLowerCase()
         .match(
-          /\b(bags?|sacs?|kg|kilogrammes?|tonnes?|crates?|cageots?|régimes?|bunches?|litres?|pieces?|pièces?)\b/,
+          /\b(bags?|sacs?|kg|kilogrammes?|tonnes?|crates?|cageots?|regimes?|bunches?|litres?|pieces?|pieces?)\b/,
         );
       if (unitMatch) {
         await this.setPendingState(phone, { ...pending, unit: unitMatch[0] });
@@ -1190,16 +1069,13 @@ ${filterSummary}
         return msgs[lang];
       }
 
-      // Check if user also included a price in the same reply (e.g. "30 bunches 5000")
       const allNumbers = (response.match(/\b\d[\d,]*\b/g) ?? []).map((n) =>
         parseInt(n.replace(/,/g, ''), 10),
       );
-      // If there are two or more numbers, the second (last) one is likely the price
       const inlinePrice =
         allNumbers.length >= 2 ? allNumbers[allNumbers.length - 1] : null;
 
       if (inlinePrice && inlinePrice > 0 && inlinePrice !== qty) {
-        // User gave qty + price in one message — skip the price suggestion
         await this.setPendingState(phone, {
           ...pending,
           quantity: qty,
@@ -1209,31 +1085,14 @@ ${filterSummary}
         return this.askForImage(lang);
       }
 
-      // Update pending state with the quantity only
       await this.setPendingState(phone, { ...pending, quantity: qty });
 
-      // Now fetch price data
       const priceData = await this.priceService.getPrice(pending.product);
       if (!priceData) {
         const msgs: Record<Language, string> = {
-          english: `📦 ${qty} bags of ${this.cap(pending.product)} noted.
-
-💰 No market price available.
-Please enter your price.
-
-Example: 20000`,
-          french: `📦 ${qty} sacs de ${this.cap(pending.product)} noté.
-
-💰 Pas de données de prix.
-Entrez votre prix.
-
-Exemple: 20000`,
-          pidgin: `📦 ${qty} bags ${this.cap(pending.product)} noted.
-
-💰 No price data.
-Send your price.
-
-Example: 20000`,
+          english: `${qty} bags of ${this.cap(pending.product)} noted.\n\nNo market price available.\nPlease enter your price.\n\nExample: 20000`,
+          french: `${qty} sacs de ${this.cap(pending.product)} note.\n\nPas de donnees de prix.\nEntrez votre prix.\n\nExemple: 20000`,
+          pidgin: `${qty} bags ${this.cap(pending.product)} noted.\n\nNo price data.\nSend your price.\n\nExample: 20000`,
         };
         return msgs[lang];
       }
@@ -1247,13 +1106,12 @@ Example: 20000`,
       });
     }
 
-    // Accept suggested price
     if (input === '1') {
       const priceData = await this.priceService.getPrice(pending.product);
       if (!priceData) {
         await this.deletePendingState(phone);
         return lang === 'french'
-          ? `Désolé, pas de prix de marché disponible pour ce produit. Quelle est votre prix?`
+          ? `Desole, pas prix de marche disponible pour ce produit. Quelle est votre prix?`
           : lang === 'pidgin'
           ? `Sorry, no market price dey for this product. Wetin you price?`
           : `Sorry, no market price is available for that product. What price would you like to set?`;
@@ -1266,17 +1124,15 @@ Example: 20000`,
       return this.askForImage(lang);
     }
 
-    // Custom price selected
     if (input === '2') {
       const msgs: Record<Language, string> = {
-        english: `💰 Enter your custom price.\n\nExample: 20000`,
-        french: `💰 Entrez votre prix.\n\nExemple: 20000`,
-        pidgin: `💰 Send your price.\n\nExample: 20000`,
+        english: `Enter your custom price.\n\nExample: 20000`,
+        french: `Entrez votre prix.\n\nExemple: 20000`,
+        pidgin: `Send your price.\n\nExample: 20000`,
       };
       return msgs[lang];
     }
 
-    // User typed an actual price number
     const customPrice = this.parsePrice(response);
     if (customPrice !== null) {
       await this.setPendingState(phone, {
@@ -1287,26 +1143,23 @@ Example: 20000`,
       return this.askForImage(lang);
     }
 
-    // Invalid
     const msgs: Record<Language, string> = {
-      english: `Just reply *1* to use the suggested price, or *2* to enter your own.`,
-      french: `Répondez *1* pour le prix suggéré ou *2* pour entrer le vôtre.`,
-      pidgin: `Send *1* for suggested price or *2* for your own price.`,
+      english: `Just reply 1 to use the suggested price, or 2 to enter your own.`,
+      french: `Repondez 1 pour le prix suggere ou 2 pour entrer le votre.`,
+      pidgin: `Send 1 for suggested price or 2 for your own price.`,
     };
     return msgs[lang];
   }
 
-  // ─── Ask user for image ───────────────────────────────────
   private askForImage(lang: Language): string {
     const msgs: Record<Language, string> = {
-      english: `📷 Would you like to add a photo?\n\nSend image now or reply SKIP.`,
-      french: `📷 Voulez-vous ajouter une photo?\n\nEnvoyez l'image ou tapez SAUTER.`,
-      pidgin: `📷 You want add photo?\n\nSend image now or reply SKIP.`,
+      english: `Would you like to add a photo?\n\nSend image now or reply SKIP.`,
+      french: `Voulez-vous ajouter une photo?\n\nEnvoyez l'image ou tapez SAUTER.`,
+      pidgin: `You want add photo?\n\nSend image now or reply SKIP.`,
     };
     return msgs[lang];
   }
 
-  // ─── Sell waiting for image ───────────────────────────────
   private async handleSellWaitingImage(
     phone: string,
     response: string,
@@ -1328,7 +1181,6 @@ Example: 20000`,
     return this.askForImage(lang);
   }
 
-  // ─── Create listing (final step) ─────────────────────────
   async createListingWithImage(
     phone: string,
     channel: 'sms' | 'whatsapp',
@@ -1363,17 +1215,14 @@ Example: 20000`,
         channel: user?.lastChannelUsed || 'whatsapp',
       });
 
-      // Tag this user as a seller now that they've confirmed a listing
       await this.usersService.update(phone, { role: 'farmer' }).catch(() => {});
 
       await this.deletePendingState(phone);
 
-      // ── Get correct emoji + real crop image ──────────────
       const { emoji, imageUrl: cropImageUrl } = await this.cropMedia.getMedia(
         listing.product,
       );
 
-      // Build confirmation message with correct emoji
       const productDisplay = (pending as any).productDisplay ?? listing.product;
       const confirmMsg = this.cropMedia.buildListingConfirmedMessage(
         listing.product,
@@ -1385,14 +1234,10 @@ Example: 20000`,
         emoji,
       );
 
-      // ── Soft location ask if user has no location yet ────────────
-      // We never blocked on this during onboarding — ask gently now,
-      // after the listing is confirmed, so buyers can find them.
       const noLocation =
         !user?.location || user.location === 'unknown';
 
       if (noLocation) {
-        // Set a pending state so the next message is captured as the user's location
         await this.setPendingState(phone, {
           type: 'awaiting_location',
           product: listing.product,
@@ -1407,7 +1252,6 @@ Example: 20000`,
 
       const locationNote = noLocation ? this.buildLocationAsk(savedLang) : '';
 
-      // If no farmer image was uploaded AND we got a crop image → send it
       if (
         !imageUrl &&
         !imageMediaId &&
@@ -1428,14 +1272,13 @@ Example: 20000`,
       await this.deletePendingState(phone);
       const msgs: Record<Language, string> = {
         english: `Something went wrong saving your listing. Could you try again?`,
-        french: `Une erreur est survenue lors de la sauvegarde. Pouvez-vous réessayer?`,
+        french: `Une erreur est survenue lors de la sauvegarde. Pouvez-vous reessayer?`,
         pidgin: `Something no go well when saving. You fit try again?`,
       };
       return msgs[savedLang];
     }
   }
 
-  // ─── Buy select: user picks a farmer ─────────────────────
   private async handleBuySelect(
     phone: string,
     response: string,
@@ -1447,8 +1290,6 @@ Example: 20000`,
     const count = pending.listings?.length || 0;
 
     if (isNaN(selection) || selection < 1 || selection > count) {
-      // If the response looks like a question or statement, acknowledge it
-      // rather than blindly repeating the prompt.
       const lower = response.toLowerCase().trim();
       const isQuestion = lower.endsWith('?') || lower.startsWith('what') ||
         lower.startsWith('who') || lower.startsWith('how') ||
@@ -1457,18 +1298,17 @@ Example: 20000`,
 
       if (isQuestion) {
         const msgs: Record<Language, string> = {
-          english: `Happy to help! Each farmer listed above has their price and location. Just send the number (1–${count}) of the one you'd like to contact.`,
-          french: `Avec plaisir ! Chaque agriculteur ci-dessus a son prix et sa localisation. Envoyez le numéro (1–${count}) de celui que vous souhaitez contacter.`,
-          pidgin: `No wahala! Each farmer up there get price and location. Send number (1–${count}) of di one you want.`,
+          english: `Happy to help! Each farmer listed above has their price and location. Just send the number (1-${count}) of the one you'd like to contact.`,
+          french: `Avec plaisir ! Chaque agriculteur ci-dessus a son prix et sa localisation. Envoyez le numero (1-${count}) de celui que vous souhaitez contacter.`,
+          pidgin: `No wahala! Each farmer up there get price and location. Send number (1-${count}) of di one you want.`,
         };
         return msgs[lang];
       }
 
-      // Non-numeric, non-question input — gentle re-prompt
       const msgs: Record<Language, string> = {
-        english: `Just send the number of the farmer you want — for example, *1* for the first one listed.`,
-        french: `Envoyez simplement le numéro de l'agriculteur que vous voulez — par exemple *1* pour le premier.`,
-        pidgin: `Just send di number of di farmer you want — like *1* for di first one.`,
+        english: `Just send the number of the farmer you want — for example, 1 for the first one listed.`,
+        french: `Envoyez simplement le numero de l'agriculteur que vous voulez — par exemple 1 pour le premier.`,
+        pidgin: `Just send di number of di farmer you want — like 1 for di first one.`,
       };
       return msgs[lang];
     }
@@ -1492,12 +1332,10 @@ Example: 20000`,
         channel: buyerUser?.lastChannelUsed || 'whatsapp',
       });
 
-      // Tag this user as a buyer now that they've confirmed a purchase request
       await this.usersService.update(phone, { role: 'buyer' }).catch(() => {});
 
       await this.deletePendingState(phone);
 
-      // Notify farmer in THEIR language
       const farmerUser = await this.usersService.findByPhone(
         selected.userPhone,
       );
@@ -1515,7 +1353,6 @@ Example: 20000`,
           language: farmerLang,
         });
 
-        // Notify farmer with counter-offer option
         const matchMsg = await this.aiService.reply(
           'match_found_farmer_counter',
           farmerLang,
@@ -1535,9 +1372,9 @@ Example: 20000`,
       }
 
       const msgs: Record<Language, string> = {
-        english: `🤝 Request sent to ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nWe'll notify you when they respond.`,
-        french: `🤝 Demande envoyée à ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nNous vous notifierons quand ils répondront.`,
-        pidgin: `🤝 We don send request to ${selected.farmerName}!\n\n📦 ${selected.quantity} ${pending.unit}\n💰 ${this.fmt(selected.price)}\n📍 ${selected.location}\n\nWe go tell you when dem reply.`,
+        english: `Request sent to ${selected.farmerName}!\n\n${selected.quantity} ${pending.unit}\n${this.fmt(selected.price)}\n${selected.location}\n\nWe'll notify you when they respond.`,
+        french: `Demande envoyee a ${selected.farmerName}!\n\n${selected.quantity} ${pending.unit}\n${this.fmt(selected.price)}\n${selected.location}\n\nNous vous notifierons quand ils repondront.`,
+        pidgin: `We don send request to ${selected.farmerName}!\n\n${selected.quantity} ${pending.unit}\n${this.fmt(selected.price)}\n${selected.location}\n\nWe go tell you when dem reply.`,
       };
       return msgs[lang];
     } catch {
@@ -1546,7 +1383,6 @@ Example: 20000`,
     }
   }
 
-  // ─── Farmer YES/NO/Counter response ──────────────────────
   async handleFarmerResponse(
     phone: string,
     response: string,
@@ -1565,51 +1401,46 @@ Example: 20000`,
       return msgs[lang];
     }
 
-    // ── TTL check ────────────────────────────────────────────
     if (pending.expiresAt && pending.expiresAt < Date.now()) {
       await this.deleteFarmerResponse(phone);
       const expired: Record<Language, string> = {
         english: `This buyer request has expired. Would you like to sell something or find produce to buy?`,
-        french: `Cette demande a expiré. Voulez-vous vendre ou acheter quelque chose?`,
+        french: `Cette demande a expire. Voulez-vous vendre ou acheter quelque chose?`,
         pidgin: `Dis buyer request don expire. You wan sell or buy something?`,
       };
       return expired[lang];
     }
 
-    // ── Farmer is typing their counter-offer price ────────────
     if (pending.awaitingCounterPrice) {
       return this.handleFarmerCounterPrice(phone, response, pending, lang);
     }
 
-    // ── Natural-language cancel / disinterest ─────────────────
     const shift = this.detectCancelOrShift(response);
     if (shift === 'cancel') {
       await this.deleteFarmerResponse(phone);
       const msgs: Record<Language, string> = {
-        english: `No problem 👍 I've dropped that request. Let me know whenever you're ready to continue.`,
-        french: `Pas de problème 👍 J'ai annulé cette demande. Faites-moi signe quand vous serez prêt.`,
-        pidgin: `No problem 👍 I don cancel am. Tell me when you ready.`,
+        english: `No problem I've dropped that request. Let me know whenever you're ready to continue.`,
+        french: `Pas de probleme J'ai annule cette demande. Faites-moi signe quand vous serez pret.`,
+        pidgin: `No problem I don cancel am. Tell me when you ready.`,
       };
       return msgs[lang];
     }
 
     const input = response.trim().toUpperCase();
 
-    // ── Farmer chose option 2 → counter-offer ─────────────────
     if (input === '2') {
       await this.setFarmerResponse(phone, {
         ...pending,
         awaitingCounterPrice: true,
       });
       const ask: Record<Language, string> = {
-        english: `💰 What price do you want to offer? (Enter a number)\n\nExample: 17000`,
-        french: `💰 Quel prix voulez-vous proposer? (Entrez un nombre)\n\nExemple: 17000`,
-        pidgin: `💰 Wetin price you wan offer? (Send number)\n\nExample: 17000`,
+        english: `What price do you want to offer? (Enter a number)\n\nExample: 17000`,
+        french: `Quel prix voulez-vous proposer? (Entrez un nombre)\n\nExemple: 17000`,
+        pidgin: `Wetin price you wan offer? (Send number)\n\nExample: 17000`,
       };
       return ask[lang];
     }
 
-    // ── Farmer chose option 3 → decline ───────────────────────
     if (
       input === '3' ||
       input === 'NO' ||
@@ -1619,12 +1450,10 @@ Example: 20000`,
       return this.processFarmerDecline(phone, pending, user, lang);
     }
 
-    // ── Farmer chose option 1 or YES → accept ────────────────
     const buyer = await this.usersService.findByPhone(pending.buyerPhone);
     const buyerLang: Language = (buyer as any)?.language ?? 'english';
     await this.deleteFarmerResponse(phone);
 
-    // Use AI to detect YES regardless of language (for natural "yes" replies)
     const parsed = await this.aiService.parseIntent(response);
     const accepted = input === '1' || parsed.intent === 'yes';
 
@@ -1635,7 +1464,6 @@ Example: 20000`,
       await this.listingService.update(pending.buyerListingId, {
         status: 'matched',
       });
-      // Notify buyer with wa.me link in THEIR language
       if (buyer?.phone) {
         const connectedMsgBuyer = await this.aiService.reply(
           'connected',
@@ -1660,11 +1488,9 @@ Example: 20000`,
       });
     }
 
-    // Farmer said NO (fallback for natural language rejections)
     return this.processFarmerDecline(phone, pending, user, lang);
   }
 
-  // ─── Farmer enters their counter-offer price ──────────────
   private async handleFarmerCounterPrice(
     phone: string,
     response: string,
@@ -1682,14 +1508,12 @@ Example: 20000`,
       return ask[lang];
     }
 
-    // Clear farmer's pending response — counter sent
     await this.deleteFarmerResponse(phone);
 
     const buyer = await this.usersService.findByPhone(pending.buyerPhone);
     const buyerLang: Language = (buyer as any)?.language ?? 'english';
     const farmerUser = await this.usersService.findByPhone(phone);
 
-    // Store counter-offer state on buyer side
     if (buyer?.phone) {
       await this.setPendingState(buyer.phone, {
         type: 'awaiting_counter_response',
@@ -1723,15 +1547,13 @@ Example: 20000`,
     }
 
     const sent: Record<Language, string> = {
-      english: `✅ Counter-offer of ${this.fmt(counterPrice)} sent to the buyer.\n\nWaiting for their response...`,
-      french: `✅ Contre-offre de ${this.fmt(counterPrice)} envoyée à l'acheteur.\n\nEn attente de sa réponse...`,
-      pidgin: `✅ Counter-offer of ${this.fmt(counterPrice)} don go to buyer.\n\nWe dey wait dem reply...`,
+      english: `Counter-offer of ${this.fmt(counterPrice)} sent to the buyer.\n\nWaiting for their response...`,
+      french: `Contre-offre de ${this.fmt(counterPrice)} envoyee a l'acheteur.\n\nEn attente de sa reponse...`,
+      pidgin: `Counter-offer of ${this.fmt(counterPrice)} don go to buyer.\n\nWe dey wait dem reply...`,
     };
     return sent[lang];
   }
 
-  // ─── Buyer responds to counter-offer (YES/NO) ─────────────
-  // Called from handlePendingState when type === 'awaiting_counter_response'
   private async handleBuyerCounterResponse(
     phone: string,
     response: string,
@@ -1769,7 +1591,6 @@ Example: 20000`,
     if (accepted) {
       const agreedPrice = pending.counterPrice!;
 
-      // Notify farmer — deal done
       if (farmer?.phone) {
         const farmerMsg = await this.aiService.reply('connected', farmerLang, {
           link: `https://wa.me/${phone}`,
@@ -1790,25 +1611,23 @@ Example: 20000`,
       });
     }
 
-    // Buyer declined counter-offer
     if (farmer?.phone) {
       const declinedMsgs: Record<Language, string> = {
-        english: `😔 The buyer declined your counter-offer for ${pending.product}. Would you like to try a different price next time?`,
-        french: `😔 L'acheteur a refusé votre contre-offre pour ${pending.product}. Voulez-vous essayer un autre prix?`,
-        pidgin: `😔 Buyer no accept your counter for ${pending.product}. You want try different price?`,
+        english: `The buyer declined your counter-offer for ${pending.product}. Would you like to try a different price next time?`,
+        french: `L'acheteur a refuse votre contre-offre pour ${pending.product}. Voulez-vous essayer un autre prix?`,
+        pidgin: `Buyer no accept your counter for ${pending.product}. You want try different price?`,
       };
       await this.metaSender.send(farmer.phone, declinedMsgs[farmerLang]);
     }
 
     const declined_msgs: Record<Language, string> = {
       english: `No problem — counter-offer declined. The farmer has been notified. Would you like to look for another farmer?`,
-      french: `Très bien — contre-offre refusée. L'agriculteur a été notifié. Voulez-vous chercher un autre agriculteur?`,
+      french: `Tres bien — contre-offre refusee. L'agriculteur a ete notifie. Voulez-vous chercher un autre agriculteur?`,
       pidgin: `Okay — you don decline counter. Farmer don hear. You want find another farmer?`,
     };
     return declined_msgs[lang];
   }
 
-  // ─── Helper: process farmer declining a buy request ───────
   private async processFarmerDecline(
     phone: string,
     pending: PendingFarmerResponse,
@@ -1821,22 +1640,21 @@ Example: 20000`,
 
     if (buyer?.phone) {
       const rejMsgs: Record<Language, string> = {
-        english: `😔 ${user?.name || 'The farmer'} couldn't fulfill your request for ${pending.product}. Would you like to look for another farmer?`,
-        french: `😔 ${user?.name || "L'agriculteur"} n'a pas pu répondre à votre demande de ${pending.product}. Voulez-vous chercher un autre agriculteur?`,
-        pidgin: `😔 ${user?.name || 'Farmer'} no fit do your ${pending.product} request. You want find another farmer?`,
+        english: `${user?.name || 'The farmer'} couldn't fulfill your request for ${pending.product}. Would you like to look for another farmer?`,
+        french: `${user?.name || "L'agriculteur"} n'a pas pu repondre a votre demande de ${pending.product}. Voulez-vous chercher un autre agriculteur?`,
+        pidgin: `${user?.name || 'Farmer'} no fit do your ${pending.product} request. You want find another farmer?`,
       };
       await this.metaSender.send(buyer.phone, rejMsgs[buyerLang]);
     }
 
     const declinedMsgs: Record<Language, string> = {
       english: `Okay, declined. The buyer has been notified.`,
-      french: `D'accord, refusé. L'acheteur a été notifié.`,
+      french: `D'accord, refuse. L'acheteur a ete notifie.`,
       pidgin: `Okay, you don decline. Buyer don hear.`,
     };
     return declinedMsgs[lang];
   }
 
-  // ─── Offer command ────────────────────────────────────────
   private async handleOfferCommand(
     phone: string,
     command: string,
@@ -1850,7 +1668,7 @@ Example: 20000`,
     if (!offerAmount || !listingId) {
       const msgs: Record<Language, string> = {
         english: `I need both a price and a listing ID to place an offer. Could you share those details?`,
-        french: `J'ai besoin d'un prix et d'un ID d'annonce pour faire une offre. Pouvez-vous partager ces détails?`,
+        french: `J'ai besoin d'un prix et d'un ID d'annonce pour faire une offre. Pouvez-vous partager ces details?`,
         pidgin: `I need price and listing ID to send offer. You fit share those?`,
       };
       return msgs[lang];
@@ -1873,28 +1691,27 @@ Example: 20000`,
     const buyer = await this.usersService.findByPhone(phone);
     if (!buyer || buyer.conversationState !== 'REGISTERED') {
       const msgs: Record<Language, string> = {
-        english: `Say *Hi* to get started — registration only takes a minute! 👋`,
-        french: `Dites *Bonjour* pour commencer — l'inscription ne prend qu'une minute ! 👋`,
-        pidgin: `Say *Hi* make you register — e quick! 👋`,
+        english: `Say Hi to get started — registration only takes a minute!`,
+        french: `Dites Bonjour pour commencer — l'inscription ne prend qu'une minute !`,
+        pidgin: `Say Hi make you register — e quick!`,
       };
       return msgs[lang];
     }
 
     const msgs: Record<Language, string> = {
-      english: `💰 Offer of ${this.fmt(offerAmount)} sent for ${targetListing.product}!\n\nFarmer will respond shortly.`,
-      french: `💰 Offre de ${this.fmt(offerAmount)} envoyée pour ${targetListing.product}!\n\nL'agriculteur répondra bientôt.`,
-      pidgin: `💰 Offer of ${this.fmt(offerAmount)} don go for ${targetListing.product}!\n\nFarmer go reply soon.`,
+      english: `Offer of ${this.fmt(offerAmount)} sent for ${targetListing.product}!\n\nFarmer will respond shortly.`,
+      french: `Offre de ${this.fmt(offerAmount)} envoyee pour ${targetListing.product}!\n\nL'agriculteur repondra bientot.`,
+      pidgin: `Offer of ${this.fmt(offerAmount)} don go for ${targetListing.product}!\n\nFarmer go reply soon.`,
     };
     return msgs[lang];
   }
 
-  // ─── Helpers ──────────────────────────────────────────────
   isInPendingState(phone: string): boolean {
     return pendingStates.has(phone);
   }
   isInPriceState(phone: string): boolean {
     return pendingStates.has(phone);
-  } // alias used by BotService
+  }
   isInImageState(phone: string): boolean {
     return pendingStates.get(phone)?.type === 'sell_waiting_image';
   }
@@ -1924,16 +1741,14 @@ Example: 20000`,
     );
   }
 
-  // ─── Soft location ask appended after a listing is confirmed ─────
-  // One gentle sentence — never blocking. User can just ignore it.
   private buildLocationAsk(lang: Language): string {
     if (lang === 'french') {
-      return `\n\n📍 _Dans quelle ville ou zone vous trouvez-vous ? Ça aidera les acheteurs proches à vous trouver plus facilement._`;
+      return `\n\nDans quelle ville ou zone vous trouvez-vous ? Catera les acheteurs proches a vous trouver plus facilement.`;
     }
     if (lang === 'pidgin') {
-      return `\n\n📍 _Which town or area you dey? E go help buyers near you find your listing faster._`;
+      return `\n\nWhich town or area you dey? E go help buyers near you find your listing faster.`;
     }
-    return `\n\n📍 _Which town or area are you in? It'll help nearby buyers find your listing faster._`;
+    return `\n\nWhich town or area are you in? It'll help nearby buyers find your listing faster.`;
   }
 
   private normalizeCommand(text: string): string {
@@ -1972,32 +1787,22 @@ Example: 20000`,
   }
 
   private parsePrice(text: string): number | null {
-    // Find all standalone numbers (handles "20,000", "20000")
     const matches = text?.match(/\b\d[\d,]*\b/g) ?? [];
     if (matches.length === 0) return null;
-    // For single-token price replies ("20000", "20,000"), parse directly
     const last = parseInt(matches[matches.length - 1].replace(/,/g, ''), 10);
     return isNaN(last) || last <= 0 ? null : last;
   }
 
-  /**
-   * Extract a price from a mixed text that may contain quantity AND price.
-   * e.g. "30 bunches 5000" → 5000 (last distinct number from qty)
-   * e.g. "sell banana 30 bags 15000" → 15000
-   * Returns null if only one number is present (likely just qty, not price).
-   */
   private extractPriceFromText(text: string, qty: number): number | null {
     const matches = text?.match(/\b\d[\d,]*\b/g) ?? [];
-    if (matches.length < 2) return null; // only one number → no separate price
+    if (matches.length < 2) return null;
     const allNums = matches.map((m) => parseInt(m.replace(/,/g, ''), 10)).filter((n) => !isNaN(n) && n > 0);
-    // Find the last number that is different from the qty (price is usually the last distinct value)
     for (let i = allNums.length - 1; i >= 0; i--) {
       if (allNums[i] !== qty) return allNums[i];
     }
     return null;
   }
 
-  // ─── Handle awaiting_location pending state ───────────────
   private async handleAwaitingLocation(
     phone: string,
     response: string,
@@ -2006,25 +1811,23 @@ Example: 20000`,
   ): Promise<string> {
     const location = response.trim();
 
-    // Ignore very short or clearly non-location inputs
     if (location.length < 2) {
       await this.deletePendingState(phone);
       return '';
     }
 
-    // Save the location and clear pending state
     await this.usersService.update(phone, { location }).catch(() => {});
     await this.deletePendingState(phone);
 
     const msgs: Record<Language, string> = {
-      english: `📍 Got it! Your location is set to *${location}*. Nearby buyers can now find your listing faster.`,
-      french: `📍 Compris ! Votre localisation est définie sur *${location}*. Les acheteurs proches vont vous trouver plus facilement.`,
-      pidgin: `📍 Okay! We don set your location as *${location}*. Buyers near you go fit find your listing faster.`,
+      english: `Got it! Your location is set to ${location}. Nearby buyers can now find your listing faster.`,
+      french: `Compris ! Votre localisation est definie sur ${location}. Les acheteurs proches vont vous trouver plus facilement.`,
+      pidgin: `Okay! We don set your location as ${location}. Buyers near you go fit find your listing faster.`,
     };
     return msgs[lang];
   }
 
   private fmt(price: number): string {
-    return price?.toLocaleString() + ' FCFA';
+    return price?.toLocaleString() + ' XAF';
   }
 }

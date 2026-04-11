@@ -170,45 +170,6 @@ npm run test:e2e
 
 ---
 
-## 📁 Project Structure
-
-```
-src/
-├── main.ts                 # Application entry point
-├── app.module.ts          # Root application module
-├── app.controller.ts      # Root controller
-├── app.service.ts         # Root service
-├── auth/                  # Authentication module
-│   ├── auth.controller.ts
-│   ├── auth.service.ts
-│   ├── auth.module.ts
-│   ├── strategies/
-│   │   └── jwt.strategy.ts
-│   └── guards/
-│       └── jwt-auth.guard.ts
-├── products/              # Products module
-│   ├── products.controller.ts
-│   ├── products.service.ts
-│   ├── products.module.ts
-│   ├── dto/
-│   └── schemas/
-│       └── product.schema.ts
-├── orders/               # Orders module
-│   ├── orders.controller.ts
-│   ├── orders.service.ts
-│   ├── orders.module.ts
-│   └── schemas/
-│       └── order.schema.ts
-├── webhook/              # WhatsApp webhook module
-│   ├── webhook.controller.ts
-│   └── webhook.service.ts
-└── common/               # Shared utilities
-    ├── decorators/
-    ├── filters/
-    ├── interceptors/
-    └── utils/
-```
-
 ---
 
 ## 🔧 Available Scripts
