@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Listing, ListingDocument } from '../common/schemas/listing.schema';
 import { CreateListingDto, UpdateListingDto } from './dto';
 import { EventBusService } from '../common/event-bus.service';
+import { normalizePhone } from '../common/format.util';
 
 @Injectable()
 export class ListingService {
@@ -204,12 +205,16 @@ export class ListingService {
     listings: ListingDocument[];
     fallbackProduct?: string;
   }> {
+    // Normalize both sides — WhatsApp delivers phones as "237XXX" but
+    // normalizePhone() returns "+237XXX". Raw string comparison would
+    // never match, so the user's own listings would always slip through.
+    const normalizedExclude = normalizePhone(excludePhone) ?? excludePhone;
     const ownFilter = (docs: ListingDocument[]) =>
       docs.filter(
         (l) =>
           l.type === 'sell' &&
           l.status === 'active' &&
-          l.userPhone !== excludePhone,
+          normalizePhone(l.userPhone) !== normalizedExclude,
       );
 
     // Tier 1 — exact + location

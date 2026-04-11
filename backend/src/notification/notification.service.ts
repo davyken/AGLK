@@ -30,7 +30,8 @@ export class NotificationService {
 
       if (!listing) return;
 
-      const matches = await this.matchingService.findMatches(listing, 5);
+      // Pass the listing owner's phone so they are never matched against their own listings
+      const matches = await this.matchingService.findMatches(listing, 5, listing.userPhone);
 
       if (matches.length === 0) return;
 

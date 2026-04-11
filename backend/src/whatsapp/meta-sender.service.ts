@@ -74,7 +74,7 @@ export class MetaSenderService {
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
     const payload = {
-      messaging_product: 'whatsapp',
+      messaging_product: 'whatsapp  ',
       to,
       type: 'interactive',
       interactive,
@@ -171,7 +171,7 @@ export class MetaSenderService {
    * Marks an incoming message as read — shows double blue checkmarks to the user.
    * Call this immediately after receiving a message, before processing.
    */
-  async markAsRead(to: string, messageId: string): Promise<void> {
+  async markAsRead(messageId: string): Promise<void> {
     const phoneNumberId = this.config.get<string>('META_PHONE_NUMBER_ID');
     const accessToken = this.config.get<string>('META_ACCESS_TOKEN');
     const apiVersion = this.config.get<string>('META_API_VERSION') || 'v19.0';
@@ -192,6 +192,41 @@ export class MetaSenderService {
       });
     } catch {
       // Non-critical — don't log noise for read receipts
+    }
+  }
+
+  /**
+   * Shows the "typing…" bubble in the user's WhatsApp chat while the bot is processing.
+   * Call this right after markAsRead and before the async processing work begins.
+   * Fire-and-forget — never await in the hot path.
+   *
+   * WhatsApp Cloud API typing indicator (POST /{phone-number-id}/messages):
+   *   { messaging_product, to, status: "typing" }
+   *
+   * Key difference from markAsRead: typing is signalled TO a recipient phone number,
+   * not by referencing a specific message_id.
+   */
+  async sendTypingIndicator(to: string): Promise<void> {
+    const phoneNumberId = this.config.get<string>('META_PHONE_NUMBER_ID');
+    const accessToken = this.config.get<string>('META_ACCESS_TOKEN');
+    const apiVersion = this.config.get<string>('META_API_VERSION') || 'v19.0';
+    const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
+
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to,
+          status: 'typing',
+        }),
+      });
+    } catch {
+      // Non-critical — typing indicator is cosmetic
     }
   }
 
