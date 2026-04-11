@@ -2,13 +2,12 @@
  * mock-db/store.ts
  *
  * In-memory marketplace store for Agrolink.
- * Simulates MongoDB collections with seeded Cameroonian crop/region data.
- * Used by dbOperationsTool — no LLM, pure CRUD logic.
+ * All dates are stored and returned as ISO strings for VoltAgent compatibility.
  */
 
 import { randomUUID } from 'crypto';
 
-// ─── Domain types ─────────────────────────────────────────────────────────────
+// ─── Domain types ──────────────────────────────────────────────────────────────
 
 export type ListingType = 'sell' | 'buy';
 export type ListingStatus = 'active' | 'matched' | 'completed' | 'cancelled';
@@ -31,34 +30,23 @@ export interface Listing {
   userName: string;
   freshness?: string;
   notes?: string;
-  createdAt: Date;
-  expiresAt: Date;
+  createdAt: string; // ISO string — VoltAgent-safe
+  expiresAt: string; // ISO string — VoltAgent-safe
 }
 
 export interface Order {
   id: string;
-  status: OrderStatus;
+  listingId: string;
   buyerPhone: string;
   farmerPhone: string;
-  listingId: string;
   crop: string;
   quantity: number;
   unit: string;
-  agreedPriceXaf: number;
-  location: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface PriceRecord {
-  id: string;
-  crop: string;
-  cropNormalized: string;
-  region: string;
-  priceXaf: number;
-  unit: string;
-  recordedAt: Date;
-  source: string;
+  totalXaf: number;
+  status: OrderStatus;
+  notes?: string;
+  createdAt: string; // ISO string
+  updatedAt: string; // ISO string
 }
 
 export interface FarmerProfile {
@@ -68,7 +56,18 @@ export interface FarmerProfile {
   cropsGrown: string[];
   role: UserRole;
   language: Language;
-  registeredAt: Date;
+  registeredAt: string; // ISO string
+}
+
+export interface PriceRecord {
+  id: string;
+  crop: string;
+  cropNormalized: string;
+  region: string;
+  priceXaf: number;
+  unit: string;
+  recordedAt: string; // ISO string
+  source: 'listing' | 'market';
 }
 
 export interface PipelineConversationState {
@@ -78,22 +77,23 @@ export interface PipelineConversationState {
   pendingFlow: string | null;
   partialData: Record<string, unknown>;
   userLanguage: Language;
-  userName?: string;
-  userRegion?: string;
 }
 
-// ─── In-memory collections ────────────────────────────────────────────────────
+// ─── In-memory collections ─────────────────────────────────────────────────────
 
 const listings = new Map<string, Listing>();
 const orders = new Map<string, Order>();
-const priceHistory: PriceRecord[] = [];
 const farmers = new Map<string, FarmerProfile>();
+const priceHistory: PriceRecord[] = [];
 const conversationStates = new Map<string, PipelineConversationState>();
 
-// ─── Seed data ────────────────────────────────────────────────────────────────
+// ─── Seed data ─────────────────────────────────────────────────────────────────
 
 function seedData(): void {
-  // ── Farmer profiles ──────────────────────────────────────────────────────
+  const now = new Date();
+  const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  // ── Farmer profiles ──────────────────────────────────────────────────────────
   const seedFarmers: FarmerProfile[] = [
     {
       phone: '+237671000001',
@@ -102,7 +102,7 @@ function seedData(): void {
       cropsGrown: ['maize', 'cassava', 'cocoyam'],
       role: 'farmer',
       language: 'fr',
-      registeredAt: new Date('2024-01-10'),
+      registeredAt: new Date('2024-01-10').toISOString(),
     },
     {
       phone: '+237691000002',
@@ -111,7 +111,7 @@ function seedData(): void {
       cropsGrown: ['tomatoes', 'njama njama', 'eru'],
       role: 'farmer',
       language: 'pidgin',
-      registeredAt: new Date('2024-02-05'),
+      registeredAt: new Date('2024-02-05').toISOString(),
     },
     {
       phone: '+237681000003',
@@ -120,7 +120,7 @@ function seedData(): void {
       cropsGrown: ['plantain', 'palm oil', 'cassava'],
       role: 'both',
       language: 'fr',
-      registeredAt: new Date('2024-03-15'),
+      registeredAt: new Date('2024-03-15').toISOString(),
     },
     {
       phone: '+237671000004',
@@ -129,7 +129,7 @@ function seedData(): void {
       cropsGrown: ['egusi', 'mbongo', 'okok'],
       role: 'farmer',
       language: 'fr',
-      registeredAt: new Date('2024-04-01'),
+      registeredAt: new Date('2024-04-01').toISOString(),
     },
     {
       phone: '+237691000005',
@@ -138,15 +138,13 @@ function seedData(): void {
       cropsGrown: ['cocoyam', 'eru', 'kpem'],
       role: 'buyer',
       language: 'en',
-      registeredAt: new Date('2024-04-20'),
+      registeredAt: new Date('2024-04-20').toISOString(),
     },
   ];
   seedFarmers.forEach((f) => farmers.set(f.phone, f));
 
-  // ── Listings ──────────────────────────────────────────────────────────────
-  const now = new Date();
-  const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-
+  // ── Listings ─────────────────────────────────────────────────────────────────
+  // FIX: All dates stored as ISO strings to match the Listing interface.
   const seedListings: Listing[] = [
     {
       id: 'lst_001',
@@ -162,8 +160,8 @@ function seedData(): void {
       userPhone: '+237671000001',
       userName: 'Jean-Pierre Nkeng',
       freshness: 'freshly harvested',
-      createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
-      expiresAt: in30Days,
+      createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: in30Days.toISOString(),
     },
     {
       id: 'lst_002',
@@ -179,8 +177,8 @@ function seedData(): void {
       userPhone: '+237691000002',
       userName: 'Mary Tabi',
       freshness: 'harvested 3 days ago',
-      createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000),
-      expiresAt: in30Days,
+      createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: in30Days.toISOString(),
     },
     {
       id: 'lst_003',
@@ -195,8 +193,8 @@ function seedData(): void {
       region: 'Centre',
       userPhone: '+237681000003',
       userName: 'Emmanuel Mbarga',
-      createdAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
-      expiresAt: in30Days,
+      createdAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: in30Days.toISOString(),
     },
     {
       id: 'lst_004',
@@ -211,8 +209,8 @@ function seedData(): void {
       region: 'Littoral',
       userPhone: '+237691000005',
       userName: 'Paul Biya Nde',
-      createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000),
-      expiresAt: in30Days,
+      createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: in30Days.toISOString(),
     },
     {
       id: 'lst_005',
@@ -227,34 +225,174 @@ function seedData(): void {
       region: 'Littoral',
       userPhone: '+237671000004',
       userName: 'Agnes Fonkam',
-      createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000),
-      expiresAt: in30Days,
+      createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: in30Days.toISOString(),
+    },
+    // Extra listings from the first seed block (merged & deduplicated)
+    {
+      id: 'lst_006',
+      type: 'sell',
+      status: 'active',
+      crop: 'maïs',
+      cropNormalized: 'maize',
+      quantity: 150,
+      unit: 'kg',
+      priceXaf: 270,
+      location: 'Yaoundé',
+      region: 'Centre',
+      userPhone: '+237681000001',
+      userName: 'Paul Yaoundé',
+      createdAt: now.toISOString(),
+      expiresAt: in30Days.toISOString(),
+    },
+    {
+      id: 'lst_007',
+      type: 'sell',
+      status: 'active',
+      crop: 'yam',
+      cropNormalized: 'yam',
+      quantity: 80,
+      unit: 'kg',
+      priceXaf: 400,
+      location: 'Bafoussam',
+      region: 'West',
+      userPhone: '+237691000006',
+      userName: 'Marie Yam',
+      createdAt: now.toISOString(),
+      expiresAt: in30Days.toISOString(),
+    },
+    {
+      id: 'lst_008',
+      type: 'sell',
+      status: 'active',
+      crop: 'njama njama',
+      cropNormalized: 'njama njama',
+      quantity: 20,
+      unit: 'bundle',
+      priceXaf: 500,
+      location: 'Bamenda',
+      region: 'Northwest',
+      userPhone: '+237691000008',
+      userName: 'Grace Greens',
+      createdAt: now.toISOString(),
+      expiresAt: in30Days.toISOString(),
+    },
+    {
+      id: 'lst_009',
+      type: 'sell',
+      status: 'active',
+      crop: 'groundnuts',
+      cropNormalized: 'groundnuts',
+      quantity: 100,
+      unit: 'kg',
+      priceXaf: 600,
+      location: 'Garoua',
+      region: 'North',
+      userPhone: '+237661000009',
+      userName: 'Ahmadou Nuts',
+      createdAt: now.toISOString(),
+      expiresAt: in30Days.toISOString(),
+    },
+    {
+      id: 'lst_010',
+      type: 'sell',
+      status: 'active',
+      crop: 'sorghum',
+      cropNormalized: 'sorghum',
+      quantity: 300,
+      unit: 'kg',
+      priceXaf: 200,
+      location: 'Maroua',
+      region: 'Far North',
+      userPhone: '+237661000010',
+      userName: 'Fatima Sorghum',
+      createdAt: now.toISOString(),
+      expiresAt: in30Days.toISOString(),
+    },
+    {
+      id: 'lst_011',
+      type: 'sell',
+      status: 'active',
+      crop: 'onions',
+      cropNormalized: 'onions',
+      quantity: 100,
+      unit: 'kg',
+      priceXaf: 800,
+      location: 'Maroua',
+      region: 'Far North',
+      userPhone: '+237661000011',
+      userName: 'Hassan Onions',
+      createdAt: now.toISOString(),
+      expiresAt: in30Days.toISOString(),
+    },
+    {
+      id: 'lst_012',
+      type: 'sell',
+      status: 'active',
+      crop: 'millet',
+      cropNormalized: 'millet',
+      quantity: 400,
+      unit: 'kg',
+      priceXaf: 300,
+      location: 'Ngaoundéré',
+      region: 'Adamawa',
+      userPhone: '+237661000012',
+      userName: 'Aminatou Millet',
+      createdAt: now.toISOString(),
+      expiresAt: in30Days.toISOString(),
+    },
+    {
+      id: 'lst_013',
+      type: 'sell',
+      status: 'active',
+      crop: 'palm oil',
+      cropNormalized: 'palm oil',
+      quantity: 50,
+      unit: 'liter',
+      priceXaf: 1200,
+      location: 'Bertoua',
+      region: 'East',
+      userPhone: '+237661000013',
+      userName: 'Pierre Palm',
+      createdAt: now.toISOString(),
+      expiresAt: in30Days.toISOString(),
     },
   ];
   seedListings.forEach((l) => listings.set(l.id, l));
 
-  // ── Price history ─────────────────────────────────────────────────────────
+  // ── Price history ─────────────────────────────────────────────────────────────
+  // FIX: Use now.getTime() (Date object) — not now.toISOString() — for arithmetic,
+  //      then convert the result to an ISO string for storage.
   const seedPrices: PriceRecord[] = [
-    { id: 'p01', crop: 'maïs', cropNormalized: 'maize', region: 'West', priceXaf: 250, unit: 'kg', recordedAt: new Date(now.getTime() - 2 * 86400000), source: 'listing' },
-    { id: 'p02', crop: 'maïs', cropNormalized: 'maize', region: 'West', priceXaf: 240, unit: 'kg', recordedAt: new Date(now.getTime() - 7 * 86400000), source: 'listing' },
-    { id: 'p03', crop: 'maïs', cropNormalized: 'maize', region: 'Centre', priceXaf: 270, unit: 'kg', recordedAt: new Date(now.getTime() - 3 * 86400000), source: 'listing' },
-    { id: 'p04', crop: 'tomates', cropNormalized: 'tomatoes', region: 'Northwest', priceXaf: 700, unit: 'kg', recordedAt: new Date(now.getTime() - 1 * 86400000), source: 'listing' },
-    { id: 'p05', crop: 'tomates', cropNormalized: 'tomatoes', region: 'Littoral', priceXaf: 800, unit: 'kg', recordedAt: new Date(now.getTime() - 4 * 86400000), source: 'market' },
-    { id: 'p06', crop: 'plantain', cropNormalized: 'plantain', region: 'Centre', priceXaf: 1500, unit: 'bunch', recordedAt: new Date(now.getTime() - 3 * 86400000), source: 'listing' },
-    { id: 'p07', crop: 'cassava', cropNormalized: 'cassava', region: 'Littoral', priceXaf: 180, unit: 'kg', recordedAt: new Date(now.getTime() - 5 * 86400000), source: 'listing' },
-    { id: 'p08', crop: 'egusi', cropNormalized: 'egusi', region: 'Littoral', priceXaf: 3500, unit: 'kg', recordedAt: new Date(now.getTime() - 1 * 86400000), source: 'listing' },
-    { id: 'p09', crop: 'palm oil', cropNormalized: 'palm oil', region: 'Littoral', priceXaf: 1200, unit: 'liter', recordedAt: new Date(now.getTime() - 6 * 86400000), source: 'market' },
-    { id: 'p10', crop: 'njama njama', cropNormalized: 'njama njama', region: 'Northwest', priceXaf: 500, unit: 'bundle', recordedAt: new Date(now.getTime() - 2 * 86400000), source: 'listing' },
+    { id: 'p01', crop: 'maïs',       cropNormalized: 'maize',       region: 'West',      priceXaf: 250,  unit: 'kg',     recordedAt: new Date(now.getTime() - 2 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p02', crop: 'maïs',       cropNormalized: 'maize',       region: 'West',      priceXaf: 240,  unit: 'kg',     recordedAt: new Date(now.getTime() - 7 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p03', crop: 'maïs',       cropNormalized: 'maize',       region: 'Centre',    priceXaf: 270,  unit: 'kg',     recordedAt: new Date(now.getTime() - 3 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p04', crop: 'tomates',    cropNormalized: 'tomatoes',    region: 'Northwest', priceXaf: 700,  unit: 'kg',     recordedAt: new Date(now.getTime() - 1 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p05', crop: 'tomates',    cropNormalized: 'tomatoes',    region: 'Littoral',  priceXaf: 800,  unit: 'kg',     recordedAt: new Date(now.getTime() - 4 * 86400000).toISOString(), source: 'market'  },
+    { id: 'p06', crop: 'plantain',   cropNormalized: 'plantain',    region: 'Centre',    priceXaf: 1500, unit: 'bunch',  recordedAt: new Date(now.getTime() - 3 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p07', crop: 'cassava',    cropNormalized: 'cassava',     region: 'Littoral',  priceXaf: 180,  unit: 'kg',     recordedAt: new Date(now.getTime() - 5 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p08', crop: 'egusi',      cropNormalized: 'egusi',       region: 'Littoral',  priceXaf: 3500, unit: 'kg',     recordedAt: new Date(now.getTime() - 1 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p09', crop: 'palm oil',   cropNormalized: 'palm oil',    region: 'Littoral',  priceXaf: 1200, unit: 'liter',  recordedAt: new Date(now.getTime() - 6 * 86400000).toISOString(), source: 'market'  },
+    { id: 'p10', crop: 'njama njama',cropNormalized: 'njama njama', region: 'Northwest', priceXaf: 500,  unit: 'bundle', recordedAt: new Date(now.getTime() - 2 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p11', crop: 'yam',        cropNormalized: 'yam',         region: 'West',      priceXaf: 400,  unit: 'kg',     recordedAt: new Date(now.getTime() - 1 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p12', crop: 'groundnuts', cropNormalized: 'groundnuts',  region: 'North',     priceXaf: 600,  unit: 'kg',     recordedAt: new Date(now.getTime() - 1 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p13', crop: 'sorghum',    cropNormalized: 'sorghum',     region: 'Far North', priceXaf: 200,  unit: 'kg',     recordedAt: new Date(now.getTime() - 2 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p14', crop: 'onions',     cropNormalized: 'onions',      region: 'Far North', priceXaf: 800,  unit: 'kg',     recordedAt: new Date(now.getTime() - 2 * 86400000).toISOString(), source: 'listing' },
+    { id: 'p15', crop: 'millet',     cropNormalized: 'millet',      region: 'Adamawa',   priceXaf: 300,  unit: 'kg',     recordedAt: new Date(now.getTime() - 3 * 86400000).toISOString(), source: 'listing' },
   ];
   priceHistory.push(...seedPrices);
 }
 
-// Run seeder immediately
+// Run seeder once at module load
 seedData();
 
 // ─── Store API ─────────────────────────────────────────────────────────────────
 
-/** Read listings with optional filters */
+/**
+ * Read listings with optional filters.
+ * Returns listings sorted newest-first (ISO strings sort lexicographically,
+ * so a simple string comparison is sufficient and avoids Date parsing).
+ */
 export function readListings(filters: {
   cropNormalized?: string;
   type?: ListingType;
@@ -272,33 +410,41 @@ export function readListings(filters: {
         l.crop.toLowerCase().includes(q),
     );
   }
-  if (filters.type) results = results.filter((l) => l.type === filters.type);
+  if (filters.type)   results = results.filter((l) => l.type === filters.type);
   if (filters.status) results = results.filter((l) => l.status === filters.status);
   if (filters.region) {
     const r = filters.region.toLowerCase();
     results = results.filter(
-      (l) => l.region.toLowerCase().includes(r) || l.location.toLowerCase().includes(r),
+      (l) =>
+        l.region.toLowerCase().includes(r) ||
+        l.location.toLowerCase().includes(r),
     );
   }
 
-  results.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  // FIX: createdAt is an ISO string — compare lexicographically (correct for ISO 8601).
+  results.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+
   return results.slice(0, filters.limit ?? 10);
 }
 
-/** Write (create) a new listing */
+/**
+ * Write (create) a new listing.
+ * FIX: Dates are stored as ISO strings to match the Listing interface,
+ *      so no post-hoc serialisation is needed in readListings.
+ */
 export function writeListing(
   data: Omit<Listing, 'id' | 'createdAt' | 'expiresAt' | 'status'>,
 ): Listing {
   const listing: Listing = {
     id: `lst_${randomUUID().slice(0, 8)}`,
     status: 'active',
-    createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    createdAt: new Date().toISOString(),                                   // FIX: ISO string
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // FIX: ISO string
     ...data,
   };
   listings.set(listing.id, listing);
 
-  // Auto-record price history
+  // Auto-record price history for sell listings
   if (listing.priceXaf && listing.type === 'sell') {
     priceHistory.push({
       id: `p_${randomUUID().slice(0, 8)}`,
@@ -307,7 +453,7 @@ export function writeListing(
       region: listing.region,
       priceXaf: listing.priceXaf,
       unit: listing.unit,
-      recordedAt: new Date(),
+      recordedAt: new Date().toISOString(), // FIX: ISO string
       source: 'listing',
     });
   }
@@ -315,7 +461,9 @@ export function writeListing(
   return listing;
 }
 
-/** Read orders for a user */
+/**
+ * Read orders for a user, optionally filtered by status or orderId.
+ */
 export function readOrders(filters: {
   userPhone?: string;
   status?: OrderStatus;
@@ -323,7 +471,7 @@ export function readOrders(filters: {
 }): Order[] {
   let results = Array.from(orders.values());
 
-  if (filters.orderId) return results.filter((o) => o.id === filters.orderId);
+  if (filters.orderId)   return results.filter((o) => o.id === filters.orderId);
   if (filters.userPhone) {
     results = results.filter(
       (o) =>
@@ -332,24 +480,34 @@ export function readOrders(filters: {
     );
   }
   if (filters.status) results = results.filter((o) => o.status === filters.status);
-  return results.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  // FIX: createdAt is an ISO string — compare lexicographically.
+  return results.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
 }
 
-/** Write (create) a new order */
+/**
+ * Write (create) a new order.
+ * FIX: Dates stored as ISO strings to match the Order interface.
+ */
 export function writeOrder(
   data: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>,
 ): Order {
+  const now = new Date().toISOString(); // FIX: ISO string
   const order: Order = {
     id: `ord_${randomUUID().slice(0, 8)}`,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    createdAt: now,
+    updatedAt: now,
     ...data,
   };
   orders.set(order.id, order);
   return order;
 }
 
-/** Look up price history for a crop in a region */
+/**
+ * Look up aggregated price history for a crop, optionally scoped to a region.
+ * FIX: recordedAt is now an ISO string, so comparisons use string comparison
+ *      or Date.parse() — both are correct for ISO 8601.
+ */
 export function lookupPrice(
   cropNormalized: string,
   region?: string,
@@ -361,10 +519,12 @@ export function lookupPrice(
   maxPriceXaf: number;
   unit: string;
   sampleCount: number;
-  lastUpdated: Date;
+  lastUpdated: string; // ISO string
 } | null {
   const q = cropNormalized.toLowerCase();
-  let records = priceHistory.filter((p) => p.cropNormalized.toLowerCase().includes(q));
+  let records = priceHistory.filter((p) =>
+    p.cropNormalized.toLowerCase().includes(q),
+  );
 
   if (region) {
     const r = region.toLowerCase();
@@ -374,14 +534,16 @@ export function lookupPrice(
 
   if (records.length === 0) return null;
 
-  // Take last 30 days
-  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  // Take last 30 days — FIX: compare ISO strings (lexicographic = chronological)
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const recent = records.filter((p) => p.recordedAt >= cutoff);
   const final = recent.length > 0 ? recent : records;
 
   const prices = final.map((p) => p.priceXaf);
   const avg = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
-  const sorted = [...final].sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime());
+
+  // Most recent record first
+  const sorted = [...final].sort((a, b) => (b.recordedAt > a.recordedAt ? 1 : -1));
 
   return {
     crop: sorted[0].crop,
@@ -391,15 +553,17 @@ export function lookupPrice(
     maxPriceXaf: Math.max(...prices),
     unit: sorted[0].unit,
     sampleCount: final.length,
-    lastUpdated: sorted[0].recordedAt,
+    lastUpdated: sorted[0].recordedAt, // already an ISO string
   };
 }
 
-/** Register or update a farmer */
-export function registerFarmer(data: Partial<FarmerProfile> & { phone: string }): {
-  farmer: FarmerProfile;
-  isNew: boolean;
-} {
+/**
+ * Register or update a farmer profile.
+ * FIX: registeredAt stored as ISO string.
+ */
+export function registerFarmer(
+  data: Partial<FarmerProfile> & { phone: string },
+): { farmer: FarmerProfile; isNew: boolean } {
   const existing = farmers.get(data.phone);
   const isNew = !existing;
 
@@ -410,19 +574,19 @@ export function registerFarmer(data: Partial<FarmerProfile> & { phone: string })
     cropsGrown: data.cropsGrown ?? existing?.cropsGrown ?? [],
     role: data.role ?? existing?.role ?? 'farmer',
     language: data.language ?? existing?.language ?? 'en',
-    registeredAt: existing?.registeredAt ?? new Date(),
+    registeredAt: existing?.registeredAt ?? new Date().toISOString(), // FIX: ISO string
   };
 
   farmers.set(farmer.phone, farmer);
   return { farmer, isNew };
 }
 
-/** Read a farmer profile */
+/** Read a single farmer profile by phone number. */
 export function readFarmer(phone: string): FarmerProfile | null {
   return farmers.get(phone) ?? null;
 }
 
-/** Get or initialise conversation state */
+/** Get or initialise conversation state for a user. */
 export function getConversationState(userId: string): PipelineConversationState {
   if (!conversationStates.has(userId)) {
     conversationStates.set(userId, {
@@ -437,7 +601,7 @@ export function getConversationState(userId: string): PipelineConversationState 
   return conversationStates.get(userId)!;
 }
 
-/** Persist conversation state */
+/** Persist updated conversation state. */
 export function saveConversationState(state: PipelineConversationState): void {
   conversationStates.set(state.userId, { ...state });
 }
