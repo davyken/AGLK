@@ -74,7 +74,7 @@ export class MetaSenderService {
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
     const payload = {
-      messaging_product: 'whatsapp',
+      messaging_product: 'whatsapp  ',
       to,
       type: 'interactive',
       interactive,
