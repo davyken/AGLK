@@ -1183,68 +1183,11 @@ Return ONLY the plain text response. No JSON. No markdown.`,
     }[lang];
   }
 
-  async reply(
-    key: string,
-    lang: Language,
-    data: Record<string, string | number> = {},
-  ): Promise<string> {
-    return this.responseGen.generate(key, lang, data);
-  }
-
-  /**
-   * Generates a natural, context-aware response for messages where intent
-   * is unclear or out-of-scope. Replaces command-suggesting fallback messages.
-   *
-   * - Out-of-scope queries (news, weather, politics): gently steers back to marketplace
-   * - Unclear intent: asks ONE natural clarifying question
-   * - Never suggests the user "type" a command
-   */
-  async generateChatResponse(
-    userMessage: string,
-    lang: Language,
-    context: { userName?: string } = {},
-  ): Promise<string> {
-    const nameLine =
-      context.userName && context.userName !== 'unknown'
-        ? `The user's name is ${context.userName}.`
-        : '';
-    try {
-      const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        max_tokens: 100,
-        messages: [
-          {
-            role: 'system',
-            content: `You are AgroLink, a friendly WhatsApp agricultural marketplace assistant in Cameroon.
-You help farmers sell produce and buyers find products. Currency: XAF (CFA Franc).
-${nameLine}
-
-Respond in this language: ${lang}.
-
-Rules:
-- Keep it SHORT (1-2 sentences), warm, and natural
-- NEVER tell the user to "type" a command
-- If unclear, ask ONE simple question: are they buying, selling, or checking prices?
-- If out-of-scope (news, weather, politics): say you focus on the agricultural marketplace, then ask what they need
-- Use at most one emoji`,
-          },
-          { role: 'user', content: userMessage },
-        ],
-      });
-      return (
-        completion.choices[0]?.message?.content?.trim() ??
-        this.chatResponseFallback(lang)
-      );
-    } catch {
-      return this.chatResponseFallback(lang);
-    }
-  }
-
-  private chatResponseFallback(lang: Language): string {
-    return {
-      english: `I'm not sure I caught that 🙏 Are you looking to buy, sell, or check prices today?`,
-      french: `Je n'ai pas bien compris 🙏 Vous voulez acheter, vendre, ou vérifier des prix aujourd'hui ?`,
-      pidgin: `I no fully catch am 🙏 You wan buy, sell, or check price today?`,
-    }[lang];
-  }
+async reply(
+  key:  string,
+  lang: Language,
+  data: Record<string, string | number> = {},
+): Promise<string> {
+  return await this.responseGen.generate(key, lang, data);
+}
 }

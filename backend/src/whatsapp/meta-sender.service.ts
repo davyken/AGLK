@@ -74,7 +74,7 @@ export class MetaSenderService {
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
     const payload = {
-      messaging_product: 'whatsapp',
+      messaging_product: 'whatsapp  ',
       to,
       type: 'interactive',
       interactive,
@@ -171,7 +171,7 @@ export class MetaSenderService {
    * Marks an incoming message as read — shows double blue checkmarks to the user.
    * Call this immediately after receiving a message, before processing.
    */
-  async markAsRead(to: string, messageId: string): Promise<void> {
+  async markAsRead(messageId: string): Promise<void> {
     const phoneNumberId = this.config.get<string>('META_PHONE_NUMBER_ID');
     const accessToken = this.config.get<string>('META_ACCESS_TOKEN');
     const apiVersion = this.config.get<string>('META_API_VERSION') || 'v19.0';
