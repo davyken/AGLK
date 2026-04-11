@@ -120,8 +120,8 @@ export const dbOperationsTool = createTool({
             notes?: string;
           };
 
-          if (!data.crop || !data.cropNormalized || !data.quantity || !data.unit || !data.location) {
-            result = fail('Missing required fields: crop, quantity, unit, location');
+          if (!data.crop || !data.cropNormalized || !data.quantity || !data.unit || !data.location || !data.userPhone) {
+            result = fail('Missing required fields: crop, quantity, unit, location, userPhone');
             break;
           }
 

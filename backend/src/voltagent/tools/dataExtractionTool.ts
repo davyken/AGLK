@@ -175,14 +175,17 @@ export const dataExtractionTool = createTool({
     const startMs = Date.now();
     const model = 'gpt-4o';
 
-    const systemPrompt = buildSystemPrompt(intent);
-
-    const userContent =
-      partial_data && Object.keys(partial_data).length > 0
-        ? `Message: "${message}"\n\nAlready known from previous turns: ${JSON.stringify(partial_data, null, 2)}`
-        : `Message: "${message}"`;
-
     try {
+      // buildSystemPrompt throws for unsupported intents — keep it inside the
+      // try/catch so tool failures return a structured error rather than crashing
+      // the orchestrator's tool-call loop.
+      const systemPrompt = buildSystemPrompt(intent);
+
+      const userContent =
+        partial_data && Object.keys(partial_data).length > 0
+          ? `Message: "${message}"\n\nAlready known from previous turns: ${JSON.stringify(partial_data, null, 2)}`
+          : `Message: "${message}"`;
+
       const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
       const completion = await client.chat.completions.create({
         model,
