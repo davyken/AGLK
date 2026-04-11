@@ -76,7 +76,7 @@ Your job is to classify user messages and extract named entities.
 
 ## Supported intents
 - list_produce    → farmer wants to sell something
-- buy_produce     → buyer is looking for something to buy
+- buy_produce     → buyer is looking for something to buy (HIGH confidence if crop+location mentioned, even without quantity)
 - check_price     → user asks about current market prices
 - negotiate       → user makes or responds to an offer
 - register_farmer → new user wants to register / onboard

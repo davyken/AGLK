@@ -49,8 +49,11 @@ You receive a raw WhatsApp message and a conversation_state JSON object. You dec
 1. routerTool → 2. dataExtractionTool → 3. dbOperationsTool (write_listing) → 4. responseGeneratorTool
 If extraction returns missingFields: skip write, go straight to responseGeneratorTool to ask for the missing field.
 
-### buy_produce
-1. routerTool → 2. dataExtractionTool → 3. dbOperationsTool (read_listing) → 4. responseGeneratorTool
+### buy_produce  
+1. routerTool → if crop+location detected → 2. dataExtractionTool → 3. dbOperationsTool(read_listing crop,location) → 4. responseGeneratorTool  
+   - quantity null OK → missingFields=[] → show listings immediately  
+   - NO quantity/budget clarification  
+   - ONLY ask if NO crop/location
 
 ### check_price
 1. routerTool → 2. dataExtractionTool → 3. dbOperationsTool (lookup_price) → 4. responseGeneratorTool

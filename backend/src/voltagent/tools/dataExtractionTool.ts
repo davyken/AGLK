@@ -111,11 +111,16 @@ Respond with ONLY valid JSON matching the schema for intent: ${intent}`;
   "cropNormalized": "<English canonical>",
   "quantity": <number or null>,
   "unit": "<unit or null>",
-  "budgetXaf": <number or null — price per unit>,
+  "budgetXaf": <number or null>,
   "budgetMaxXaf": <number or null>,
   "location": "<optional>",
   "deliveryPreference": "<optional>",
-  "missingFields": ["<field names still needed>"]
+  "missingFields": []
+    // RULES for buy_produce:
+    // - ONLY include fields in missingFields if ABSOLUTELY REQUIRED
+    // - crop + location present → missingFields = [] even if no quantity/budget
+    // - Proceed to search listings immediately
+    // - Quantity/budget OPTIONAL - do NOT add to missingFields
 }`,
     register_farmer: `{
   "type": "farmer_profile",
