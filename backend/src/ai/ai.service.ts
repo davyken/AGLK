@@ -1140,11 +1140,11 @@ Return ONLY the plain text response. No JSON. No markdown.`,
     }[lang];
   }
 
-  async reply(
-    key: string,
-    lang: Language,
-    data: Record<string, string | number> = {},
-  ): Promise<string> {
-    return this.responseGen.generate(key, lang, data);
-  }
+async reply(
+  key:  string,
+  lang: Language,
+  data: Record<string, string | number> = {},
+): Promise<string> {
+  return await this.responseGen.generate(key, lang, data);
+}
 }
