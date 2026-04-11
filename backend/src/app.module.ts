@@ -2,8 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { BotModule } from './bot/bot.module';
 import { UsersModule } from './users/users.module';
 import { ListingModule } from './listing/listing.module';
@@ -13,7 +11,7 @@ import { NotificationModule } from './notification/notification.module';
 import { PriceModule } from './price/price.module';
 import { SeedModule } from './seed/seed.module';
 import { AuthModule } from './auth/auth.module';
-import { AgentsModule } from './agents/agents.module';
+import { VoltAgentModule } from './voltagent/voltagent.module';
 import { EventBusService } from './common/event-bus.service';
 
 @Module({
@@ -44,9 +42,8 @@ import { EventBusService } from './common/event-bus.service';
     NotificationModule,
     SeedModule,
     AuthModule,
-    AgentsModule,
+    VoltAgentModule,
   ],
-  controllers: [AppController],
-  providers: [AppService, EventBusService],
+  providers: [EventBusService],
 })
 export class AppModule {}

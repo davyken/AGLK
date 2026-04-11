@@ -10,7 +10,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { BotService } from './bot.service';
+import { VoltAgentService } from '../voltagent/voltagent.service';
 import { MetaSenderService } from '../whatsapp/meta-sender.service';
 import { AiService, Language } from '../ai/ai.service';
 import { ListingFlowService } from '../bot/listing.flow';

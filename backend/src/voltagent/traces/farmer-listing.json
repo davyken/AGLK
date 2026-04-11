@@ -1,0 +1,175 @@
+{
+  "_description": "Farmer sends a French message to list maize for sale in Bafoussam.",
+  "scenario": "Farmer listing produce",
+  "input": {
+    "message": "J'ai 200 kg de maïs à vendre à Bafoussam, 250 XAF le kilo. Récolte fraîche.",
+    "phoneNumber": "+237671000099"
+  },
+
+  "pipeline_start": {
+    "turn": 0,
+    "conversation_state": {
+      "userId": "+237671000099",
+      "turn": 0,
+      "intentHistory": [],
+      "pendingFlow": null,
+      "partialData": {},
+      "userLanguage": "en"
+    }
+  },
+
+  "agent_steps": [
+    {
+      "step": 1,
+      "agent": "AgroOrchestrator",
+      "action": "decides to call routerTool first",
+      "model": "gpt-4o",
+      "latencyMs": 420
+    },
+    {
+      "step": 2,
+      "tool": "routerTool",
+      "model": "gpt-4o-mini",
+      "input": {
+        "message": "J'ai 200 kg de maïs à vendre à Bafoussam, 250 XAF le kilo. Récolte fraîche.",
+        "conversation_history": []
+      },
+      "output": {
+        "intent": "list_produce",
+        "entities": {
+          "crop": "maïs",
+          "quantity": "200",
+          "unit": "kg",
+          "price": "250 XAF",
+          "location": "Bafoussam"
+        },
+        "confidence": 0.98,
+        "language": "fr",
+        "_meta": { "model": "gpt-4o-mini", "latencyMs": 310, "tokensUsed": 187 }
+      }
+    },
+    {
+      "step": 3,
+      "agent": "AgroOrchestrator",
+      "action": "intent=list_produce → calls dataExtractionTool to get structured listing data"
+    },
+    {
+      "step": 4,
+      "tool": "dataExtractionTool",
+      "model": "gpt-4o",
+      "input": {
+        "message": "J'ai 200 kg de maïs à vendre à Bafoussam, 250 XAF le kilo. Récolte fraîche.",
+        "intent": "list_produce",
+        "partial_data": {}
+      },
+      "output": {
+        "type": "listing",
+        "crop": "maïs",
+        "cropNormalized": "maize",
+        "quantity": 200,
+        "unit": "kg",
+        "priceXaf": 250,
+        "location": "Bafoussam",
+        "region": "West",
+        "freshness": "freshly harvested",
+        "notes": null,
+        "missingFields": [],
+        "_meta": { "model": "gpt-4o", "latencyMs": 490, "tokensUsed": 312 }
+      }
+    },
+    {
+      "step": 5,
+      "agent": "AgroOrchestrator",
+      "action": "missingFields is empty → calls dbOperationsTool to write the listing"
+    },
+    {
+      "step": 6,
+      "tool": "dbOperationsTool",
+      "model": null,
+      "input": {
+        "operation": "write_listing",
+        "payload": {
+          "type": "sell",
+          "crop": "maïs",
+          "cropNormalized": "maize",
+          "quantity": 200,
+          "unit": "kg",
+          "priceXaf": 250,
+          "location": "Bafoussam",
+          "region": "West",
+          "userPhone": "+237671000099",
+          "userName": "Inconnu",
+          "freshness": "freshly harvested"
+        }
+      },
+      "output": {
+        "ok": true,
+        "data": {
+          "id": "lst_a3f8b2c1",
+          "type": "sell",
+          "status": "active",
+          "crop": "maïs",
+          "cropNormalized": "maize",
+          "quantity": 200,
+          "unit": "kg",
+          "priceXaf": 250,
+          "location": "Bafoussam",
+          "region": "West",
+          "userPhone": "+237671000099",
+          "userName": "Inconnu",
+          "freshness": "freshly harvested",
+          "createdAt": "2026-04-11T09:15:00.000Z",
+          "expiresAt": "2026-05-11T09:15:00.000Z"
+        },
+        "timestamp": "2026-04-11T09:15:00.000Z"
+      }
+    },
+    {
+      "step": 7,
+      "agent": "AgroOrchestrator",
+      "action": "listing created successfully → calls responseGeneratorTool to build reply"
+    },
+    {
+      "step": 8,
+      "tool": "responseGeneratorTool",
+      "model": "gpt-4o",
+      "input": {
+        "action_result": {
+          "ok": true,
+          "data": { "id": "lst_a3f8b2c1", "crop": "maïs", "quantity": 200, "unit": "kg", "priceXaf": 250 }
+        },
+        "intent": "list_produce",
+        "user_language": "fr",
+        "context": {
+          "is_first_listing": true,
+          "crop": "maïs",
+          "location": "Bafoussam"
+        }
+      },
+      "output": {
+        "reply": "Parfait ! 🌽 Ta annonce de 200 kg de maïs à 250 XAF/kg à Bafoussam est maintenant en ligne sur Agrolink. Les acheteurs peuvent déjà te contacter. Bonne vente !",
+        "_meta": { "model": "gpt-4o", "latencyMs": 620, "tokensUsed": 198 }
+      }
+    }
+  ],
+
+  "pipeline_result": {
+    "reply": "Parfait ! 🌽 Ta annonce de 200 kg de maïs à 250 XAF/kg à Bafoussam est maintenant en ligne sur Agrolink. Les acheteurs peuvent déjà te contacter. Bonne vente !",
+    "durationMs": 1840,
+    "conversation_state_after": {
+      "userId": "+237671000099",
+      "turn": 1,
+      "intentHistory": ["list_produce"],
+      "pendingFlow": null,
+      "partialData": {},
+      "userLanguage": "fr"
+    }
+  },
+
+  "tool_summary": [
+    { "tool": "routerTool",            "model": "gpt-4o-mini", "latencyMs": 310, "tokensUsed": 187 },
+    { "tool": "dataExtractionTool",    "model": "gpt-4o",      "latencyMs": 490, "tokensUsed": 312 },
+    { "tool": "dbOperationsTool",      "model": null,           "latencyMs": 4,   "tokensUsed": 0   },
+    { "tool": "responseGeneratorTool", "model": "gpt-4o",      "latencyMs": 620, "tokensUsed": 198 }
+  ]
+}

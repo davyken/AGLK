@@ -1,0 +1,199 @@
+{
+  "_description": "Buyer in Douala looking for cassava. Has used the bot before (turn 3, English user).",
+  "scenario": "Buyer searching for a crop",
+  "input": {
+    "message": "I need 300kg of cassava in Douala, max 200 XAF per kilo",
+    "phoneNumber": "+237691000005"
+  },
+
+  "pipeline_start": {
+    "turn": 3,
+    "conversation_state": {
+      "userId": "+237691000005",
+      "turn": 3,
+      "intentHistory": ["greet", "check_price", "ask_question"],
+      "pendingFlow": null,
+      "partialData": {},
+      "userLanguage": "en",
+      "userName": "Paul Biya Nde",
+      "userRegion": "Littoral"
+    }
+  },
+
+  "agent_steps": [
+    {
+      "step": 1,
+      "agent": "AgroOrchestrator",
+      "action": "receives enriched prompt with conversation_state injected → calls routerTool",
+      "model": "gpt-4o",
+      "latencyMs": 380
+    },
+    {
+      "step": 2,
+      "tool": "routerTool",
+      "model": "gpt-4o-mini",
+      "input": {
+        "message": "I need 300kg of cassava in Douala, max 200 XAF per kilo",
+        "conversation_history": [
+          { "role": "user", "content": "Hello, what can you do?" },
+          { "role": "assistant", "content": "Hi Paul! I'm Agrolink — I connect buyers like you directly with farmers across Cameroon..." },
+          { "role": "user", "content": "What is the price of cassava?" },
+          { "role": "assistant", "content": "Cassava in Littoral is currently averaging 180 XAF/kg..." }
+        ]
+      },
+      "output": {
+        "intent": "buy_produce",
+        "entities": {
+          "crop": "cassava",
+          "quantity": "300",
+          "unit": "kg",
+          "price": "200 XAF",
+          "location": "Douala"
+        },
+        "confidence": 0.97,
+        "language": "en",
+        "_meta": { "model": "gpt-4o-mini", "latencyMs": 280, "tokensUsed": 224 }
+      }
+    },
+    {
+      "step": 3,
+      "agent": "AgroOrchestrator",
+      "action": "intent=buy_produce → calls dataExtractionTool for clean buy request structure"
+    },
+    {
+      "step": 4,
+      "tool": "dataExtractionTool",
+      "model": "gpt-4o",
+      "input": {
+        "message": "I need 300kg of cassava in Douala, max 200 XAF per kilo",
+        "intent": "buy_produce",
+        "partial_data": {}
+      },
+      "output": {
+        "type": "buy_request",
+        "crop": "cassava",
+        "cropNormalized": "cassava",
+        "quantity": 300,
+        "unit": "kg",
+        "budgetXaf": null,
+        "budgetMaxXaf": 200,
+        "location": "Douala",
+        "deliveryPreference": null,
+        "missingFields": [],
+        "_meta": { "model": "gpt-4o", "latencyMs": 450, "tokensUsed": 288 }
+      }
+    },
+    {
+      "step": 5,
+      "agent": "AgroOrchestrator",
+      "action": "calls dbOperationsTool to find matching sell listings for cassava near Douala"
+    },
+    {
+      "step": 6,
+      "tool": "dbOperationsTool",
+      "model": null,
+      "input": {
+        "operation": "read_listing",
+        "payload": {
+          "cropNormalized": "cassava",
+          "type": "sell",
+          "status": "active",
+          "region": "Littoral",
+          "limit": 3
+        }
+      },
+      "output": {
+        "ok": true,
+        "data": [
+          {
+            "id": "lst_091f",
+            "type": "sell",
+            "status": "active",
+            "crop": "manioc",
+            "cropNormalized": "cassava",
+            "quantity": 500,
+            "unit": "kg",
+            "priceXaf": 175,
+            "location": "Bonabéri, Douala",
+            "region": "Littoral",
+            "userPhone": "+237671000077",
+            "userName": "Clément Mbida",
+            "freshness": "harvested this week",
+            "createdAt": "2026-04-10T07:30:00.000Z"
+          },
+          {
+            "id": "lst_14ab",
+            "type": "sell",
+            "status": "active",
+            "crop": "cassava",
+            "cropNormalized": "cassava",
+            "quantity": 300,
+            "unit": "kg",
+            "priceXaf": 190,
+            "location": "Nylon, Douala",
+            "region": "Littoral",
+            "userPhone": "+237681000088",
+            "userName": "Rose Nlend",
+            "freshness": null,
+            "createdAt": "2026-04-09T14:00:00.000Z"
+          }
+        ],
+        "timestamp": "2026-04-11T09:22:00.000Z"
+      }
+    },
+    {
+      "step": 7,
+      "agent": "AgroOrchestrator",
+      "action": "2 matching listings found — both under the 200 XAF max budget → calls responseGeneratorTool"
+    },
+    {
+      "step": 8,
+      "tool": "responseGeneratorTool",
+      "model": "gpt-4o",
+      "input": {
+        "action_result": {
+          "ok": true,
+          "data": [
+            { "id": "lst_091f", "crop": "manioc/cassava", "quantity": 500, "unit": "kg", "priceXaf": 175, "location": "Bonabéri, Douala", "userName": "Clément Mbida" },
+            { "id": "lst_14ab", "crop": "cassava", "quantity": 300, "unit": "kg", "priceXaf": 190, "location": "Nylon, Douala", "userName": "Rose Nlend" }
+          ]
+        },
+        "intent": "buy_produce",
+        "user_language": "en",
+        "context": {
+          "farmer_name": "Paul Biya Nde",
+          "crop": "cassava",
+          "requested_quantity": 300,
+          "max_budget_xaf": 200,
+          "location": "Douala"
+        }
+      },
+      "output": {
+        "reply": "Great news Paul! Found 2 cassava sellers near you in Douala 🌿\n\n1. Clément Mbida — 500 kg at 175 XAF/kg (Bonabéri)\n2. Rose Nlend — 300 kg at 190 XAF/kg (Nylon)\n\nBoth are under your 200 XAF budget. Reply with the number to connect with the farmer.",
+        "_meta": { "model": "gpt-4o", "latencyMs": 710, "tokensUsed": 241 }
+      }
+    }
+  ],
+
+  "pipeline_result": {
+    "reply": "Great news Paul! Found 2 cassava sellers near you in Douala 🌿\n\n1. Clément Mbida — 500 kg at 175 XAF/kg (Bonabéri)\n2. Rose Nlend — 300 kg at 190 XAF/kg (Nylon)\n\nBoth are under your 200 XAF budget. Reply with the number to connect with the farmer.",
+    "durationMs": 1720,
+    "conversation_state_after": {
+      "userId": "+237691000005",
+      "turn": 4,
+      "intentHistory": ["greet", "check_price", "ask_question", "buy_produce"],
+      "pendingFlow": null,
+      "partialData": { "lastSearchCrop": "cassava", "lastSearchResults": ["lst_091f", "lst_14ab"] },
+      "userLanguage": "en",
+      "userName": "Paul Biya Nde",
+      "userRegion": "Littoral"
+    }
+  },
+
+  "tool_summary": [
+    { "tool": "routerTool",            "model": "gpt-4o-mini", "latencyMs": 280, "tokensUsed": 224 },
+    { "tool": "dataExtractionTool",    "model": "gpt-4o",      "latencyMs": 450, "tokensUsed": 288 },
+    { "tool": "dbOperationsTool",      "model": null,           "latencyMs": 3,   "tokensUsed": 0   },
+    { "tool": "responseGeneratorTool", "model": "gpt-4o",      "latencyMs": 710, "tokensUsed": 241 }
+  ]
+}

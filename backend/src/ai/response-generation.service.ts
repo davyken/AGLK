@@ -342,7 +342,7 @@ LANGUAGE: Reply in English. Keep language simple and clear — users may not be 
       buy_with_price_range: `Buyer wants *${d.quantity} ${d.unit}* of *${d.product}* and offered between *${d.priceMin}* and *${d.priceMax}* XAF. Confirm the search in one sentence and tell them you're looking for matching farmers.`,
 
       // ── General ───────────────────────────────────────────
-      unknown_command: `The bot didn't understand the message. In one short line, suggest the user try typing SELL or BUY followed by a product, or type HELP.`,
+      unknown_command: `The bot didn't understand the message. In one short, friendly sentence ask what the user needs today — buying, selling, or checking prices. Do NOT suggest typing any commands.`,
 
       clarification_needed: `Bot couldn't detect the user's language reliably. Ask them in simple English and French (bilingual) to confirm their language preference: reply 1 for English, 2 for Français, 3 for Pidgin.`,
     };
