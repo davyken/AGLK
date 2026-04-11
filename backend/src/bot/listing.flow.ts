@@ -346,13 +346,11 @@ export class ListingFlowService implements OnModuleInit {
     // Resolve final entity values — convState wins over raw parsed where non-null
     const mergedEntities = convState.entities;
 
-    // ── Silently enrich user profile with location if not yet set ─
-    // Never ask — just absorb whatever the user mentioned passively.
-    if (
-      mergedEntities.location &&
-      (!((user as any)?.location) || (user as any)?.location === 'unknown')
-    ) {
-      this.usersService
+    // ── Silently enrich user profile with location from any message ─
+    // Always update — user may have moved cities. Await so intent
+    // handlers downstream see the fresh value.
+    if (mergedEntities.location) {
+      await this.usersService
         .update(phone, { location: mergedEntities.location })
         .catch(() => {});
     }
@@ -385,6 +383,7 @@ export class ListingFlowService implements OnModuleInit {
         entities.price,
         text,
         entities.availableAt,
+        entities.location ?? undefined,
       );
     }
 
@@ -417,6 +416,7 @@ export class ListingFlowService implements OnModuleInit {
         unit,
         channel,
         lang,
+        entities.location ?? undefined,
       );
     }
 
@@ -439,6 +439,7 @@ export class ListingFlowService implements OnModuleInit {
     price?: number,
     text?: string,
     availableAt?: string,
+    messageLocation?: string,
   ): Promise<string> {
     // displayName = what user sees (preserves French/Pidgin product names)
     const displayName = productDisplay || product;
@@ -477,6 +478,11 @@ export class ListingFlowService implements OnModuleInit {
     }
 
     const user = await this.usersService.findByPhone(phone);
+
+    // Update role to farmer if not already set
+    if ((user as any)?.role !== 'farmer') {
+      this.usersService.update(phone, { role: 'farmer' }).catch(() => {});
+    }
 
     // If price provided in initial input, check if it fits market range — if so skip suggestion
     const effectivePrice = price ?? this.extractPriceFromText(text || '', quantity);
@@ -562,6 +568,7 @@ Example: 20000`,
     unit: string,
     channel: 'sms' | 'whatsapp',
     lang: Language,
+    messageLocation?: string,
   ): Promise<string> {
     // ── No product → ask naturally ─────────────────────────
     if (!product) {
@@ -576,16 +583,23 @@ Example: 20000`,
     const user = await this.usersService.findByPhone(phone);
     if (!user) return this.aiService.reply('unknown_command', lang, {});
 
+    // Update role to buyer if not already set
+    if ((user as any).role !== 'buyer') {
+      this.usersService.update(phone, { role: 'buyer' }).catch(() => {});
+    }
+
     // ── No quantity → ask naturally (don't block the search) ──
     // We proceed with quantity=0 and ask after showing results
     const effectiveQty = quantity > 0 ? quantity : 0;
     const smartUnit = unit || this.aiService.defaultUnitForProduct(product);
 
     // ── Tiered fallback search ─────────────────────────────
+    // Use message location if provided (freshest), else fall back to profile
+    const searchLocation = messageLocation || user.location || '';
     const { tier, listings: sellListings, fallbackProduct } =
       await this.listingService.findWithFallback(
         product,
-        user.location ?? '',
+        searchLocation,
         normalizePhone(phone) ?? phone,
       );
 
@@ -893,8 +907,14 @@ ${filterSummary}
 
   // ─── Detect natural-language cancellation or intent shift ───
   // Returns 'cancel', 'sell', 'buy', or null.
-  private detectCancelOrShift(text: string): 'cancel' | 'sell' | 'buy' | null {
-    const lower = text.toLowerCase();
+  // Pass pendingType to enable context-aware detection:
+  //   if in buy flow and "sell X" detected → return 'sell'
+  //   if in sell flow and "buy X" detected → return 'buy'
+  private detectCancelOrShift(
+    text: string,
+    pendingType?: PendingState['type'],
+  ): 'cancel' | 'sell' | 'buy' | null {
+    const lower = text.toLowerCase().trim();
 
     const cancelSignals = [
       'not interested', 'no longer', 'never mind', 'nevermind',
@@ -918,6 +938,15 @@ ${filterSummary}
       'je veux acheter', 'i wan buy', 'i dey find',
     ];
     if (buyShift.some((s) => lower.includes(s))) return 'buy';
+
+    // ── Context-aware: short "sell X" / "buy X" commands ────────────────
+    // Only trigger when user is actively in the opposite flow to avoid
+    // accidentally interpreting a price like "sell 5000" as an intent shift.
+    const inBuyFlow = pendingType === 'buy_select' || pendingType === 'buy';
+    const inSellFlow = pendingType === 'sell' || pendingType === 'sell_waiting_image';
+
+    if (inBuyFlow && /^(sell|vendre|i wan sell)\b/i.test(lower)) return 'sell';
+    if (inSellFlow && /^(buy|acheter|i wan buy)\b/i.test(lower)) return 'buy';
 
     return null;
   }
@@ -950,7 +979,7 @@ ${filterSummary}
     // ── Natural-language cancel / intent-shift detection ────
     // Intercept before rigid number/keyword routing so that
     // "I'm no longer interested" doesn't get answered with "Pick a number".
-    const shift = this.detectCancelOrShift(response);
+    const shift = this.detectCancelOrShift(response, pending.type);
     if (shift === 'cancel' || response.toUpperCase() === 'CANCEL' || response.toUpperCase() === 'ANNULER') {
       await this.deletePendingState(phone);
       const msgs: Record<Language, string> = {
