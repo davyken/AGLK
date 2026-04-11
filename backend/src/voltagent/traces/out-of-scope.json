@@ -1,0 +1,94 @@
+{
+  "_description": "User sends an ambiguous Pidgin message that could be a greeting or out-of-scope. Orchestrator handles gracefully.",
+  "scenario": "Ambiguous / out-of-scope message",
+  "input": {
+    "message": "Bro how far, una dey sell phone for here?",
+    "phoneNumber": "+237672000044"
+  },
+
+  "pipeline_start": {
+    "turn": 0,
+    "conversation_state": {
+      "userId": "+237672000044",
+      "turn": 0,
+      "intentHistory": [],
+      "pendingFlow": null,
+      "partialData": {},
+      "userLanguage": "en"
+    }
+  },
+
+  "agent_steps": [
+    {
+      "step": 1,
+      "agent": "AgroOrchestrator",
+      "action": "new user, no state — calls routerTool",
+      "model": "gpt-4o",
+      "latencyMs": 390
+    },
+    {
+      "step": 2,
+      "tool": "routerTool",
+      "model": "gpt-4o-mini",
+      "input": {
+        "message": "Bro how far, una dey sell phone for here?",
+        "conversation_history": []
+      },
+      "output": {
+        "intent": "out_of_scope",
+        "entities": {},
+        "confidence": 0.91,
+        "language": "pidgin",
+        "_meta": { "model": "gpt-4o-mini", "latencyMs": 260, "tokensUsed": 143 }
+      }
+    },
+    {
+      "step": 3,
+      "agent": "AgroOrchestrator",
+      "action": "intent=out_of_scope, first message → skip extraction and DB, go straight to responseGeneratorTool with a warm redirect"
+    },
+    {
+      "step": 4,
+      "tool": "responseGeneratorTool",
+      "model": "gpt-4o",
+      "input": {
+        "action_result": {
+          "intent": "out_of_scope",
+          "message": "User asked about phones which is unrelated to agricultural marketplace"
+        },
+        "intent": "out_of_scope",
+        "user_language": "pidgin",
+        "context": {
+          "is_new_user": true,
+          "user_asked_about": "phones"
+        }
+      },
+      "output": {
+        "reply": "Ha! Phone we no sell for here oh 😄 Agrolink na market for farm produce — maize, cassava, tomato, eru and more. If you wan buy or sell farm food for Cameroon, we go help you find buyer or seller fast fast. Wetin you need?",
+        "_meta": { "model": "gpt-4o", "latencyMs": 540, "tokensUsed": 162 }
+      }
+    }
+  ],
+
+  "pipeline_result": {
+    "reply": "Ha! Phone we no sell for here oh 😄 Agrolink na market for farm produce — maize, cassava, tomato, eru and more. If you wan buy or sell farm food for Cameroon, we go help you find buyer or seller fast fast. Wetin you need?",
+    "durationMs": 990,
+    "conversation_state_after": {
+      "userId": "+237672000044",
+      "turn": 1,
+      "intentHistory": ["out_of_scope"],
+      "pendingFlow": null,
+      "partialData": {},
+      "userLanguage": "pidgin"
+    }
+  },
+
+  "tool_summary": [
+    { "tool": "routerTool",            "model": "gpt-4o-mini", "latencyMs": 260, "tokensUsed": 143 },
+    { "tool": "dataExtractionTool",    "model": "skipped",      "latencyMs": 0,   "tokensUsed": 0   },
+    { "tool": "dbOperationsTool",      "model": "skipped",      "latencyMs": 0,   "tokensUsed": 0   },
+    { "tool": "responseGeneratorTool", "model": "gpt-4o",      "latencyMs": 540, "tokensUsed": 162 }
+  ],
+
+  "notes": "Only 2 of 4 tools fired. Orchestrator correctly short-circuits the pipeline for out_of_scope — no DB or extraction waste. Total tokens: 305 vs ~750 for a full pipeline run."
+}

@@ -879,9 +879,9 @@ ${filterSummary}
   ): Promise<string> {
     if (!product) {
       const msgs: Record<Language, string> = {
-        english: `❓ Which product price do you want?\nExample: price maize`,
-        french: `❓ Quel produit vous intéresse?\nExemple: prix maïs`,
-        pidgin: `❓ Which product price you want?\nExample: price maize`,
+        english: `❓ Which product price are you checking? (e.g. maize, cassava, tomatoes)`,
+        french: `❓ Quel produit vous intéresse ? (ex : maïs, manioc, tomates)`,
+        pidgin: `❓ Which product price you wan check? (e.g. maize, cassava, tomatoes)`,
       };
       return msgs[lang];
     }

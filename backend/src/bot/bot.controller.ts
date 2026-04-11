@@ -10,7 +10,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { BotService } from './bot.service';
+import { VoltAgentService } from '../voltagent/voltagent.service';
 import { MetaSenderService } from '../whatsapp/meta-sender.service';
 import { TwilioSmsService } from '../whatsapp/twilio-sms.service';
 import { TextToSpeechService } from '../ai/text-to-speech.service';
@@ -24,7 +24,7 @@ export class BotController {
   private readonly logger = new Logger(BotController.name);
 
   constructor(
-    private readonly botService: BotService,
+    private readonly voltAgentService: VoltAgentService,
     private readonly metaSender: MetaSenderService,
     private readonly twilioSms: TwilioSmsService,
     private readonly aiService: AiService,
@@ -131,11 +131,7 @@ export class BotController {
         await this.metaSender.markAsRead(phone, message.id);
         this.metaSender.sendTypingIndicator(phone).catch(() => {});
 
-        const reply = await this.botService.handleMessage({
-          phone,
-          text,
-          channel: 'whatsapp',
-        });
+        const reply = await this.voltAgentService.handle(text, phone);
         if (reply) {
           await this.metaSender.send(phone, reply);
         }
@@ -182,11 +178,7 @@ export class BotController {
 
         // Process the transcribed text and get bot reply
         // Send reply as VOICE ONLY - no text confirmation needed
-        const reply = await this.botService.handleMessage({
-          phone,
-          text: transcribed,
-          channel: 'whatsapp',
-        });
+        const reply = await this.voltAgentService.handle(transcribed, phone);
 
         // Send bot reply as voice only (since user sent voice)
         if (reply) {
@@ -208,11 +200,7 @@ export class BotController {
 
         if (!this.listingFlow.isInImageState(phone)) {
           if (caption) {
-            const reply = await this.botService.handleMessage({
-              phone,
-              text: caption,
-              channel: 'whatsapp',
-            });
+            const reply = await this.voltAgentService.handle(caption, phone);
             if (reply) await this.sendReply(phone, reply, 'whatsapp');
           } else {
             const msgs: Record<Language, string> = {
@@ -251,11 +239,7 @@ export class BotController {
       const text = body?.text ?? body?.Body ?? '';
       if (!phone || !text) return { status: 'invalid_payload' };
 
-      const reply = await this.botService.handleMessage({
-        phone,
-        text,
-        channel: 'sms',
-      });
+      const reply = await this.voltAgentService.handle(text, phone);
       return { message: reply };
     } catch {
       return { status: 'error_handled' };

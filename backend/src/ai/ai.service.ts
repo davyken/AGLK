@@ -196,13 +196,25 @@ JSON format: {"intent":"","language":"","confidence":"high","product":null,"prod
       const parsed = JSON.parse(text.trim());
       if (!parsed.confidence) parsed.confidence = 'medium';
 
-      // Detect dual-intent (sell AND buy in one message) and populate intents[]
+      // Detect dual-intent (sell AND buy in one message) and populate intents[].
+      // Both slots receive the same extracted entities from the single LLM pass.
+      // Downstream code is responsible for disambiguating if the two intents
+      // refer to different products (which would require a second extraction pass).
       const hasSell = /\b(sell|vend|wan sell|dey sell|for sell)\b/i.test(message);
       const hasBuy = /\b(buy|achet|wan buy|dey find|looking for|je cherche)\b/i.test(message);
       if (hasSell && hasBuy) {
+        const sharedEntities = {
+          product: parsed.product,
+          quantity: parsed.quantity,
+          unit: parsed.unit,
+          location: parsed.location,
+          price: parsed.price ?? undefined,
+          priceMin: parsed.priceMin ?? undefined,
+          priceMax: parsed.priceMax ?? undefined,
+        };
         parsed.intents = [
-          { intent: 'SELL', product: parsed.product, quantity: parsed.quantity, unit: parsed.unit, location: parsed.location },
-          { intent: 'BUY' },
+          { intent: 'SELL', ...sharedEntities },
+          { intent: 'BUY',  ...sharedEntities },
         ];
       }
 
@@ -541,13 +553,9 @@ TRANSCRIPTION GUIDELINES:
       );
       return { text: '', language: 'english' };
     } finally {
-      if (fs.existsSync(tmpPath)) {
-        try {
-          fs.unlinkSync(tmpPath);
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      }
+      fs.promises.unlink(tmpPath).catch(() => {
+        // Ignore cleanup errors — file may not exist if download failed
+      });
     }
   }
 
@@ -587,7 +595,15 @@ TRANSCRIPTION GUIDELINES:
     const correctionMatch = lower.match(
       /(?:actually|i meant|not \w+ but|no it'?s|sorry i said|i made a mistake|correction)/i,
     );
-    const correctedField = correctionMatch ? 'unknown' : undefined;
+    let correctedField: string | undefined;
+    if (correctionMatch) {
+      if (/\b(name|nom)\b/i.test(lower)) correctedField = 'name';
+      else if (/\b(location|city|place|town|ville|endroit)\b/i.test(lower)) correctedField = 'location';
+      else if (/\b(quantity|quantit|amount|bags|sacs|kg)\b/i.test(lower)) correctedField = 'quantity';
+      else if (/\b(price|prix|cost|montant)\b/i.test(lower)) correctedField = 'price';
+      else if (/\b(product|crop|produce|item|culture)\b/i.test(lower)) correctedField = 'product';
+      else correctedField = 'unknown';
+    }
 
     // ── Extract role from intent signals ─────────────────────
     const isFarmerSignal =
@@ -860,23 +876,50 @@ TRANSCRIPTION GUIDELINES:
     url: string,
     accessToken: string,
     dest: string,
+    redirectsLeft = 5,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(dest);
+
+      const cleanup = () => fs.unlink(dest, () => {});
+
       https
-        .get(
-          url,
-          { headers: { Authorization: `Bearer ${accessToken}` } },
-          (res) => {
-            res.pipe(file);
-            file.on('finish', () => {
-              file.close();
-              resolve();
-            });
-          },
-        )
+        .get(url, { headers: { Authorization: `Bearer ${accessToken}` } }, (res) => {
+          // Follow HTTP 301/302/307/308 redirects up to redirectsLeft times
+          if (
+            res.statusCode &&
+            res.statusCode >= 300 &&
+            res.statusCode < 400 &&
+            res.headers.location
+          ) {
+            file.destroy();
+            cleanup();
+            if (redirectsLeft <= 0) {
+              reject(new Error('Too many redirects downloading media file'));
+              return;
+            }
+            this.downloadFile(res.headers.location, accessToken, dest, redirectsLeft - 1)
+              .then(resolve)
+              .catch(reject);
+            return;
+          }
+
+          if (res.statusCode && res.statusCode >= 400) {
+            file.destroy();
+            cleanup();
+            reject(new Error(`Media download failed with HTTP ${res.statusCode}`));
+            return;
+          }
+
+          res.pipe(file);
+          file.on('finish', () => {
+            file.close();
+            resolve();
+          });
+        })
         .on('error', (err) => {
-          fs.unlink(dest, () => {});
+          file.destroy();
+          cleanup();
           reject(err);
         });
     });
@@ -1146,5 +1189,62 @@ Return ONLY the plain text response. No JSON. No markdown.`,
     data: Record<string, string | number> = {},
   ): Promise<string> {
     return this.responseGen.generate(key, lang, data);
+  }
+
+  /**
+   * Generates a natural, context-aware response for messages where intent
+   * is unclear or out-of-scope. Replaces command-suggesting fallback messages.
+   *
+   * - Out-of-scope queries (news, weather, politics): gently steers back to marketplace
+   * - Unclear intent: asks ONE natural clarifying question
+   * - Never suggests the user "type" a command
+   */
+  async generateChatResponse(
+    userMessage: string,
+    lang: Language,
+    context: { userName?: string } = {},
+  ): Promise<string> {
+    const nameLine =
+      context.userName && context.userName !== 'unknown'
+        ? `The user's name is ${context.userName}.`
+        : '';
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        max_tokens: 100,
+        messages: [
+          {
+            role: 'system',
+            content: `You are AgroLink, a friendly WhatsApp agricultural marketplace assistant in Cameroon.
+You help farmers sell produce and buyers find products. Currency: XAF (CFA Franc).
+${nameLine}
+
+Respond in this language: ${lang}.
+
+Rules:
+- Keep it SHORT (1-2 sentences), warm, and natural
+- NEVER tell the user to "type" a command
+- If unclear, ask ONE simple question: are they buying, selling, or checking prices?
+- If out-of-scope (news, weather, politics): say you focus on the agricultural marketplace, then ask what they need
+- Use at most one emoji`,
+          },
+          { role: 'user', content: userMessage },
+        ],
+      });
+      return (
+        completion.choices[0]?.message?.content?.trim() ??
+        this.chatResponseFallback(lang)
+      );
+    } catch {
+      return this.chatResponseFallback(lang);
+    }
+  }
+
+  private chatResponseFallback(lang: Language): string {
+    return {
+      english: `I'm not sure I caught that 🙏 Are you looking to buy, sell, or check prices today?`,
+      french: `Je n'ai pas bien compris 🙏 Vous voulez acheter, vendre, ou vérifier des prix aujourd'hui ?`,
+      pidgin: `I no fully catch am 🙏 You wan buy, sell, or check price today?`,
+    }[lang];
   }
 }
