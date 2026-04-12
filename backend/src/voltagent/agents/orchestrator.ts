@@ -134,6 +134,18 @@ export const orchestrator = new Agent({
   memory: agentMemory,
   maxSteps: 10,
   temperature: 0.2,
+  // Force the agent to keep calling tools until responseGeneratorTool has been
+  // called, then force a text-only step so the reply is surfaced in result.text.
+  prepareStep: async ({ steps }: { steps: any[] }) => {
+    const calledTools: string[] = steps
+      .flatMap((s: any) => s.toolCalls ?? [])
+      .map((tc: any) => tc.toolName as string);
+
+    if (calledTools.includes('responseGeneratorTool')) {
+      return { toolChoice: 'none' as const };
+    }
+    return { toolChoice: 'required' as const };
+  },
   hooks: {
     onStart: async ({ context }) => {
       console.log(`[AgroOrchestrator] ▶ START operationId=${context.operationId}`);
