@@ -70,7 +70,14 @@ export async function runPipeline(
       userId: phoneNumber,
     });
 
-    reply = result.text?.trim() ?? fallbackReply(state.userLanguage);
+    // Prefer the model's final text output; fall back to the reply embedded
+    // in the responseGeneratorTool result (the model often stops without
+    // echoing the tool output as text).
+    const responseToolReply = (result.toolResults as any[])
+      ?.findLast?.((r: any) => r.toolName === 'responseGeneratorTool')
+      ?.result?.reply?.trim();
+
+    reply = result.text?.trim() || responseToolReply || fallbackReply(state.userLanguage);
   } catch (err) {
     console.error('[Pipeline] Orchestrator error:', err);
     reply = fallbackReply(state.userLanguage);

@@ -140,7 +140,9 @@ export const orchestrator = new Agent({
     },
     onEnd: async ({ output }) => {
       const text = output && 'text' in output ? (output as { text: string }).text : undefined;
-      const preview = typeof text === 'string' ? text.slice(0, 80) : '(no text output)';
+      const toolResults = output && 'toolResults' in output ? (output as { toolResults: any[] }).toolResults : undefined;
+      const toolReply = toolResults?.findLast?.((r: any) => r.toolName === 'responseGeneratorTool')?.result?.reply;
+      const preview = text?.trim() || toolReply?.slice(0, 80) || '(no reply)';
       console.log(`[AgroOrchestrator] ■ END reply="${preview}"`);
     },
     onToolStart: async ({ tool }) => {
