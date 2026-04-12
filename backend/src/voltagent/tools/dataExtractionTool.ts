@@ -174,7 +174,7 @@ export const dataExtractionTool = createTool({
 
   execute: async ({ message, intent, partial_data }) => {
     const startMs = Date.now();
-    const model = 'gpt-4o';
+    const model = 'gpt-4o-mini';
 
     try {
       // buildSystemPrompt throws for unsupported intents — keep it inside the

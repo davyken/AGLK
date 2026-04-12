@@ -128,7 +128,7 @@ Do not add any wrapping, JSON, or commentary.
 
 export const orchestrator = new Agent({
   name: 'AgroOrchestrator',
-  model: openai('gpt-4o'),
+  model: openai('gpt-4o-mini'),
   instructions: ORCHESTRATOR_INSTRUCTIONS,
   tools: [routerTool, dataExtractionTool, dbOperationsTool, responseGeneratorTool],
   memory: agentMemory,

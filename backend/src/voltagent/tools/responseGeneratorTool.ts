@@ -49,7 +49,7 @@ export const responseGeneratorTool = createTool({
 
   execute: async ({ action_result, intent, user_language, context }) => {
     const startMs = Date.now();
-    const model = 'gpt-4o';
+    const model = 'gpt-4o-mini';
 
     const langInstructions: Record<string, string> = {
       en: 'Reply in clear, simple English as if texting a friend.',
